@@ -32,6 +32,10 @@ import type {
   PcEncontrada,
   ConexionPrincipalInput,
   ResumenJuntar,
+  CredencialesAdmin,
+  EstadoCopia,
+  HacerPrincipalInput,
+  ResultadoHacerPrincipal,
 } from '../shared/types';
 
 // Desenvuelve el ApiResult del main process: si algo salió mal, tira una
@@ -150,8 +154,6 @@ const api = {
   // que sólo tienen sentido en la PC que tiene los datos, como el botón de
   // "usar desde el celular" o elegir la foto de un producto del disco.
   esElectron: true,
-  // Puerto del servidor de esta PC: de ahí se ven las fotos de los productos.
-  puertoLocal: Number(process.argv.find((a) => a.startsWith('--mis-amores-puerto='))?.split('=')[1]) || 4000,
 };
 
 // Lo que es de "la app de escritorio" en sí (no de los datos): las
@@ -161,7 +163,7 @@ const api = {
 const escritorio = {
   // Por si la pantalla viene de una PC con otra versión: para que pueda
   // fijarse qué sabe hacer este puente antes de usarlo.
-  versionPuente: 1,
+  versionPuente: 2,
   modo: () => invoke<InfoModoPc>(Channels.escritorioModo),
   // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
   // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
@@ -184,6 +186,11 @@ const escritorio = {
     invoke<{ resumen: ResumenJuntar; nombrePrincipal: string }>(Channels.escritorioConectar, input),
   desconectar: () => invoke<boolean>(Channels.escritorioDesconectar),
   reintentarConexion: () => invoke<{ ok: boolean; mensaje?: string }>(Channels.escritorioReintentar),
+  // (versionPuente 2) Copia de seguridad de los datos y cambio de PC principal.
+  estadoCopia: () => invoke<EstadoCopia>(Channels.escritorioEstadoCopia),
+  activarCopia: (input: CredencialesAdmin) => invoke<EstadoCopia>(Channels.escritorioActivarCopia, input),
+  hacerPrincipal: (input: HacerPrincipalInput) =>
+    invoke<ResultadoHacerPrincipal>(Channels.escritorioHacerPrincipal, input),
 };
 
 // Conectada a otra PC, la pantalla usa los datos de la principal por la red

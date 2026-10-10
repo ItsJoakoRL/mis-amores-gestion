@@ -1,51 +1,130 @@
 import bcrypt from 'bcryptjs';
-import { MongoClient, type Db } from 'mongodb';
+import { MongoClient, type Collection, type Db, type Document } from 'mongodb';
+import { notificarEscritura } from '../cambiosEnVivo';
 
 // Se puede apuntar a otro servidor (por ej. si el negocio abre otro local y
 // quiere compartir el catálogo entre PCs en red) definiendo estas variables de
 // entorno antes de abrir la app; si no están definidas, usa un Mongo local.
-const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? 'mis_amores_gestion';
+export const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
+export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? 'mis_amores_gestion';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
+// La misma base, pero que se niega a escribir mientras se pasa la principal a
+// otra PC (ver bloquearEscrituras): así nada se carga a medio traspaso.
+let dbProtegida: Db | null = null;
 
-export function getDb(): Db {
-  if (!db) {
-    throw new Error('La base de datos todavía no fue inicializada');
-  }
-  return db;
+const METODOS_DE_ESCRITURA = new Set([
+  'insertOne',
+  'insertMany',
+  'updateOne',
+  'updateMany',
+  'replaceOne',
+  'deleteOne',
+  'deleteMany',
+  'findOneAndUpdate',
+  'findOneAndReplace',
+  'findOneAndDelete',
+  'bulkWrite',
+  'createIndex',
+  'createIndexes',
+  'dropIndex',
+  'drop',
+  'rename',
+]);
+
+let escriturasBloqueadas = false;
+
+export const MENSAJE_ESCRITURA_BLOQUEADA =
+  'Se está pasando la PC principal a otra PC. Esperá unos segundos y volvé a intentar.';
+
+export function bloquearEscrituras(bloquear: boolean): void {
+  escriturasBloqueadas = bloquear;
 }
 
-export const MONGODB_URI_LOCAL = MONGODB_URI;
-export const NOMBRE_BASE = MONGODB_DB_NAME;
+export function escriturasEstanBloqueadas(): boolean {
+  return escriturasBloqueadas;
+}
 
-// Con la dirección de una base compartida (ver configuracion.ts) se usa esa;
-// sin ella, la de siempre: el Mongo local de esta PC.
-export async function initDatabase(uri?: string | null): Promise<Db> {
-  const destino = uri || MONGODB_URI;
-  client = new MongoClient(destino, {
+function protegerColeccion(coleccion: Collection<Document>): Collection<Document> {
+  return new Proxy(coleccion, {
+    get(objetivo, propiedad) {
+      const valor = Reflect.get(objetivo, propiedad, objetivo) as unknown;
+      if (typeof valor !== 'function') return valor;
+      if (typeof propiedad === 'string' && METODOS_DE_ESCRITURA.has(propiedad)) {
+        return (...args: unknown[]) =>
+          escriturasBloqueadas
+            ? Promise.reject(new Error(MENSAJE_ESCRITURA_BLOQUEADA))
+            : (valor as (...a: unknown[]) => unknown).apply(objetivo, args);
+      }
+      return (valor as (...a: unknown[]) => unknown).bind(objetivo);
+    },
+  });
+}
+
+function protegerBase(base: Db): Db {
+  return new Proxy(base, {
+    get(objetivo, propiedad) {
+      const valor = Reflect.get(objetivo, propiedad, objetivo) as unknown;
+      if (typeof valor !== 'function') return valor;
+      if (propiedad === 'collection') {
+        return (...args: Parameters<Db['collection']>) => protegerColeccion(objetivo.collection(...args));
+      }
+      return (valor as (...a: unknown[]) => unknown).bind(objetivo);
+    },
+  });
+}
+
+export function getDb(): Db {
+  if (!dbProtegida) {
+    throw new Error('La base de datos todavía no fue inicializada');
+  }
+  return dbProtegida;
+}
+
+// Los comandos de Mongo que escriben, para avisar "algo cambió" a las
+// pantallas abiertas (ver cambiosEnVivo.ts).
+const COMANDOS_DE_ESCRITURA = new Set(['insert', 'update', 'delete', 'findAndModify']);
+
+export async function initDatabase(): Promise<Db> {
+  client = new MongoClient(MONGODB_URI, {
     serverSelectionTimeoutMS: 5000,
+    monitorCommands: true,
+  });
+
+  const coleccionPorPedido = new Map<number, string>();
+  client.on('commandStarted', (evento) => {
+    if (!COMANDOS_DE_ESCRITURA.has(evento.commandName)) return;
+    const coleccion = (evento.command as Record<string, unknown>)[evento.commandName];
+    if (typeof coleccion === 'string') coleccionPorPedido.set(evento.requestId, coleccion);
+  });
+  client.on('commandSucceeded', (evento) => {
+    const coleccion = coleccionPorPedido.get(evento.requestId);
+    if (coleccion === undefined) return;
+    coleccionPorPedido.delete(evento.requestId);
+    notificarEscritura(coleccion);
+  });
+  client.on('commandFailed', (evento) => {
+    coleccionPorPedido.delete(evento.requestId);
   });
 
   try {
     await client.connect();
   } catch (err) {
     throw new Error(
-      (uri
-        ? 'No se pudo conectar a la base compartida. Revisá que haya internet y que la dirección sea correcta. '
-        : `No se pudo conectar a MongoDB en ${MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? `) +
+      `No se pudo conectar a MongoDB en ${MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? ` +
         `(${err instanceof Error ? err.message : String(err)})`
     );
   }
 
   db = client.db(MONGODB_DB_NAME);
+  dbProtegida = protegerBase(db);
 
   await crearIndices(db);
   await seedIfEmpty(db);
   await migrarCodigosBarraNulos(db);
 
-  return db;
+  return dbProtegida;
 }
 
 export async function closeDatabase(): Promise<void> {

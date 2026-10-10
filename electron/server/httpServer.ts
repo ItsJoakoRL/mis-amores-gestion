@@ -22,8 +22,17 @@ import {
 } from '../../shared/types';
 import { juntarDatos } from '../juntarDatos';
 import { respaldoExtra } from '../backup';
-import { carpetaImagenes, rutaDeImagen } from '../imagenes';
+import { carpetaImagenes } from '../imagenes';
 import { escucharCambios } from '../cambiosEnVivo';
+import {
+  armarManifiesto,
+  cancelarTraspaso,
+  claveDeCopia,
+  claveEsValida,
+  coleccionComoTexto,
+  iniciarTraspaso,
+  registrarCopia,
+} from '../replica';
 import { crearToken, obtenerSesionPorToken, eliminarToken } from './tokenSessions';
 import { NOMBRE_HOST } from './mdns';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
@@ -148,7 +157,18 @@ export function obtenerIpsLan(): string[] {
   return candidatas.sort((a, b) => a.prioridad - b.prioridad).map((c) => c.ip);
 }
 
-export async function iniciarServidorWeb(distDir: string, infoPc: () => InfoPc): Promise<InfoServidorWeb> {
+/** Lo que esta PC tiene que hacer, desde main.ts, cuando otra PC le pide
+ * pasarle el papel de principal. */
+export interface AccionesTraspaso {
+  /** Esta PC deja de ser la principal y pasa a estar conectada a la otra. */
+  cederPrincipal: (nueva: { direccion: string; idPrincipal: string; nombrePrincipal: string }) => Promise<void>;
+}
+
+export async function iniciarServidorWeb(
+  distDir: string,
+  infoPc: () => InfoPc,
+  acciones: AccionesTraspaso
+): Promise<InfoServidorWeb> {
   const app = express();
   app.use(cors());
 
@@ -199,6 +219,77 @@ export async function iniciarServidorWeb(distDir: string, infoPc: () => InfoPc):
   );
 
   app.use(express.json());
+
+  // --- Copia de seguridad y traspaso de la principal (ver replica.ts) ---
+  // Las PCs conectadas piden con su clave de copia (sin contraseñas); una
+  // administradora también puede pedir con su sesión.
+  async function autorizarCopia(req: Request): Promise<void> {
+    if (await claveEsValida(req.headers['x-clave-copia'])) return;
+    requiereAdmin(req);
+  }
+  app.get(
+    '/api/copia/manifiesto',
+    ruta(async (req) => {
+      await autorizarCopia(req);
+      const q = req.query;
+      if (typeof q.pc === 'string' && q.pc) {
+        registrarCopia({
+          idPc: q.pc,
+          nombrePc: typeof q.nombre === 'string' ? q.nombre : '',
+          copiaFecha: typeof q.copia === 'string' ? q.copia : null,
+          copiaVersion: typeof q.version === 'string' ? q.version : null,
+        });
+      }
+      const yo = infoPc();
+      return armarManifiesto(yo.idPc, yo.nombrePc, yo.generacion ?? 0);
+    })
+  );
+  app.get('/api/copia/coleccion/:nombre', async (req, res) => {
+    try {
+      await autorizarCopia(req);
+      res.type('application/json').send(await coleccionComoTexto(String(req.params.nombre)));
+    } catch (err) {
+      const mensaje = err instanceof Error ? err.message : 'Error desconocido';
+      res.status(/sesión|permisos/i.test(mensaje) ? 401 : 500).json({ ok: false, error: mensaje });
+    }
+  });
+  app.get(
+    '/api/copia/clave',
+    ruta(async (req) => {
+      requiereAdmin(req);
+      return { clave: await claveDeCopia() };
+    })
+  );
+  app.post(
+    '/api/copia/traspaso/iniciar',
+    ruta((req) => {
+      const sesion = requiereAdmin(req);
+      iniciarTraspaso(sesion.usuario);
+      return true;
+    })
+  );
+  app.post(
+    '/api/copia/traspaso/cancelar',
+    ruta((req) => {
+      requiereAdmin(req);
+      cancelarTraspaso();
+      return true;
+    })
+  );
+  app.post(
+    '/api/copia/traspaso/terminar',
+    ruta(async (req) => {
+      requiereAdmin(req);
+      const { direccion, idPrincipal, nombrePrincipal } = req.body as {
+        direccion?: string;
+        idPrincipal?: string;
+        nombrePrincipal?: string;
+      };
+      if (!direccion || !idPrincipal) throw new Error('Faltan los datos de la nueva PC principal');
+      await acciones.cederPrincipal({ direccion, idPrincipal, nombrePrincipal: nombrePrincipal ?? 'la PC principal' });
+      return true;
+    })
+  );
 
   // --- Auth ---
   app.post(
@@ -596,13 +687,9 @@ export async function iniciarServidorWeb(distDir: string, infoPc: () => InfoPc):
   // los celulares y la PC conectada las piden por acá (antes no se veían).
   // Sin sesión porque una etiqueta <img> no puede mandar el token; igual
   // sólo se puede pedir un archivo de esa carpeta, por su nombre.
-  app.get('/imagenes/:archivo', async (req, res) => {
-    const ruta = await rutaDeImagen(String(req.params.archivo)).catch(() => null);
-    if (!ruta) {
-      res.status(404).end();
-      return;
-    }
-    res.sendFile(ruta, (err) => {
+  app.get('/imagenes/:archivo', (req, res) => {
+    const archivo = path.basename(String(req.params.archivo));
+    res.sendFile(path.join(carpetaImagenes(), archivo), (err) => {
       if (err && !res.headersSent) res.status(404).end();
     });
   });

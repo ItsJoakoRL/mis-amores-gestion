@@ -167,6 +167,9 @@ export interface InfoPc {
   nombrePc: string;
   version: string;
   modo: ModoPc;
+  /** Cuántas veces cambió de PC la principal. Si dos PCs se creen la
+   * principal, la de número mayor es la verdadera. (Ausente en versiones viejas.) */
+  generacion?: number;
 }
 
 /** Una PC encontrada en la red al buscar la principal desde otra PC. */
@@ -186,6 +189,57 @@ export interface InfoModoPc {
   idPc: string;
   nombrePc: string;
   versionApp: string;
+  /** Sólo en la principal: las PCs conectadas que guardan una copia de sus datos. */
+  copias: CopiaDeOtraPc[];
+}
+
+/** Una PC conectada que copia los datos de la principal (lo ve la principal). */
+export interface CopiaDeOtraPc {
+  idPc: string;
+  nombrePc: string;
+  /** Última vez que esa PC se comunicó con la principal (ISO). */
+  ultimaVez: string;
+  /** Cuándo se hizo su última copia completa (ISO), o null si todavía no. */
+  ultimaCopia: string | null;
+  /** Su copia tiene todo lo último que se cargó en la principal. */
+  alDia: boolean;
+}
+
+/** Cómo anda la copia de seguridad de los datos en una PC conectada. */
+export interface EstadoCopia {
+  /** Esta PC ya tiene permiso para copiar los datos de la principal. */
+  activa: boolean;
+  ultimaCopia: string | null;
+  /** La copia tiene todo lo último que se cargó en la principal. */
+  alDia: boolean;
+  copiando: boolean;
+  error: string | null;
+  /** La principal contesta en este momento. */
+  principalAlcanzable: boolean;
+  nombrePrincipal: string | null;
+  /** Qué hay en la copia guardada. */
+  resumen: { articulos: number; clientes: number; ventas: number } | null;
+}
+
+export interface CredencialesAdmin {
+  usuario: string;
+  password: string;
+}
+
+export interface HacerPrincipalInput extends CredencialesAdmin {
+  /** Hace falta si la principal no contesta: se usa la última copia guardada,
+   * sin lo que se haya cargado después. */
+  aceptaCopiaVieja?: boolean;
+}
+
+/** Qué pasó al pasar la principal a esta PC. */
+export interface ResultadoHacerPrincipal {
+  /** La principal no contestaba: se usó la última copia guardada. */
+  usoCopia: boolean;
+  fechaCopia: string | null;
+  /** La otra PC quedó conectada a esta (si no se pudo avisar, hay que hacerlo a mano). */
+  otraPcAvisada: boolean;
+  nombreOtraPc: string | null;
 }
 
 /** Lo que manda una PC para juntar sus datos en la principal. */

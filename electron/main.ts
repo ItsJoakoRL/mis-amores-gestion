@@ -6,6 +6,7 @@ import multicastDns from 'multicast-dns';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import crypto from 'crypto';
 import { initDatabase, closeDatabase } from './db/database';
 import { respaldarSiCorresponde } from './backup';
 import { registrarHandlers } from './ipc/handlers';
@@ -15,12 +16,28 @@ import { cargarSesionesGuardadas } from './server/tokenSessions';
 import { requiereAdmin } from './session';
 import { guardarConfiguracion, leerConfiguracion } from './configuracion';
 import { exportarDatosParaJuntar } from './juntarDatos';
-import { escucharCambios, iniciarCambiosEnVivo } from './cambiosEnVivo';
+import { escucharCambios } from './cambiosEnVivo';
+import {
+  cargarCopiaEnEstaPc,
+  bajarCopia,
+  claveDeCopia,
+  esAdminDeLaCopia,
+  estadoDeLaCopia,
+  iniciarCopiaAutomatica,
+  leerMetaCopia,
+  listarCopias,
+  pausarCopiaAutomatica,
+  reanudarCopiaAutomatica,
+} from './replica';
 import { Channels } from '../shared/channels';
 import type {
   ApiResult,
   ConexionPrincipalInput,
+  CredencialesAdmin,
   EstadoActualizacion,
+  EstadoCopia,
+  HacerPrincipalInput,
+  ResultadoHacerPrincipal,
   InfoActualizacion,
   InfoModoPc,
   InfoPc,
@@ -104,7 +121,7 @@ function createWindow() {
       sandbox: false,
       // El preload lo lee para saber qué exponer: conectada, la pantalla
       // habla con la principal por la red (como un celular), no por IPC.
-      additionalArguments: [`--mis-amores-modo=${config.modo}`, `--mis-amores-puerto=${PUERTO}`],
+      additionalArguments: [`--mis-amores-modo=${config.modo}`],
     },
   });
 
@@ -493,7 +510,14 @@ async function wrapEscritorio<T>(fn: () => Promise<T> | T): Promise<ApiResult<T>
 }
 
 function infoPc(): InfoPc {
-  return { app: 'mis-amores-gestion', idPc: config.idPc, nombrePc: os.hostname(), version: app.getVersion(), modo: config.modo };
+  return {
+    app: 'mis-amores-gestion',
+    idPc: config.idPc,
+    nombrePc: os.hostname(),
+    version: app.getVersion(),
+    modo: config.modo,
+    generacion: config.generacion,
+  };
 }
 
 function infoModo(): InfoModoPc {
@@ -504,6 +528,7 @@ function infoModo(): InfoModoPc {
     idPc: config.idPc,
     nombrePc: os.hostname(),
     versionApp: app.getVersion(),
+    copias: modoConectada ? [] : listarCopias(),
   };
 }
 
@@ -662,12 +687,20 @@ async function conectarAPrincipal(p: ConexionPrincipalInput): Promise<{ resumen:
       esperaMs: 10 * 60 * 1000,
     });
     if (p.simular !== true) {
+      // Con esta clave la PC conectada guarda una copia de los datos de la
+      // principal (ver replica.ts). Si la principal es de una versión que
+      // todavía no la da, queda sin copia hasta que se la active desde
+      // Configuración.
+      const claveCopia = await pedirJson<{ clave: string }>(`${base}/api/copia/clave`, { token: sesion.token })
+        .then((r) => r.clave)
+        .catch(() => null);
       guardarConfiguracion({
         ...config,
         modo: 'conectada',
         direccionPrincipal: direccion,
         idPrincipal: info.idPc,
         nombrePrincipal: info.nombrePc,
+        claveCopia,
       });
       config = leerConfiguracion();
       logCrash('modo', `esta PC pasa a estar conectada a ${info.nombrePc} (${direccion})`);
@@ -684,11 +717,253 @@ async function conectarAPrincipal(p: ConexionPrincipalInput): Promise<{ resumen:
 // que se conectó a la principal).
 function desconectar(): boolean {
   if (!modoConectada) return false;
-  guardarConfiguracion({ ...config, modo: 'principal', direccionPrincipal: null, idPrincipal: null, nombrePrincipal: null });
+  guardarConfiguracion({ ...config, modo: 'principal', direccionPrincipal: null, idPrincipal: null, nombrePrincipal: null, claveCopia: null });
   config = leerConfiguracion();
   logCrash('modo', 'esta PC vuelve a usar su base propia');
   setTimeout(reiniciarApp, 500);
   return true;
+}
+
+// --- Copia de seguridad y cambio de PC principal ---
+// Las PCs conectadas guardan sola una copia de los datos de la principal
+// (ver replica.ts). Con eso, si se cambia de PC o la principal se rompe, una
+// PC conectada se puede convertir en la principal sin perder lo cargado.
+let copiaAutomatica: { detener: () => void; revisarYa: () => void } | null = null;
+let traspasoEnCurso = false;
+
+function iniciarCopiaEnSegundoPlano() {
+  copiaAutomatica = iniciarCopiaAutomatica({
+    configuracion: () => config,
+    quienSoy: () => ({ idPc: config.idPc, nombrePc: os.hostname() }),
+    registrar: logCrash,
+    // Si la principal cambió de dirección (el router le dio otra IP, o se
+    // pasó a otra PC), se la vuelve a buscar por su identificador.
+    reencontrarPrincipal: async () => {
+      if (traspasoEnCurso || !config.idPrincipal) return;
+      const hallada = (await buscarConInfo()).find((e) => e.info?.idPc === config.idPrincipal);
+      if (!hallada?.info || hallada.direccion === config.direccionPrincipal) return;
+      guardarConfiguracion({ ...config, direccionPrincipal: hallada.direccion, nombrePrincipal: hallada.info.nombrePc });
+      config = leerConfiguracion();
+      logCrash('copia', `la PC principal ahora está en ${hallada.direccion}`);
+      if (mainWindow && !mainWindow.isDestroyed()) cargarPrincipal();
+    },
+  });
+}
+
+async function estadoCopia(): Promise<EstadoCopia> {
+  if (!modoConectada) throw new Error('La copia de los datos sólo corresponde a una PC conectada.');
+  const meta = leerMetaCopia();
+  const estado = estadoDeLaCopia();
+  const direccion = config.direccionPrincipal;
+  const alcanzable = direccion ? await obtenerInfoPc(direccion).then(() => true, () => false) : false;
+  return {
+    activa: config.claveCopia !== null,
+    ultimaCopia: meta?.fecha ?? null,
+    alDia: estado.alDia && meta !== null,
+    copiando: estado.copiando,
+    error: config.claveCopia ? estado.error : null,
+    principalAlcanzable: alcanzable,
+    nombrePrincipal: config.nombrePrincipal,
+    resumen: meta?.resumen ?? null,
+  };
+}
+
+// Para las PCs que se conectaron antes de que existiera la copia: se le pide
+// la clave a la principal con una cuenta de administradora.
+async function activarCopia(p: CredencialesAdmin): Promise<EstadoCopia> {
+  if (!modoConectada || !config.direccionPrincipal) throw new Error('Esta PC no está conectada a una PC principal.');
+  const base = `http://${config.direccionPrincipal}`;
+  const sesion = await pedirJson<{ token: string; rol: string }>(`${base}/api/auth/login`, {
+    metodo: 'POST',
+    cuerpo: { usuario: String(p.usuario ?? '').trim(), password: String(p.password ?? '') },
+  });
+  try {
+    if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora.');
+    const { clave } = await pedirJson<{ clave: string }>(`${base}/api/copia/clave`, { token: sesion.token });
+    guardarConfiguracion({ ...config, claveCopia: clave });
+    config = leerConfiguracion();
+  } finally {
+    pedirJson(`${base}/api/auth/logout`, { metodo: 'POST', token: sesion.token }).catch(() => {});
+  }
+  copiaAutomatica?.revisarYa();
+  return estadoCopia();
+}
+
+// La dirección con la que las otras PCs y los celulares encuentran a esta.
+function direccionDeEstaPc(): string {
+  return `${obtenerIpsLan()[0] ?? '127.0.0.1'}:${PUERTO}`;
+}
+
+// Esta PC pasa a ser la principal.
+// - Si la principal contesta: se llevan sus datos más recientes (mientras
+//   tanto no acepta cambios, para no perder nada) y esa PC queda conectada
+//   a esta.
+// - Si no contesta (se rompió, o ya no está): se usa la última copia
+//   guardada, y hay que aceptar que lo cargado después no va a estar.
+// En los dos casos esta PC toma el identificador de la principal anterior,
+// así las otras PCs la encuentran sola. Lo que había en la base propia de
+// esta PC se respalda antes de reemplazarla.
+async function hacerPrincipalEstaPc(p: HacerPrincipalInput): Promise<ResultadoHacerPrincipal> {
+  if (!modoConectada) throw new Error('Esta PC ya es la principal.');
+  if (traspasoEnCurso) throw new Error('Ya se está pasando la principal a esta PC. Esperá a que termine.');
+  const usuario = String(p.usuario ?? '').trim();
+  const password = String(p.password ?? '');
+  if (!usuario || !password) throw new Error('Escribí el usuario y la contraseña de una cuenta de administradora.');
+
+  traspasoEnCurso = true;
+  let terminado = false;
+  try {
+    await pausarCopiaAutomatica();
+
+    // ¿La principal contesta? Si cambió de dirección se la busca por su identificador.
+    let direccion = config.direccionPrincipal;
+    let info = direccion ? await obtenerInfoPc(direccion).catch(() => null) : null;
+    if (!info || (config.idPrincipal && info.idPc !== config.idPrincipal)) {
+      const hallada = (await buscarConInfo()).find((e) => e.info && (!config.idPrincipal || e.info.idPc === config.idPrincipal));
+      direccion = hallada?.direccion ?? null;
+      info = hallada?.info ?? null;
+    }
+    const idHeredado = config.idPrincipal ?? config.idPc;
+    const nombreAnterior = info?.nombrePc ?? config.nombrePrincipal;
+    // Un número más que el de la principal anterior (o el de la copia): así,
+    // si la anterior vuelve a prenderse, se sabe cuál es la verdadera.
+    const generacionNueva = Math.max(info?.generacion ?? 0, leerMetaCopia()?.generacion ?? 0, config.generacion) + 1;
+
+    let resultado: ResultadoHacerPrincipal;
+    if (info && direccion) {
+      const base = `http://${direccion}`;
+      const sesion = await pedirJson<{ token: string; rol: string }>(`${base}/api/auth/login`, {
+        metodo: 'POST',
+        cuerpo: { usuario, password },
+      });
+      let traspasoAbierto = false;
+      try {
+        if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora.');
+        // Si la principal es de una versión vieja, esto falla con un mensaje
+        // claro (hay que actualizarla primero).
+        await pedirJson(`${base}/api/copia/traspaso/iniciar`, { metodo: 'POST', token: sesion.token });
+        traspasoAbierto = true;
+        await bajarCopia(direccion, { token: sesion.token }, { idPc: config.idPc, nombrePc: os.hostname() });
+        await cargarCopiaEnEstaPc();
+        // La principal anterior deja de serlo y queda conectada a esta.
+        await pedirJson(`${base}/api/copia/traspaso/terminar`, {
+          metodo: 'POST',
+          token: sesion.token,
+          cuerpo: { direccion: direccionDeEstaPc(), idPrincipal: idHeredado, nombrePrincipal: os.hostname() },
+        });
+        traspasoAbierto = false;
+      } catch (err) {
+        if (traspasoAbierto) {
+          await pedirJson(`${base}/api/copia/traspaso/cancelar`, { metodo: 'POST', token: sesion.token }).catch(() => {});
+        }
+        throw err;
+      } finally {
+        pedirJson(`${base}/api/auth/logout`, { metodo: 'POST', token: sesion.token }).catch(() => {});
+      }
+      resultado = { usoCopia: false, fechaCopia: null, otraPcAvisada: true, nombreOtraPc: nombreAnterior };
+    } else {
+      const meta = leerMetaCopia();
+      if (!meta) {
+        throw new Error(
+          'La PC principal no contesta y esta PC todavía no tiene una copia de sus datos, así que no hay con qué seguir.'
+        );
+      }
+      if (p.aceptaCopiaVieja !== true) {
+        throw new Error('La PC principal no contesta. Para seguir hay que aceptar usar la última copia de los datos.');
+      }
+      if (!esAdminDeLaCopia(usuario, password)) {
+        throw new Error('Usuario o contraseña incorrectos, o la cuenta no es de administradora.');
+      }
+      await cargarCopiaEnEstaPc();
+      resultado = { usoCopia: true, fechaCopia: meta.fecha, otraPcAvisada: false, nombreOtraPc: nombreAnterior };
+    }
+
+    guardarConfiguracion({
+      ...config,
+      idPc: idHeredado,
+      modo: 'principal',
+      direccionPrincipal: null,
+      idPrincipal: null,
+      nombrePrincipal: null,
+      claveCopia: null,
+      generacion: generacionNueva,
+    });
+    config = leerConfiguracion();
+    terminado = true;
+    logCrash('modo', `esta PC pasa a ser la principal (${resultado.usoCopia ? 'con la última copia' : 'con los datos al día'})`);
+    setTimeout(reiniciarApp, 3000);
+    return resultado;
+  } finally {
+    if (!terminado) {
+      traspasoEnCurso = false;
+      reanudarCopiaAutomatica();
+    }
+  }
+}
+
+// Si esta PC estuvo apagada (o rota) y otra pasó a ser la principal, al
+// volver se cree la principal otra vez — y lo que se cargue acá quedaría
+// separado de lo de la verdadera. Al arrancar se fija si hay otra PC con el
+// mismo identificador y un número de generación mayor.
+async function avisarSiOtraPcOcupoMiLugar() {
+  if (modoConectada) return;
+  try {
+    const ips = await consultarMdns(2500);
+    const propias = new Set([...obtenerIpsLan(), '127.0.0.1']);
+    const direcciones = new Set<string>();
+    for (const ip of ips) direcciones.add(`${ip}:4000`);
+    if (!app.isPackaged) for (const ip of [...ips, '127.0.0.1']) for (const puerto of [4001, 4002]) direcciones.add(`${ip}:${puerto}`);
+    for (const ip of propias) direcciones.delete(`${ip}:${PUERTO}`);
+
+    for (const direccion of direcciones) {
+      const info = await obtenerInfoPc(direccion).catch(() => null);
+      if (!info || info.modo !== 'principal' || info.idPc !== config.idPc) continue;
+      if ((info.generacion ?? 0) <= config.generacion) continue;
+
+      logCrash('modo', `otra PC (${info.nombrePc}, ${direccion}) ocupa el lugar de la principal`);
+      traerVentanaAlFrente();
+      const { response } = await mostrarMensaje({
+        type: 'warning',
+        title: 'Esta PC ya no es la principal',
+        message: `Mientras esta PC estaba apagada, ${info.nombrePc} pasó a ser la principal.`,
+        detail:
+          'Si seguís cargando ventas acá, van a quedar separadas de las de la principal. Lo mejor es conectar esta PC a la principal ahora: lo que se cargó acá se junta con sus datos.',
+        buttons: ['Conectar esta PC ahora', 'Ahora no'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (response === 0) {
+        // Con un identificador propio, la otra PC ya no se confunde con esta
+        // y se puede elegir de la lista al conectar.
+        guardarConfiguracion({ ...config, idPc: crypto.randomUUID() });
+        config = leerConfiguracion();
+        mainWindow?.webContents.executeJavaScript("location.hash = '#/configuracion'").catch(() => {});
+      }
+      return;
+    }
+  } catch (err) {
+    logCrash('modo', err);
+  }
+}
+
+// Otra PC pidió ser la principal: esta pasa a estar conectada a ella.
+async function cederPrincipal(nueva: { direccion: string; idPrincipal: string; nombrePrincipal: string }): Promise<void> {
+  if (modoConectada) throw new Error('Esta PC ya no es la principal.');
+  // La misma clave de copia sigue valiendo: viaja con los datos.
+  const claveCopia = await claveDeCopia().catch(() => null);
+  guardarConfiguracion({
+    ...config,
+    // Esta PC toma un identificador nuevo: el de la principal pasó a la otra.
+    idPc: crypto.randomUUID(),
+    modo: 'conectada',
+    direccionPrincipal: nueva.direccion,
+    idPrincipal: nueva.idPrincipal,
+    nombrePrincipal: nueva.nombrePrincipal,
+    claveCopia,
+  });
+  config = leerConfiguracion();
+  logCrash('modo', `esta PC deja de ser la principal: ahora lo es ${nueva.nombrePrincipal} (${nueva.direccion})`);
+  setTimeout(reiniciarApp, 1500);
 }
 
 function cargarPrincipal() {
@@ -698,7 +973,7 @@ function cargarPrincipal() {
 // Si la principal no responde donde estaba, se la vuelve a buscar en la red
 // por su identificador — así, si el router le cambió la IP, se reconecta sola.
 async function reintentarConexion(): Promise<{ ok: boolean; mensaje?: string }> {
-  if (!modoConectada) return { ok: false };
+  if (!modoConectada || traspasoEnCurso) return { ok: false };
   const direccion = config.direccionPrincipal;
   const info = direccion ? await obtenerInfoPc(direccion).catch(() => null) : null;
   if (!info || (config.idPrincipal && info.idPc !== config.idPrincipal)) {
@@ -724,6 +999,22 @@ function mostrarSinConexion() {
   if (!mainWindow) return;
   const nombre = escaparHtml(config.nombrePrincipal ?? 'la PC principal');
   const direccion = escaparHtml(config.direccionPrincipal ?? '');
+  // Si esta PC tiene una copia de los datos, puede pasar a ser la principal.
+  const meta = leerMetaCopia();
+  const bloquePrincipal = meta
+    ? `<div class="bloque">
+    <p>Esta PC tiene una copia de los datos del <b>${escaparHtml(new Date(meta.fecha).toLocaleString('es-AR'))}</b>
+    (${meta.resumen.articulos} productos, ${meta.resumen.clientes} clientes, ${meta.resumen.ventas} ventas).</p>
+    <button id="hacerPrincipal" class="sec">Hacer que esta PC sea la principal</button>
+    <form id="formPrincipal" style="display:none;text-align:left;margin-top:14px">
+      <p style="font-size:12px">Esta PC va a guardar los datos usando esa copia. Lo que se cargó en <b>${nombre}</b> después de esa fecha no va a estar.</p>
+      <input id="usr" placeholder="Usuario de administradora" autocomplete="off">
+      <input id="pwd" type="password" placeholder="Contraseña">
+      <label class="chk"><input type="checkbox" id="acepto"> Entiendo que se usa la copia y no los últimos datos</label>
+      <button type="submit" id="confirmarPrincipal">Pasar la principal a esta PC</button>
+    </form>
+  </div>`
+    : `<div class="bloque"><p style="font-size:12px">Esta PC todavía no tiene una copia de los datos de la principal, así que no puede ocupar su lugar.</p></div>`;
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Mis Amores</title><style>
     body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#f5f8fd;color:#1e293b;display:flex;min-height:100vh;align-items:center;justify-content:center}
     .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 10px 30px rgba(15,23,42,.08);padding:32px;max-width:460px;text-align:center}
@@ -731,18 +1022,25 @@ function mostrarSinConexion() {
     button{margin-top:18px;background:linear-gradient(90deg,#2a5cb3,#3b76d1);color:#fff;border:0;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer}
     #estado{margin-top:14px;font-size:13px;color:#94a3b8;min-height:18px}
     a{display:inline-block;margin-top:22px;font-size:12px;color:#94a3b8;cursor:pointer;text-decoration:underline}
-    .icono{font-size:40px}</style></head><body><div class="card">
+    .icono{font-size:40px}
+    .bloque{margin-top:22px;border-top:1px solid #e2e8f0;padding-top:16px}
+    button.sec{background:#fff;color:#2a5cb3;border:1px solid #b9cdee;margin-top:6px}
+    input{width:100%;box-sizing:border-box;margin-top:8px;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
+    input[type=checkbox]{width:auto;margin:0 6px 0 0}
+    .chk{display:block;margin-top:10px;font-size:12px;color:#475569}</style></head><body><div class="card">
     <div class="icono">📡</div>
     <h1>No se encuentra la PC principal</h1>
     <p>Esta PC guarda todo en <b>${nombre}</b>${direccion ? ` (${direccion})` : ''}. Fijate que esa PC esté prendida, con Mis Amores abierto y conectada al mismo WiFi.</p>
     <button id="reintentar">Reintentar ahora</button>
     <div id="estado">Se vuelve a probar sola cada 15 segundos.</div>
     <a id="desconectar">La PC principal no va a volver…</a>
+    ${bloquePrincipal}
     </div><script>
     const estado = document.getElementById('estado');
     let probando = false;
+    let pasandoAPrincipal = false;
     async function reintentar() {
-      if (probando) return;
+      if (probando || pasandoAPrincipal) return;
       probando = true;
       estado.textContent = 'Buscando la PC principal...';
       try {
@@ -757,6 +1055,30 @@ function mostrarSinConexion() {
       if (!confirm('Lo que se cargó en la PC principal desde ese día NO va a aparecer acá. ¿Desconectar igual?')) return;
       await window.escritorio.desconectar();
     };
+    const botonPrincipal = document.getElementById('hacerPrincipal');
+    if (botonPrincipal) {
+      const formulario = document.getElementById('formPrincipal');
+      botonPrincipal.onclick = () => { formulario.style.display = 'block'; botonPrincipal.style.display = 'none'; };
+      formulario.onsubmit = async (e) => {
+        e.preventDefault();
+        if (!document.getElementById('acepto').checked) { estado.textContent = 'Tenés que aceptar que se usa la copia.'; return; }
+        pasandoAPrincipal = true;
+        document.getElementById('confirmarPrincipal').disabled = true;
+        estado.textContent = 'Cargando los datos en esta PC... puede tardar un minuto.';
+        try {
+          await window.escritorio.hacerPrincipal({
+            usuario: document.getElementById('usr').value,
+            password: document.getElementById('pwd').value,
+            aceptaCopiaVieja: true,
+          });
+          estado.textContent = 'Listo: esta PC ya es la principal. La app se reinicia sola.';
+        } catch (err) {
+          pasandoAPrincipal = false;
+          document.getElementById('confirmarPrincipal').disabled = false;
+          estado.textContent = (err && err.message) || 'No se pudo pasar la principal a esta PC.';
+        }
+      };
+    }
     setInterval(reintentar, 15000);
     </script></body></html>`;
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
@@ -793,6 +1115,11 @@ function registrarIpcEscritorio() {
   ipcMain.handle(Channels.escritorioConectar, (_e, p: ConexionPrincipalInput) => wrapEscritorio(() => conectarAPrincipal(p)));
   ipcMain.handle(Channels.escritorioDesconectar, () => wrapEscritorio(desconectar));
   ipcMain.handle(Channels.escritorioReintentar, () => wrapEscritorio(reintentarConexion));
+  ipcMain.handle(Channels.escritorioEstadoCopia, () => wrapEscritorio(estadoCopia));
+  ipcMain.handle(Channels.escritorioActivarCopia, (_e, p: CredencialesAdmin) => wrapEscritorio(() => activarCopia(p)));
+  ipcMain.handle(Channels.escritorioHacerPrincipal, (_e, p: HacerPrincipalInput) =>
+    wrapEscritorio(() => hacerPrincipalEstaPc(p))
+  );
 }
 
 // MongoDB arranca como servicio de Windows junto con la PC, pero puede
@@ -802,7 +1129,7 @@ function registrarIpcEscritorio() {
 async function initDatabaseConReintentos(intentos = 8, esperaMs = 3000) {
   for (let intento = 1; intento <= intentos; intento++) {
     try {
-      await initDatabase(config.mongoUri);
+      await initDatabase();
       return;
     } catch (err) {
       if (intento === intentos) throw err;
@@ -831,9 +1158,9 @@ async function arrancarComoPrincipal(): Promise<boolean> {
   }
 
   registrarHandlers();
-  // Cuando alguien cambia datos (esta PC, otra PC o un celular), la pantalla
-  // se vuelve a cargar sola; los celulares lo reciben por /api/eventos.
-  iniciarCambiosEnVivo(config.mongoUri !== null);
+  // Cuando alguien cambia datos (desde esta PC, la PC conectada o un celular),
+  // la pantalla se vuelve a cargar sola; la PC conectada y los celulares lo
+  // reciben por /api/eventos.
   escucharCambios(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(Channels.sistemaDatosCambio);
   });
@@ -849,7 +1176,7 @@ async function arrancarComoPrincipal(): Promise<boolean> {
   setInterval(() => respaldarSiCorresponde().catch((err) => logCrash('respaldo', err)), 6 * 60 * 60 * 1000);
 
   try {
-    const { detener, ...infoParaRenderer } = await iniciarServidorWeb(path.join(__dirname, '../../dist'), infoPc);
+    const { detener, ...infoParaRenderer } = await iniciarServidorWeb(path.join(__dirname, '../../dist'), infoPc, { cederPrincipal });
     // infoServidorWeb se manda tal cual al renderer por IPC (ver
     // sistemaInfoRed más abajo) — "detener" no viaja ahí porque una función
     // no se puede mandar por IPC, y tampoco tiene sentido que el renderer la
@@ -866,6 +1193,8 @@ async function arrancarComoPrincipal(): Promise<boolean> {
     infoServidorWeb = { error: err instanceof Error ? err.message : 'No se pudo iniciar el acceso desde el celular' };
   }
   ipcMain.handle(Channels.sistemaInfoRed, () => infoServidorWeb);
+  // Un rato después de abrir, cuando ya hay ventana para mostrar el aviso.
+  setTimeout(() => void avisarSiOtraPcOcupoMiLugar(), 8000);
   return true;
 }
 
@@ -883,6 +1212,7 @@ app.whenReady().then(async () => {
   if (modoConectada) {
     // Esta PC no usa su base: abre la app de la principal (ver createWindow).
     iniciarRedireccionALaPrincipal();
+    iniciarCopiaEnSegundoPlano();
   } else if (!(await arrancarComoPrincipal())) {
     return;
   }

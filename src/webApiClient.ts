@@ -211,6 +211,5 @@ export function crearWebApiClient(): Api {
       },
     },
     esElectron: false,
-    puertoLocal: 0,
   };
 }

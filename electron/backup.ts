@@ -7,11 +7,12 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { EJSON } from 'bson';
+import type { Db } from 'mongodb';
 import { getDb } from './db/database';
 
 const DIAS_A_CONSERVAR = 14;
 
-function carpetaRespaldos(): string {
+export function carpetaRespaldos(): string {
   return path.join(app.getPath('documents'), 'Mis Amores - Respaldos');
 }
 
@@ -22,8 +23,10 @@ function hoyYMD(): string {
   return `${ahora.getFullYear()}-${mes}-${dia}`;
 }
 
-async function hacerRespaldo(carpetaDestino: string): Promise<number> {
-  const db = getDb();
+// Guarda cada colección de una base en un .json dentro de la carpeta. Recibe
+// la base porque a veces hay que respaldar una que esta app no tiene abierta
+// (ej. al pasar a ser la principal; ver replica.ts).
+export async function respaldarBase(db: Db, carpetaDestino: string): Promise<number> {
   fs.mkdirSync(carpetaDestino, { recursive: true });
 
   const colecciones = await db.listCollections().toArray();
@@ -34,6 +37,10 @@ async function hacerRespaldo(carpetaDestino: string): Promise<number> {
     totalDocs += docs.length;
   }
   return totalDocs;
+}
+
+async function hacerRespaldo(carpetaDestino: string): Promise<number> {
+  return respaldarBase(getDb(), carpetaDestino);
 }
 
 // Borra las carpetas de fecha más viejas que DIAS_A_CONSERVAR — sin esto, los

@@ -17,6 +17,7 @@ import {
 import type { InfoModoPc, InfoRed, PcEncontrada, ResumenJuntar } from '@shared/types';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
+import { CopiaYPrincipal, ListaDeCopias } from './CopiaYPrincipal';
 
 // Cómo está armada esta PC dentro del negocio: si es la "principal" (la que
 // guarda todos los datos) o está "conectada" a la principal. Sólo tiene
@@ -101,6 +102,8 @@ export default function ConfiguracionPage() {
             </div>
           </div>
 
+          <ListaDeCopias copias={info.copias ?? []} />
+
           <div data-tour="conf-conectar" className="card p-5">
             <h2 className="flex items-center gap-2 font-semibold text-slate-800">
               <Link2 className="h-4 w-4 text-brand-500" />
@@ -118,6 +121,7 @@ export default function ConfiguracionPage() {
           </div>
         </div>
       ) : (
+        <div className="space-y-4">
         <div data-tour="conf-modo" className="card flex items-start gap-4 p-5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-sm shadow-brand-500/30">
             <Laptop className="h-5 w-5" />
@@ -141,6 +145,8 @@ export default function ConfiguracionPage() {
               {desconectando ? 'Desconectando...' : 'Dejar de usar la PC principal'}
             </button>
           </div>
+        </div>
+        <CopiaYPrincipal />
         </div>
       )}
 

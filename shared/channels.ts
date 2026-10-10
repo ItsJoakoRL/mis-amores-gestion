@@ -73,6 +73,10 @@ export const Channels = {
   escritorioConectar: 'escritorio:conectar',
   escritorioDesconectar: 'escritorio:desconectar',
   escritorioReintentar: 'escritorio:reintentar',
+  // Copia de seguridad en la PC conectada y traspaso de la principal (ver electron/replica.ts)
+  escritorioEstadoCopia: 'escritorio:estadoCopia',
+  escritorioActivarCopia: 'escritorio:activarCopia',
+  escritorioHacerPrincipal: 'escritorio:hacerPrincipal',
 
   // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.
   sistemaDatosCambio: 'sistema:datosCambio',
