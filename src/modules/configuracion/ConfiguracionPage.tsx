@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  Cloud,
   Laptop,
   Link2,
   Loader2,
@@ -15,7 +14,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import type { InfoModoPc, InfoRed, PcEncontrada, ResumenJuntar, ResumenSubidaBase } from '@shared/types';
+import type { InfoModoPc, InfoRed, PcEncontrada, ResumenJuntar } from '@shared/types';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 
@@ -78,22 +77,10 @@ export default function ConfiguracionPage() {
               <Server className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-semibold text-slate-800">
-                {info.baseCompartida ? 'Esta PC usa la base compartida' : 'Esta PC es la principal'}
-              </h2>
+              <h2 className="font-semibold text-slate-800">Esta PC es la principal</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {info.baseCompartida ? (
-                  <>
-                    Los datos (productos, precios, ventas y fiados) están en la base compartida: todas las PCs y celulares
-                    que usan la misma ven lo mismo al instante, sin que ninguna tenga que quedar prendida.
-                  </>
-                ) : (
-                  <>
-                    Acá se guardan todos los datos: productos, precios, ventas y fiados. Los celulares y la otra PC del
-                    negocio se conectan a esta, así todos ven lo mismo al instante. Tiene que quedar prendida con Mis
-                    Amores abierto.
-                  </>
-                )}
+                Acá se guardan todos los datos: productos, precios, ventas y fiados. Los celulares y la otra PC del negocio
+                se conectan a esta, así todos ven lo mismo al instante. Tiene que quedar prendida con Mis Amores abierto.
               </p>
               <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 <div>
@@ -114,9 +101,6 @@ export default function ConfiguracionPage() {
             </div>
           </div>
 
-          <BaseCompartidaCard info={info} onError={setError} />
-
-          {!info.baseCompartida && (
           <div data-tour="conf-conectar" className="card p-5">
             <h2 className="flex items-center gap-2 font-semibold text-slate-800">
               <Link2 className="h-4 w-4 text-brand-500" />
@@ -132,7 +116,6 @@ export default function ConfiguracionPage() {
               Conectar esta PC a la principal
             </button>
           </div>
-          )}
         </div>
       ) : (
         <div data-tour="conf-modo" className="card flex items-start gap-4 p-5">
@@ -162,139 +145,6 @@ export default function ConfiguracionPage() {
       )}
 
       {mostrarConectar && <ConectarPrincipalModal onCerrar={() => setMostrarConectar(false)} />}
-    </div>
-  );
-}
-
-function BaseCompartidaCard({ info, onError }: { info: InfoModoPc; onError: (m: string | null) => void }) {
-  const [direccion, setDireccion] = useState('');
-  const [trabajando, setTrabajando] = useState(false);
-  const [probada, setProbada] = useState<{ datos: number } | null>(null);
-  const [resumen, setResumen] = useState<ResumenSubidaBase | null>(null);
-  const [terminado, setTerminado] = useState(false);
-
-  async function probar() {
-    onError(null);
-    setTrabajando(true);
-    setProbada(null);
-    try {
-      setProbada(await window.escritorio!.probarBaseCompartida(direccion));
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'No se pudo probar la conexión');
-    } finally {
-      setTrabajando(false);
-    }
-  }
-
-  async function usar(subirDatos: boolean) {
-    onError(null);
-    setTrabajando(true);
-    try {
-      setResumen(await window.escritorio!.usarBaseCompartida({ uri: direccion, subirDatos }));
-      setTerminado(true);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'No se pudo pasar a la base compartida');
-      setTrabajando(false);
-    }
-  }
-
-  async function volverALaPropia() {
-    if (!confirm('Esta PC vuelve a usar su base propia (la que tenía antes de pasar a la compartida). ¿Seguro?')) return;
-    onError(null);
-    setTrabajando(true);
-    try {
-      await window.escritorio!.dejarBaseCompartida();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'No se pudo volver a la base propia');
-      setTrabajando(false);
-    }
-  }
-
-  if (terminado) {
-    return (
-      <div className="card p-5">
-        <h2 className="flex items-center gap-2 font-semibold text-emerald-700">
-          <CheckCircle2 className="h-5 w-5" />
-          Listo: esta PC ya usa la base compartida
-        </h2>
-        {resumen && (
-          <p className="mt-1 text-sm text-slate-500">
-            Se subieron {resumen.documentos} registros ({resumen.colecciones} listas) y {resumen.imagenes} fotos.
-          </p>
-        )}
-        <p className="mt-2 text-sm text-slate-500">La app se reinicia sola en unos segundos.</p>
-      </div>
-    );
-  }
-
-  if (info.baseCompartida) {
-    return (
-      <div className="card p-5">
-        <h2 className="flex items-center gap-2 font-semibold text-slate-800">
-          <Cloud className="h-4 w-4 text-brand-500" />
-          Base compartida
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Conectada a <span className="font-mono text-slate-700">{info.baseCompartida}</span>. Para sumar otra PC, abrí
-          Configuración en esa y pegá la misma dirección.
-        </p>
-        <button className="btn-secondary mt-4" onClick={volverALaPropia} disabled={trabajando}>
-          <Unplug className="h-4 w-4" />
-          {trabajando ? 'Cambiando...' : 'Volver a la base propia de esta PC'}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card p-5">
-      <h2 className="flex items-center gap-2 font-semibold text-slate-800">
-        <Cloud className="h-4 w-4 text-brand-500" />
-        Usar una base compartida (sin PC principal)
-      </h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Con una base compartida (MongoDB Atlas) todas las PCs y celulares ven los mismos datos al instante, y no hace falta
-        que una quede prendida. Pegá la dirección de la base que te da MongoDB Atlas.
-      </p>
-      <input
-        type="password"
-        className="input mt-3 font-mono text-xs"
-        placeholder="mongodb+srv://usuario:contraseña@cluster.mongodb.net/"
-        value={direccion}
-        onChange={(e) => {
-          setDireccion(e.target.value);
-          setProbada(null);
-        }}
-        autoComplete="off"
-      />
-      {probada && (
-        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Conectó bien.{' '}
-          {probada.datos === 0
-            ? 'La base está vacía: podés subir los datos de esta PC.'
-            : 'La base ya tiene datos cargados (de otra PC): conectá esta para usarlos.'}
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {!probada && (
-          <button className="btn-primary" onClick={probar} disabled={trabajando || !direccion.trim()}>
-            {trabajando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />}
-            Probar conexión
-          </button>
-        )}
-        {probada && probada.datos === 0 && (
-          <button className="btn-primary" onClick={() => usar(true)} disabled={trabajando}>
-            {trabajando ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-            Subir los datos de esta PC y usar la compartida
-          </button>
-        )}
-        {probada && probada.datos > 0 && (
-          <button className="btn-primary" onClick={() => usar(false)} disabled={trabajando}>
-            {trabajando ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-            Usar la base compartida
-          </button>
-        )}
-      </div>
     </div>
   );
 }

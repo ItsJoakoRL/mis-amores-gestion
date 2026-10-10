@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { initDatabase, closeDatabase } from './db/database';
-import { respaldarSiCorresponde, respaldoExtra } from './backup';
+import { respaldarSiCorresponde } from './backup';
 import { registrarHandlers } from './ipc/handlers';
 import { iniciarServidorWeb, obtenerIpsLan, PUERTO } from './server/httpServer';
 import { iniciarMdns, NOMBRE_HOST } from './server/mdns';
@@ -15,7 +15,6 @@ import { cargarSesionesGuardadas } from './server/tokenSessions';
 import { requiereAdmin } from './session';
 import { guardarConfiguracion, leerConfiguracion } from './configuracion';
 import { exportarDatosParaJuntar } from './juntarDatos';
-import { enmascararUri, probarBaseCompartida, subirDatosALaBaseCompartida } from './baseCompartida';
 import { escucharCambios, iniciarCambiosEnVivo } from './cambiosEnVivo';
 import { Channels } from '../shared/channels';
 import type {
@@ -28,8 +27,6 @@ import type {
   InfoRed,
   PcEncontrada,
   ResumenJuntar,
-  ResumenSubidaBase,
-  UsarBaseCompartidaInput,
 } from '../shared/types';
 
 // Diagnóstico temporal: si algo revienta antes de que haya ventana (y por lo
@@ -507,7 +504,6 @@ function infoModo(): InfoModoPc {
     idPc: config.idPc,
     nombrePc: os.hostname(),
     versionApp: app.getVersion(),
-    baseCompartida: enmascararUri(config.mongoUri),
   };
 }
 
@@ -695,38 +691,6 @@ function desconectar(): boolean {
   return true;
 }
 
-// Pasa esta PC a una base compartida (ver baseCompartida.ts): opcionalmente
-// sube antes lo que ya tiene, y se reinicia usando esa base. Desde ahí todas
-// las PCs que apunten a la misma ven los mismos datos al instante, sin que
-// ninguna haga de "principal".
-async function usarBaseCompartida(p: UsarBaseCompartidaInput): Promise<ResumenSubidaBase | null> {
-  requiereAdmin();
-  if (modoConectada) throw new Error('Esta PC está conectada a una PC principal. Primero dejá de usarla.');
-  const uri = String(p.uri ?? '').trim();
-  let resumen: ResumenSubidaBase | null = null;
-  if (p.subirDatos) {
-    await respaldoExtra('antes-de-base-compartida').catch((err) => logCrash('respaldo', err));
-    resumen = await subirDatosALaBaseCompartida(uri);
-  } else {
-    await probarBaseCompartida(uri);
-  }
-  guardarConfiguracion({ ...config, mongoUri: uri });
-  config = leerConfiguracion();
-  logCrash('modo', 'esta PC pasa a usar la base compartida');
-  setTimeout(reiniciarApp, 4000);
-  return resumen;
-}
-
-// Vuelve a la base propia de esta PC (la que tenía antes de pasar a la compartida).
-function dejarBaseCompartida(): boolean {
-  requiereAdmin();
-  if (!config.mongoUri) return false;
-  guardarConfiguracion({ ...config, mongoUri: null });
-  config = leerConfiguracion();
-  setTimeout(reiniciarApp, 500);
-  return true;
-}
-
 function cargarPrincipal() {
   mainWindow?.loadURL(`http://${config.direccionPrincipal}/`);
 }
@@ -829,9 +793,6 @@ function registrarIpcEscritorio() {
   ipcMain.handle(Channels.escritorioConectar, (_e, p: ConexionPrincipalInput) => wrapEscritorio(() => conectarAPrincipal(p)));
   ipcMain.handle(Channels.escritorioDesconectar, () => wrapEscritorio(desconectar));
   ipcMain.handle(Channels.escritorioReintentar, () => wrapEscritorio(reintentarConexion));
-  ipcMain.handle(Channels.escritorioProbarBase, (_e, uri: string) => wrapEscritorio(() => (requiereAdmin(), probarBaseCompartida(uri))));
-  ipcMain.handle(Channels.escritorioUsarBase, (_e, p: UsarBaseCompartidaInput) => wrapEscritorio(() => usarBaseCompartida(p)));
-  ipcMain.handle(Channels.escritorioDejarBase, () => wrapEscritorio(dejarBaseCompartida));
 }
 
 // MongoDB arranca como servicio de Windows junto con la PC, pero puede

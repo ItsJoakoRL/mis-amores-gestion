@@ -32,8 +32,6 @@ import type {
   PcEncontrada,
   ConexionPrincipalInput,
   ResumenJuntar,
-  ResumenSubidaBase,
-  UsarBaseCompartidaInput,
 } from '../shared/types';
 
 // Desenvuelve el ApiResult del main process: si algo salió mal, tira una
@@ -186,10 +184,6 @@ const escritorio = {
     invoke<{ resumen: ResumenJuntar; nombrePrincipal: string }>(Channels.escritorioConectar, input),
   desconectar: () => invoke<boolean>(Channels.escritorioDesconectar),
   reintentarConexion: () => invoke<{ ok: boolean; mensaje?: string }>(Channels.escritorioReintentar),
-  probarBaseCompartida: (uri: string) => invoke<{ datos: number }>(Channels.escritorioProbarBase, uri),
-  usarBaseCompartida: (input: UsarBaseCompartidaInput) =>
-    invoke<ResumenSubidaBase | null>(Channels.escritorioUsarBase, input),
-  dejarBaseCompartida: () => invoke<boolean>(Channels.escritorioDejarBase),
 };
 
 // Conectada a otra PC, la pantalla usa los datos de la principal por la red
