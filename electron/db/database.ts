@@ -17,8 +17,14 @@ export function getDb(): Db {
   return db;
 }
 
-export async function initDatabase(): Promise<Db> {
-  client = new MongoClient(MONGODB_URI, {
+export const MONGODB_URI_LOCAL = MONGODB_URI;
+export const NOMBRE_BASE = MONGODB_DB_NAME;
+
+// Con la dirección de una base compartida (ver configuracion.ts) se usa esa;
+// sin ella, la de siempre: el Mongo local de esta PC.
+export async function initDatabase(uri?: string | null): Promise<Db> {
+  const destino = uri || MONGODB_URI;
+  client = new MongoClient(destino, {
     serverSelectionTimeoutMS: 5000,
   });
 
@@ -26,7 +32,9 @@ export async function initDatabase(): Promise<Db> {
     await client.connect();
   } catch (err) {
     throw new Error(
-      `No se pudo conectar a MongoDB en ${MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? ` +
+      (uri
+        ? 'No se pudo conectar a la base compartida. Revisá que haya internet y que la dirección sea correcta. '
+        : `No se pudo conectar a MongoDB en ${MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? `) +
         `(${err instanceof Error ? err.message : String(err)})`
     );
   }

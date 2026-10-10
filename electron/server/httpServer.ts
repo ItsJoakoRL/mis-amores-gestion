@@ -22,7 +22,8 @@ import {
 } from '../../shared/types';
 import { juntarDatos } from '../juntarDatos';
 import { respaldoExtra } from '../backup';
-import { carpetaImagenes } from '../imagenes';
+import { carpetaImagenes, rutaDeImagen } from '../imagenes';
+import { escucharCambios } from '../cambiosEnVivo';
 import { crearToken, obtenerSesionPorToken, eliminarToken } from './tokenSessions';
 import { NOMBRE_HOST } from './mdns';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
@@ -595,10 +596,29 @@ export async function iniciarServidorWeb(distDir: string, infoPc: () => InfoPc):
   // los celulares y la PC conectada las piden por acá (antes no se veían).
   // Sin sesión porque una etiqueta <img> no puede mandar el token; igual
   // sólo se puede pedir un archivo de esa carpeta, por su nombre.
-  app.get('/imagenes/:archivo', (req, res) => {
-    const archivo = path.basename(String(req.params.archivo));
-    res.sendFile(path.join(carpetaImagenes(), archivo), (err) => {
+  app.get('/imagenes/:archivo', async (req, res) => {
+    const ruta = await rutaDeImagen(String(req.params.archivo)).catch(() => null);
+    if (!ruta) {
+      res.status(404).end();
+      return;
+    }
+    res.sendFile(ruta, (err) => {
       if (err && !res.headersSent) res.status(404).end();
+    });
+  });
+
+  // Aviso en vivo: la pantalla (en un celular) se vuelve a cargar sola cuando
+  // alguien, desde cualquier PC o celular, cambia algo. No lleva datos, sólo
+  // el aviso de que hay algo nuevo para pedir.
+  app.get('/api/eventos', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    res.flushHeaders();
+    res.write('retry: 3000\n\n');
+    const latido = setInterval(() => res.write(': latido\n\n'), 25_000);
+    const parar = escucharCambios(() => res.write('event: cambio\ndata: 1\n\n'));
+    req.on('close', () => {
+      clearInterval(latido);
+      parar();
     });
   });
 

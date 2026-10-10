@@ -17,6 +17,10 @@ export interface ConfiguracionPc {
   /** El idPc de la principal — si cambia de IP, se la vuelve a encontrar por esto. */
   idPrincipal: string | null;
   nombrePrincipal: string | null;
+  /** Si está definida, esta PC usa una base de datos compartida (ej. MongoDB
+   * Atlas) en vez de la propia: todas las PCs que apunten a la misma ven los
+   * mismos datos al instante y ninguna hace de "principal". */
+  mongoUri: string | null;
 }
 
 function archivo(): string {
@@ -40,6 +44,7 @@ export function leerConfiguracion(): ConfiguracionPc {
     direccionPrincipal: conectada ? leida.direccionPrincipal! : null,
     idPrincipal: conectada && typeof leida.idPrincipal === 'string' ? leida.idPrincipal : null,
     nombrePrincipal: conectada && typeof leida.nombrePrincipal === 'string' ? leida.nombrePrincipal : null,
+    mongoUri: typeof leida.mongoUri === 'string' && leida.mongoUri.trim() ? leida.mongoUri.trim() : null,
   };
   if (!leida.idPc) guardarConfiguracion(enMemoria);
   return enMemoria;

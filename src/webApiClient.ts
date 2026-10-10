@@ -202,7 +202,15 @@ export function crearWebApiClient(): Api {
     },
     sistema: {
       infoRed: async () => null,
+      // El servidor de la PC avisa por /api/eventos cuando alguien cambia algo.
+      onDatosCambio: (callback: () => void) => {
+        if (typeof EventSource === 'undefined') return () => {};
+        const fuente = new EventSource('/api/eventos');
+        fuente.addEventListener('cambio', () => callback());
+        return () => fuente.close();
+      },
     },
     esElectron: false,
+    puertoLocal: 0,
   };
 }

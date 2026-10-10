@@ -73,4 +73,11 @@ export const Channels = {
   escritorioConectar: 'escritorio:conectar',
   escritorioDesconectar: 'escritorio:desconectar',
   escritorioReintentar: 'escritorio:reintentar',
+
+  // Base compartida entre PCs (ver electron/baseCompartida.ts)
+  escritorioProbarBase: 'escritorio:probarBase',
+  escritorioUsarBase: 'escritorio:usarBase',
+  escritorioDejarBase: 'escritorio:dejarBase',
+  // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.
+  sistemaDatosCambio: 'sistema:datosCambio',
 } as const;

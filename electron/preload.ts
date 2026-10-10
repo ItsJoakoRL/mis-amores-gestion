@@ -32,6 +32,8 @@ import type {
   PcEncontrada,
   ConexionPrincipalInput,
   ResumenJuntar,
+  ResumenSubidaBase,
+  UsarBaseCompartidaInput,
 } from '../shared/types';
 
 // Desenvuelve el ApiResult del main process: si algo salió mal, tira una
@@ -135,12 +137,23 @@ const api = {
     // Este canal no pasa por invoke() porque no usa el wrapper { ok, data } —
     // ya viene con su propia forma que distingue éxito de error.
     infoRed: () => ipcRenderer.invoke(Channels.sistemaInfoRed) as Promise<InfoRed>,
+    // Avisa cuando alguien (esta PC, otra PC o un celular) cambió datos.
+    // Devuelve la función para dejar de escuchar.
+    onDatosCambio: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(Channels.sistemaDatosCambio, listener);
+      return () => {
+        ipcRenderer.removeListener(Channels.sistemaDatosCambio, listener);
+      };
+    },
   },
   // true acá (app de escritorio con su base) / false en el cliente web
   // (celular, o la PC conectada a la principal) — sirve para mostrar cosas
   // que sólo tienen sentido en la PC que tiene los datos, como el botón de
   // "usar desde el celular" o elegir la foto de un producto del disco.
   esElectron: true,
+  // Puerto del servidor de esta PC: de ahí se ven las fotos de los productos.
+  puertoLocal: Number(process.argv.find((a) => a.startsWith('--mis-amores-puerto='))?.split('=')[1]) || 4000,
 };
 
 // Lo que es de "la app de escritorio" en sí (no de los datos): las
@@ -173,6 +186,10 @@ const escritorio = {
     invoke<{ resumen: ResumenJuntar; nombrePrincipal: string }>(Channels.escritorioConectar, input),
   desconectar: () => invoke<boolean>(Channels.escritorioDesconectar),
   reintentarConexion: () => invoke<{ ok: boolean; mensaje?: string }>(Channels.escritorioReintentar),
+  probarBaseCompartida: (uri: string) => invoke<{ datos: number }>(Channels.escritorioProbarBase, uri),
+  usarBaseCompartida: (input: UsarBaseCompartidaInput) =>
+    invoke<ResumenSubidaBase | null>(Channels.escritorioUsarBase, input),
+  dejarBaseCompartida: () => invoke<boolean>(Channels.escritorioDejarBase),
 };
 
 // Conectada a otra PC, la pantalla usa los datos de la principal por la red

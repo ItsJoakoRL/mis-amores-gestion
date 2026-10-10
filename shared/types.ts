@@ -186,6 +186,21 @@ export interface InfoModoPc {
   idPc: string;
   nombrePc: string;
   versionApp: string;
+  /** A qué base compartida apunta esta PC (sin usuario ni contraseña), o
+   * null si usa la propia. */
+  baseCompartida: string | null;
+}
+
+export interface UsarBaseCompartidaInput {
+  uri: string;
+  /** true: sube a la base compartida lo que ya tiene esta PC (sólo si está vacía). */
+  subirDatos: boolean;
+}
+
+export interface ResumenSubidaBase {
+  colecciones: number;
+  documentos: number;
+  imagenes: number;
 }
 
 /** Lo que manda una PC para juntar sus datos en la principal. */
