@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply text-slate-800 antialiased;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    /* Fondo con un degradé suave en vez de gris plano — manchas de color
+       tenues ancladas en las esquinas, que le dan vida al fondo sin distraer
+       del contenido. Dos tonos (azul y violeta/rosa) en vez de uno solo. */
+    background-color: #f5f8fd;
+    background-image:
+      radial-gradient(circle at 100% 0%, rgba(59, 118, 209, 0.09), transparent 45%),
+      radial-gradient(circle at 0% 100%, rgba(216, 70, 160, 0.06), transparent 40%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-sm hover:from-brand-700 hover:to-brand-600 hover:shadow-md hover:shadow-brand-500/25;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-slate-700 border border-slate-300 hover:bg-slate-100;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700 hover:shadow-md;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition-shadow duration-150 focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-slate-500;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-200;
+  }
+}

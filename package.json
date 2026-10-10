@@ -1,0 +1,83 @@
+{
+  "name": "mis-amores-gestion",
+  "private": true,
+  "version": "0.4.0",
+  "description": "Sistema de gestion comercial - Mis Amores",
+  "author": "Mis Amores",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"npm run dev:electron\"",
+    "dev:electron": "npm run build:electron && cross-env-shell NODE_ENV=development \"wait-on tcp:5173 && electron .\"",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:electron && vite build",
+    "build:win": "npm run build && electron-builder --win --publish always",
+    "actualizaciones:servir": "node scripts/servidor-actualizaciones.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bson": "^6.10.4",
+    "cors": "^2.8.6",
+    "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.9",
+    "express": "^5.2.1",
+    "lucide-react": "^0.462.0",
+    "mongodb": "^6.10.0",
+    "multicast-dns": "^7.2.5",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multicast-dns": "^7.2.4",
+    "@types/node": "^22.10.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.misamores.gestion",
+    "productName": "MIS AMORES GESTION",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "build-assets/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ItsJoakoRL",
+      "repo": "mis-amores-gestion",
+      "releaseType": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build-assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "MIS AMORES GESTION"
+    }
+  }
+}
