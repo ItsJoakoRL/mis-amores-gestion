@@ -52,7 +52,13 @@ export function leerConfiguracion(): ConfiguracionPc {
   try {
     leida = JSON.parse(fs.readFileSync(archivo(), 'utf-8')) as Record<string, unknown>;
   } catch {
-    existia = false;
+    // Roto o a medio escribir (se cortó la luz): se prueba con la copia
+    // anterior, que guardarConfiguracion deja al lado.
+    try {
+      leida = JSON.parse(fs.readFileSync(`${archivo()}.bak`, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      existia = false;
+    }
   }
 
   const config: ConfiguracionPc = {
@@ -98,8 +104,18 @@ export function leerConfiguracion(): ConfiguracionPc {
 export function guardarConfiguracion(config: ConfiguracionPc): void {
   enMemoria = config;
   try {
-    fs.mkdirSync(path.dirname(archivo()), { recursive: true });
-    fs.writeFileSync(archivo(), JSON.stringify(config, null, 2));
+    const destino = archivo();
+    fs.mkdirSync(path.dirname(destino), { recursive: true });
+    // Se escribe aparte y recién al final reemplaza al archivo: si se corta a
+    // la mitad, el archivo de siempre queda entero (y la copia anterior al lado).
+    const temporal = `${destino}.tmp`;
+    fs.writeFileSync(temporal, JSON.stringify(config, null, 2));
+    try {
+      if (fs.existsSync(destino)) fs.copyFileSync(destino, `${destino}.bak`);
+    } catch {
+      // Sin copia anterior no pasa nada.
+    }
+    fs.renameSync(temporal, destino);
   } catch {
     // Si no se pudo escribir, al menos queda en memoria hasta que se cierre la app.
   }

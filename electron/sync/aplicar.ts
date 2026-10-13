@@ -140,7 +140,11 @@ export class Aplicador {
     private readonly opciones: OpcionesAplicador
   ) {}
 
-  async aplicar(items: ItemCambio[], de: string): Promise<ResultadoAplicar> {
+  /** `alFinal`: el stock de los productos tocados se recalcula una sola vez al
+   * terminar el lote (para cargas grandes, cuando nadie está usando la PC). Si
+   * no, se recalcula en el momento, así el stock que lee una venta o un ajuste
+   * local nunca queda atrasado respecto de los movimientos que ya llegaron. */
+  async aplicar(items: ItemCambio[], de: string, opciones: { alFinal?: boolean } = {}): Promise<ResultadoAplicar> {
     const resultado: ResultadoAplicar = { aplicados: 0, sinCambio: 0, errores: 0, fotosFaltantes: [] };
     const fotos = new Set<string>();
     const stock = new Set<string>();
@@ -148,12 +152,21 @@ export class Aplicador {
 
     for (const item of items) {
       try {
-        const hizoAlgo = await this.diario.conLlave(() => this.aplicarUno(item, de, fotos, (id) => {
-          const k = hex(id);
-          if (stock.has(k)) return;
-          stock.add(k);
-          idsStock.push(id);
-        }));
+        const hizoAlgo = await this.diario.conLlave(async () => {
+          const tocados: ObjectId[] = [];
+          const aplicado = await this.aplicarUno(item, de, fotos, (id) => tocados.push(id));
+          if (opciones.alFinal) {
+            for (const id of tocados) {
+              const k = hex(id);
+              if (stock.has(k)) continue;
+              stock.add(k);
+              idsStock.push(id);
+            }
+          } else if (tocados.length > 0) {
+            await recalcularStock(this.diario, tocados);
+          }
+          return aplicado;
+        });
         if (hizoAlgo) resultado.aplicados += 1;
         else resultado.sinCambio += 1;
       } catch (err) {
@@ -367,6 +380,9 @@ export class Aplicador {
         // El que llega es el repetido: no se agrega, y se deja la lápida
         // (con a quién se unificó) para que las demás PCs hagan lo mismo.
         await this.pasarReferencias(coleccion, item.id, otro._id as ObjectId);
+        // Si ya estaba acá (alguien lo renombró y chocó con otro), la fila vieja
+        // tiene que irse también: si no, se la volvería a anotar como nueva.
+        if (existe) await col.deleteOne({ _id: item.id });
         await d.guardarMetaAplicada(
           coleccion,
           item.id,
@@ -436,7 +452,9 @@ export async function recalcularTodoElStock(diario: Diario): Promise<number> {
     if (esObjectId(s._id)) sumas.set(hex(s._id), s.total);
   }
   const equivocados: ObjectId[] = [];
+  let hechos = 0;
   for await (const art of diario.db.collection('articulos').find({}, { projection: { stock: 1, stockBase: 1 } })) {
+    if (++hechos % 2000 === 0) await new Promise<void>((r) => setImmediate(r));
     if (typeof art.stockBase !== 'number') continue;
     const esperado = redondearCantidad(art.stockBase + (sumas.get(hex(art._id)) ?? 0));
     if (art.stock !== esperado) equivocados.push(art._id as ObjectId);

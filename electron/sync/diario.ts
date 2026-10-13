@@ -512,7 +512,11 @@ export class Diario {
         }
         const candidatos: ObjectId[] = [];
         const vistos = new Set<string>();
+        let hechos = 0;
         for await (const doc of this.db.collection(nombre).find({})) {
+          // Con muchos datos, de a ratos se le da el paso al resto de la app
+          // (la pantalla y los celulares usan este mismo proceso).
+          if (++hechos % 500 === 0) await new Promise<void>((r) => setImmediate(r));
           const k = hex(doc._id);
           vistos.add(k);
           const m = metas.get(k);

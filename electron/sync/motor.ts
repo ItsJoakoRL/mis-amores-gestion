@@ -13,6 +13,7 @@ import { BSON } from 'mongodb';
 import type { Aplicador } from './aplicar';
 import { COL_META, COL_PARES, type Diario, type ItemCambio } from './diario';
 import { COLECCIONES_REPLICADAS } from './modelo';
+import { firmarPedido, respuestaEsDeLaRed } from './seguridad';
 
 export interface ParConfig {
   idPc: string;
@@ -87,7 +88,7 @@ const LIMITE_POR_PEDIDO = 500;
 const ESPERA_LARGA_MS = 20_000;
 const ESPERA_MAX_FALLOS_MS = 30_000;
 const CADA_BUSQUEDA_MS = 60_000;
-const CADA_REVISION_MS = 5 * 60_000;
+const CADA_REVISION_MS = 15 * 60_000;
 
 export interface OpcionesMotor {
   diario: Diario;
@@ -123,6 +124,8 @@ export class Motor {
   private progreso: { hecho: number; total: number } | null = null;
   private trayendoTodo = 0;
   private revisando = false;
+  // Con qué PCs la revisión no logró dejar todo igual: cuándo volver a probar.
+  private readonly sinResolver = new Map<string, { veces: number; proxima: number }>();
   private readonly fotosPendientes = new Map<string, { par: ParConfig; intentos: number }>();
 
   constructor(private readonly o: OpcionesMotor) {}
@@ -216,19 +219,20 @@ export class Motor {
   // El pedido a una PC
   // =================================================================
 
-  private cabeceras(): Record<string, string> {
-    return { 'X-Clave-Red': this.o.claveRed() };
-  }
-
   async hola(direccion: string, esperaMs = 4000): Promise<HolaSync> {
     return this.pedirJson<HolaSync>(`http://${direccion}/api/sync/hola`, esperaMs);
   }
 
   private async pedirJson<T>(url: string, esperaMs: number, senal?: AbortSignal): Promise<T> {
+    // El pedido va firmado con la clave (que no se manda); la respuesta tiene
+    // que traer la prueba de que quien contesta también la tiene.
+    const clave = this.o.claveRed();
+    const u = new URL(url);
+    const firmado = firmarPedido(clave, 'GET', u.pathname + u.search);
     let respuesta: Response;
     try {
       respuesta = await fetch(url, {
-        headers: this.cabeceras(),
+        headers: firmado.cabeceras,
         signal: senal ? AbortSignal.any([senal, AbortSignal.timeout(esperaMs)]) : AbortSignal.timeout(esperaMs),
       });
     } catch (err) {
@@ -244,6 +248,9 @@ export class Motor {
     }
     if (!json.ok) {
       throw new ErrorDeSync(json.error ?? 'La otra PC devolvió un error', respuesta.status === 401 ? 'clave' : 'otro');
+    }
+    if (!respuestaEsDeLaRed(clave, firmado.nonce, respuesta.headers.get('x-red-prueba'))) {
+      throw new ErrorDeSync('Esa dirección contestó, pero no es una PC de esta red.', 'clave');
     }
     return json.data as T;
   }
@@ -313,14 +320,16 @@ export class Motor {
         const r = await this.pedirCambios(bucle.par, cursor.seq, alDia ? ESPERA_LARGA_MS : 0, bucle.controlador.signal);
         if (bucle.parar) break;
 
+        // Primero, que conteste la PC que se esperaba (si el router le dio esa
+        // dirección a otra, no hay que tocar nada de lo anotado de la primera).
+        if (r.idPc !== bucle.par.idPc) {
+          throw new ErrorDeSync('Esa dirección ahora es de otra PC.', 'otro');
+        }
         // La otra PC empezó de cero (se volvió a sumar a la red): se pide todo de nuevo.
         if (cursor.epoca !== null && cursor.epoca !== r.epoca) {
           await this.guardarCursor(bucle.par.idPc, 0, r.epoca);
           alDia = false;
           continue;
-        }
-        if (r.idPc !== bucle.par.idPc) {
-          throw new ErrorDeSync('Esa dirección ahora es de otra PC.', 'otro');
         }
 
         if (r.items.length > 0) {
@@ -491,7 +500,9 @@ export class Motor {
         this.progreso = { hecho: i, total };
         this.aplicandoAhora += 1;
         try {
-          const res = await this.o.aplicador.aplicar(descarga.items.slice(i, i + LIMITE_POR_PEDIDO), par.idPc);
+          const res = await this.o.aplicador.aplicar(descarga.items.slice(i, i + LIMITE_POR_PEDIDO), par.idPc, {
+            alFinal: true,
+          });
           aplicados += res.aplicados;
           this.pedirFotos(par, res.fotosFaltantes);
         } finally {
@@ -510,9 +521,43 @@ export class Motor {
     }
   }
 
-  /** Pide a esa PC todo lo que tiene y lo aplica (sin vaciar nada antes). */
+  /** Pide a esa PC todo lo que tiene y lo aplica, página por página (sin
+   * vaciar nada antes ni tener todo en memoria). */
   async traerTodo(par: ParConfig): Promise<{ aplicados: number }> {
-    return this.aplicarDescarga(par, await this.descargarTodo(par));
+    this.trayendoTodo += 1;
+    this.progreso = { hecho: 0, total: 0 };
+    let aplicados = 0;
+    try {
+      let desde = 0;
+      let epoca = '';
+      for (let vueltas = 0; vueltas < 100_000; vueltas++) {
+        const r = await this.pedirCambiosConReintentos(par, desde);
+        epoca = r.epoca;
+        if (r.items.length > 0) {
+          this.aplicandoAhora += 1;
+          try {
+            const res = await this.o.aplicador.aplicar(r.items, par.idPc, { alFinal: true });
+            aplicados += res.aplicados;
+            this.pedirFotos(par, res.fotosFaltantes);
+          } finally {
+            this.aplicandoAhora -= 1;
+          }
+        }
+        this.progreso = { hecho: r.hasta, total: r.maxSeq };
+        if (r.hasta === desde || r.hasta >= r.maxSeq) {
+          desde = Math.max(desde, r.hasta);
+          break;
+        }
+        desde = r.hasta;
+      }
+      const actual = await this.leerCursor(par.idPc);
+      if (actual.epoca !== epoca || desde > actual.seq) await this.guardarCursor(par.idPc, desde, epoca);
+      await this.bajarFotosPendientes();
+      return { aplicados };
+    } finally {
+      this.trayendoTodo -= 1;
+      if (this.trayendoTodo === 0) this.progreso = null;
+    }
   }
 
   // =================================================================
@@ -531,12 +576,17 @@ export class Motor {
         .collection(COL_META)
         .find({ c }, { projection: { inc: 1, del: 1, clocks: 1 } })
         .sort({ _id: 1 });
+      let hechos = 0;
       for await (const m of cursor) {
         const clocks = m.clocks as Record<string, string> | undefined;
         const marcas = clocks ? Object.keys(clocks).sort().map((k) => `${k}=${clocks[k]}`).join(',') : '';
         if (m.del) borrados += 1;
         else vivos += 1;
         hash.update(`${m._id}|${m.inc}|${m.del ?? ''}|${m.del ? '' : marcas}\n`);
+        // Con muchos datos, de a ratos se le da el paso al resto de la app
+        // (la pantalla y los celulares).
+        hechos += 1;
+        if (hechos % 2000 === 0) await new Promise<void>((r) => setImmediate(r));
       }
       salida[c] = { vivos, borrados, huella: hash.digest('hex').slice(0, 16) };
     }
@@ -548,7 +598,8 @@ export class Motor {
   }
 
   /** Compara con cada PC en línea; si no coincide (y sigue sin coincidir un
-   * momento después, por si había cambios en camino) vuelve a traer todo. */
+   * momento después, por si había cambios en camino) vuelve a traer todo.
+   * `forzar`: no espera ese momento ni respeta el "volver a probar más tarde". */
   async revisarCoincidencia(forzar = false): Promise<{ revisadas: number; corregidas: number }> {
     if (this.revisando) return { revisadas: 0, corregidas: 0 };
     this.revisando = true;
@@ -558,18 +609,47 @@ export class Motor {
       for (const par of this.o.pares()) {
         const estado = this.estados.get(par.idPc);
         if (!estado?.enLinea) continue;
+        const pendiente = this.sinResolver.get(par.idPc);
+        if (!forzar && pendiente && Date.now() < pendiente.proxima) continue;
         try {
-          const suyo = await this.pedirJson<ResumenRed>(`http://${par.direccion}/api/sync/resumen`, 15_000);
+          const url = `http://${par.direccion}/api/sync/resumen`;
+          const suyo = await this.pedirJson<ResumenRed>(url, 15_000);
           revisadas += 1;
-          if (!forzar && this.iguales(await this.resumen(), suyo)) continue;
+          if (this.iguales(await this.resumen(), suyo)) {
+            this.sinResolver.delete(par.idPc);
+            continue;
+          }
           if (!forzar) {
             await new Promise((r) => setTimeout(r, 20_000));
-            const otraVez = await this.pedirJson<ResumenRed>(`http://${par.direccion}/api/sync/resumen`, 15_000);
-            if (this.iguales(await this.resumen(), otraVez)) continue;
+            const otraVez = await this.pedirJson<ResumenRed>(url, 15_000);
+            if (this.iguales(await this.resumen(), otraVez)) {
+              this.sinResolver.delete(par.idPc);
+              continue;
+            }
           }
           this.o.registrar('sync', `Revisión: lo de ${par.nombre} no coincide, se vuelve a traer todo`);
           await this.traerTodo(par);
-          corregidas += 1;
+          // ¿Quedó resuelto? Si no (algo que no se puede aplicar), no se vuelve a
+          // bajar todo cada pocos minutos: se espera cada vez más.
+          const despues = await this.pedirJson<ResumenRed>(url, 15_000);
+          if (this.iguales(await this.resumen(), despues)) {
+            this.sinResolver.delete(par.idPc);
+            corregidas += 1;
+          } else {
+            const veces = (pendiente?.veces ?? 0) + 1;
+            this.sinResolver.set(par.idPc, {
+              veces,
+              proxima: Date.now() + Math.min(6 * 60 * 60_000, 15 * 60_000 * 2 ** (veces - 1)),
+            });
+            if (veces === 3) {
+              void this.o.diario
+                .avisar(
+                  `Esta PC y "${par.nombre}" siguen teniendo alguna diferencia que no se pudo resolver sola. ` +
+                    'No se perdió nada de lo cargado; si ves algo raro, avisá.'
+                )
+                .catch(() => {});
+            }
+          }
         } catch (err) {
           this.o.registrar('sync-revision', err);
         }

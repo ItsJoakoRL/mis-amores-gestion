@@ -382,6 +382,9 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
     if (cambio !== 0) {
       let stock = redondearCantidad((typeof d.stock === 'number' ? d.stock : 0) + cambio);
       if (stock < 0) {
+        // El stock se calcula como "stock inicial + movimientos": para que se
+        // quede en 0, se sube el stock inicial lo que haga falta.
+        if (typeof d.stockBase === 'number') set.stockBase = redondearCantidad(d.stockBase - stock);
         stock = 0;
         quedabanNegativos++;
       }

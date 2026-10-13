@@ -235,8 +235,12 @@ async function operacion(pc) {
   return `${pc.nombre}: ${tipo} de stock en ${a.descripcion}`;
 }
 
+const { firmarPedido } = require(path.join(RAIZ, 'dist-electron/electron/sync/seguridad.js'));
+
 async function resumen(pc) {
-  const res = await fetch(`http://127.0.0.1:${pc.puerto}/api/sync/resumen`, { headers: { 'X-Clave-Red': CLAVE } });
+  const ruta = '/api/sync/resumen';
+  const f = firmarPedido(CLAVE, 'GET', ruta);
+  const res = await fetch(`http://127.0.0.1:${pc.puerto}${ruta}`, { headers: f.cabeceras });
   return BSON.EJSON.parse(await res.text()).data;
 }
 

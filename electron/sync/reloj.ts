@@ -12,10 +12,11 @@
 
 const ANCHO_MS = 15;
 const ANCHO_CONTADOR = 4;
-// Una marca ajena más de un día adelantada se ignora para no arrastrar el
-// reloj propio al futuro (una PC con la fecha mal puesta no tiene que ganar
-// todas las ediciones para siempre).
-const TOLERANCIA_FUTURO_MS = 24 * 60 * 60 * 1000;
+// Una PC con la fecha mal puesta (aunque sea años adelantada) deja marcas
+// "del futuro". Si el reloj de las demás no las siguiera, sus ediciones
+// nuevas quedarían por debajo y se rechazarían sin avisar: por eso se las
+// sigue. Sólo se descarta lo que es evidentemente basura (más allá del 2100).
+const LIMITE_MS = 4102444800000;
 
 export function formatearMarca(ms: number, contador: number, nodo: string): string {
   return `${String(ms).padStart(ANCHO_MS, '0')}-${contador.toString(16).padStart(ANCHO_CONTADOR, '0')}-${nodo}`;
@@ -66,7 +67,7 @@ export class Reloj {
   ver(marca: string): void {
     if (!marca) return;
     const { ms, contador } = partesDeMarca(marca);
-    if (ms > this.ahora() + TOLERANCIA_FUTURO_MS) return;
+    if (ms > LIMITE_MS) return;
     if (ms > this.ms) {
       this.ms = ms;
       this.contador = contador;

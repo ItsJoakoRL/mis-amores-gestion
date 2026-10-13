@@ -6,13 +6,14 @@
 //   GET  /api/sync/resumen   una "foto" para comprobar que coincidimos
 //   POST /api/sync/unirse    otra PC se suma a esta red (con cuenta de admin)
 //
-// Todo menos "unirse" va con la clave de la red en la cabecera X-Clave-Red:
-// sólo las PCs que se sumaron con una cuenta de administradora la tienen.
-import crypto from 'crypto';
+// Todo menos "unirse" va firmado con la clave de la red (ver seguridad.ts): sólo
+// las PCs que se sumaron con una cuenta de administradora la tienen, y la
+// clave misma nunca viaja por la red.
 import type { Express, Request, Response } from 'express';
 import { BSON } from 'mongodb';
 import type { Diario } from './diario';
 import { idDeRed, type HolaSync, type Motor, type ParConfig } from './motor';
+import { pruebaDeRespuesta, verificarPedido } from './seguridad';
 
 const MAX_ESPERA_MS = 25_000;
 const MAX_LIMITE = 1000;
@@ -36,23 +37,24 @@ function enviar(res: Response, cuerpo: unknown, estado = 200): void {
 }
 
 export function registrarRutasSync(app: Express, deps: DepsRutasSync): void {
-  function claveValida(req: Request): boolean {
-    const recibida = req.headers['x-clave-red'];
-    if (typeof recibida !== 'string' || recibida.length < 16) return false;
-    const real = Buffer.from(deps.claveRed());
-    const otra = Buffer.from(recibida);
-    return otra.length === real.length && crypto.timingSafeEqual(otra, real);
-  }
-
   // Envuelve cada ruta con el formato { ok, data } / { ok:false, error } del resto de la API.
   function ruta(
     requiereClave: boolean,
     fn: (req: Request) => Promise<unknown> | unknown
   ): (req: Request, res: Response) => Promise<void> {
     return async (req, res) => {
-      if (requiereClave && !claveValida(req)) {
-        enviar(res, { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta).' }, 401);
-        return;
+      if (requiereClave) {
+        const nonce = verificarPedido(deps.claveRed(), req.headers, req.method, req.originalUrl);
+        if (!nonce) {
+          enviar(
+            res,
+            { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta, o tiene la fecha y la hora mal puestas).' },
+            401
+          );
+          return;
+        }
+        // La prueba de que quien contesta tiene la clave (ver seguridad.ts).
+        res.set('X-Red-Prueba', pruebaDeRespuesta(deps.claveRed(), nonce));
       }
       try {
         enviar(res, { ok: true, data: await fn(req) });

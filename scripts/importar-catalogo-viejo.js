@@ -185,6 +185,7 @@ async function main() {
       precioLista3: 0,
       utilidadPct: 0,
       stock: 0,
+      stockBase: 0,
       stockMinimo: 0,
       stockIdeal: 0,
       unidad: 'unidad',

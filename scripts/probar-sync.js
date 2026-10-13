@@ -191,10 +191,19 @@ async function ventasDelDia(pc) {
   return api(pc, 'GET', `/api/ventas/dia/${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
 }
 
+const { firmarPedido } = require(path.join(RAIZ, 'dist-electron/electron/sync/seguridad.js'));
+
+// Pide a una PC su "resumen" firmando el pedido con la clave de la red (la
+// clave misma no se manda).
+async function resumenFirmado(puerto, clave, ruta = '/api/sync/resumen') {
+  const f = firmarPedido(clave, 'GET', ruta);
+  const res = await fetch(`http://127.0.0.1:${puerto}${ruta}`, { headers: f.cabeceras });
+  return { res, texto: await res.text(), nonce: f.nonce, cabeceras: f.cabeceras };
+}
+
 async function resumen(pc) {
-  const res = await fetch(`http://127.0.0.1:${pc.puerto}/api/sync/resumen`, { headers: { 'X-Clave-Red': CLAVE } });
   // Las rutas de sincronización contestan en EJSON (conserva los tipos exactos).
-  return BSON.EJSON.parse(await res.text()).data;
+  return BSON.EJSON.parse((await resumenFirmado(pc.puerto, CLAVE)).texto).data;
 }
 
 let ultimaDiferencia = '';
@@ -539,8 +548,7 @@ async function migracion() {
 }
 
 async function resumenDe(pc) {
-  const res = await fetch(`http://127.0.0.1:${pc.puerto}/api/sync/resumen`, { headers: { 'X-Clave-Red': CLAVE_MIG } });
-  return BSON.EJSON.parse(await res.text()).data;
+  return BSON.EJSON.parse((await resumenFirmado(pc.puerto, CLAVE_MIG)).texto).data;
 }
 
 async function copiaGuardada() {
@@ -605,8 +613,156 @@ async function copiaGuardada() {
   }
 }
 
+async function extras() {
+  // Los escenarios que no entraron en la primera tanda: las dos PCs (A y B)
+  // vienen andando de antes.
+  const login = async (pc, usuario, password) => {
+    const r = await fetch(`http://127.0.0.1:${pc.puerto}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, password }),
+    });
+    return (await r.json()).ok === true;
+  };
+  const stockDe = async (pc, d) => (await porDescripcion(pc, d))?.stock;
+
+  // ---- 14. La misma venta anulada en las dos PCs sin verse ----
+  log('\n[14] La misma venta anulada en las dos PCs a la vez, sin verse');
+  const p1 = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'PARA ANULAR', stock: 10 }));
+  await hasta(async () => porDescripcion(pcs.B, 'PARA ANULAR'), 'que B tenga el producto');
+  const venta = await api(pcs.A, 'POST', '/api/ventas', { articuloId: p1.id, cantidad: 2, metodoPago: 'efectivo' });
+  await hasta(async () => (await stockDe(pcs.B, 'PARA ANULAR')) === 8, 'que B vea la venta (stock 8)');
+  await detener(pcs.B);
+  await api(pcs.A, 'DELETE', `/api/ventas/${venta.id}`); // A: stock 10
+  await detener(pcs.A);
+  await iniciar(pcs.B);
+  await api(pcs.B, 'DELETE', `/api/ventas/${venta.id}`); // B: stock 10, sin enterarse de lo de A
+  ok((await stockDe(pcs.B, 'PARA ANULAR')) === 10, '(cada PC repuso el stock por su lado: 10)');
+  await iniciar(pcs.A);
+  await hasta(coinciden, 'que las dos coincidan', 40000);
+  await esperar(1500);
+  const [sa, sb] = [await stockDe(pcs.A, 'PARA ANULAR'), await stockDe(pcs.B, 'PARA ANULAR')];
+  ok(sa === 10 && sb === 10, `al juntarse, el stock se repone UNA sola vez (A=${sa}, B=${sb})`);
+  const movs = await api(pcs.A, 'GET', `/api/articulos/${p1.id}/movimientos-stock`);
+  ok(movs.filter((m) => m.motivo === 'Venta anulada').length === 1, 'y queda un solo movimiento de "Venta anulada"');
+
+  // ---- 15. Borrado definitivo ----
+  log('\n[15] Borrado definitivo de un producto');
+  const p2 = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'PARA BORRAR', stock: 4 }));
+  await hasta(async () => porDescripcion(pcs.B, 'PARA BORRAR'), 'que B lo tenga');
+  await api(pcs.A, 'POST', '/api/ventas', { articuloId: p2.id, cantidad: 1, metodoPago: 'efectivo' });
+  await hasta(async () => (await stockDe(pcs.B, 'PARA BORRAR')) === 3, 'que B vea el stock 3');
+  await api(pcs.A, 'DELETE', `/api/articulos/${p2.id}`);
+  await hasta(async () => (await porDescripcion(pcs.B, 'PARA BORRAR'))?.activo === false, 'que B lo vea en la papelera');
+  ok(true, 'dar de baja un producto en A lo manda a la papelera de B');
+  await api(pcs.A, 'POST', '/api/articulos/eliminar-definitivo', { ids: [p2.id] });
+  await hasta(async () => !(await porDescripcion(pcs.B, 'PARA BORRAR')), 'que B ya no lo tenga');
+  ok((await api(pcs.B, 'GET', `/api/articulos/${p2.id}/movimientos-stock`)).length === 0, 'el borrado definitivo también se lleva sus movimientos en B');
+  await hasta(coinciden, 'que coincidan tras el borrado', 30000);
+  ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 16. Usuarios ----
+  log('\n[16] Usuarios y contraseñas');
+  await api(pcs.A, 'POST', '/api/usuarios', { nombre: 'Maria', usuario: 'maria', password: 'clave123', rol: 'empleado', genero: 'F' });
+  await hasta(async () => login(pcs.B, 'maria', 'clave123'), 'que maria pueda entrar en B');
+  ok(true, 'una cuenta creada en A sirve para entrar en B');
+  const mariaB = (await api(pcs.B, 'GET', '/api/usuarios')).find((u) => u.usuario === 'maria');
+  await api(pcs.B, 'POST', `/api/usuarios/${mariaB.id}/reset-password`, { password: 'nueva456' });
+  await hasta(async () => login(pcs.A, 'maria', 'nueva456'), 'que la clave nueva valga en A');
+  ok(!(await login(pcs.A, 'maria', 'clave123')), 'cambiar la contraseña en B la cambia en A (la vieja ya no entra)');
+  await api(pcs.A, 'POST', `/api/usuarios/${mariaB.id}/activo`, { activo: false });
+  await hasta(async () => !(await login(pcs.B, 'maria', 'nueva456')), 'que B también la bloquee');
+  ok(true, 'dar de baja una cuenta en A la bloquea en B');
+
+  // ---- 17. Una PC cambia de dirección ----
+  log('\n[17] Una PC cambia de dirección en la red');
+  await detener(pcs.B);
+  escribirConfig(pcs.B, { pares: [{ idPc: pcs.A.idPc, nombre: 'PC-A', direccion: '127.0.0.1:9' }] });
+  await iniciar(pcs.B);
+  await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'DESPUES DEL CAMBIO', stock: 3 }));
+  await hasta(async () => porDescripcion(pcs.B, 'DESPUES DEL CAMBIO'), 'que B encuentre a A en su nueva dirección', 90000);
+  ok(true, 'B encontró a A por su identificador aunque la dirección guardada ya no servía');
+  await hasta(coinciden, 'que coincidan al final', 30000);
+  ok(true, 'y las dos terminan iguales');
+
+  // ---- 18. Seguridad ----
+  log('\n[18] La clave de la red no viaja y no se le cree a cualquiera');
+  const bueno = await resumenFirmado(pcs.A.puerto, CLAVE);
+  ok(bueno.res.status === 200 && !!bueno.res.headers.get('x-red-prueba'), 'un pedido firmado con la clave correcta se contesta, y la respuesta trae la prueba');
+  ok(!JSON.stringify(bueno.cabeceras).includes(CLAVE), 'la clave no va en el pedido (sólo la firma)');
+  // El mismo pedido repetido (alguien lo capturó) no vale.
+  const repetido = await fetch(`http://127.0.0.1:${pcs.A.puerto}/api/sync/resumen`, { headers: bueno.cabeceras });
+  ok(repetido.status === 401, 'repetir un pedido ya hecho no funciona (401)');
+  const otraClave = await resumenFirmado(pcs.A.puerto, 'x'.repeat(48));
+  ok(otraClave.res.status === 401, 'firmar con otra clave no funciona (401)');
+  const otraRuta = await fetch(`http://127.0.0.1:${pcs.A.puerto}/api/sync/cambios?desde=0`, { headers: bueno.cabeceras });
+  ok(otraRuta.status === 401, 'una firma no sirve para pedir otra cosa (401)');
+
+  // Un aparato cualquiera en la red que se hace pasar por una PC del negocio.
+  const visto = { cabeceras: [], pedidos: 0 };
+  const falso = require('http').createServer((req, res) => {
+    visto.pedidos += 1;
+    visto.cabeceras.push(JSON.stringify(req.headers) + req.url);
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({
+        ok: true,
+        data: {
+          idPc: 'impostor-id', epoca: 'x', hasta: 1, maxSeq: 1, idRed: 'x', nombrePc: 'IMPOSTOR', pares: [],
+          items: [
+            { c: 'articulos', id: { $oid: 'aaaaaaaaaaaaaaaaaaaaaaaa' }, seq: 1, inc: 0, del: null,
+              clocks: { descripcion: '999999999999999-0000-z' }, doc: { descripcion: 'HACKEADO', activo: true, stockBase: 5 } },
+          ],
+        },
+      })
+    );
+  });
+  await new Promise((r) => falso.listen(4998, '127.0.0.1', r));
+  await detener(pcs.B);
+  escribirConfig(pcs.B, {
+    pares: [
+      { idPc: pcs.A.idPc, nombre: 'PC-A', direccion: `127.0.0.1:${pcs.A.puerto}` },
+      { idPc: 'impostor-id', nombre: 'IMPOSTOR', direccion: '127.0.0.1:4998' },
+    ],
+  });
+  await iniciar(pcs.B);
+  await hasta(async () => visto.pedidos > 0, 'que B le pregunte al impostor', 30000);
+  await esperar(4000);
+  ok(!visto.cabeceras.join('\n').includes(CLAVE), 'el impostor recibió pedidos pero nunca vio la clave');
+  ok(!(await porDescripcion(pcs.B, 'HACKEADO')), 'y nada de lo que contestó se aplicó (no trae la prueba de la red)');
+  await new Promise((r) => falso.close(r));
+
+  // ---- 19. Se pierde o se rompe el archivo de configuración ----
+  log('\n[19] Se pierde o se rompe el archivo de configuración de una PC');
+  const archivoConfig = path.join(pcs.B.carpeta, 'configuracion-pc.json');
+  const idDe = async (pc) => (await (await fetch(`http://127.0.0.1:${pc.puerto}/api/sistema/info`)).json()).data.idPc;
+  await detener(pcs.B);
+  escribirConfig(pcs.B);
+  await iniciar(pcs.B); // arranca normal: la base guarda su identidad
+  await esperar(1500);
+  await detener(pcs.B);
+  for (const extra of ['', '.bak', '.tmp']) fs.rmSync(archivoConfig + extra, { force: true });
+  await iniciar(pcs.B);
+  ok((await idDe(pcs.B)) === pcs.B.idPc, 'sin el archivo, la PC recupera su identificador desde la base (no se hace pasar por otra)');
+  await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'TRAS PERDER LA CONFIG', stock: 2 }));
+  await hasta(async () => porDescripcion(pcs.B, 'TRAS PERDER LA CONFIG'), 'que B siga sincronizando sin su archivo', 90000);
+  ok(true, 'y sigue sincronizando con la otra PC como si nada');
+
+  await detener(pcs.B);
+  fs.writeFileSync(archivoConfig, '{ "idPc": "se cortó la luz');
+  fs.rmSync(archivoConfig + '.bak', { force: true });
+  await iniciar(pcs.B);
+  ok((await idDe(pcs.B)) === pcs.B.idPc, 'con el archivo roto a medio escribir, también recupera su identificador');
+  await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'TRAS ARCHIVO ROTO', stock: 2 }));
+  await hasta(async () => porDescripcion(pcs.B, 'TRAS ARCHIVO ROTO'), 'que B siga sincronizando con el archivo roto', 90000);
+  ok(true, 'y sigue sincronizando');
+  await hasta(coinciden, 'que coincidan al final', 40000);
+  ok(true, 'las dos terminan iguales');
+}
+
 async function todo() {
   await main();
+  await extras();
   await migracion();
   await copiaGuardada();
 }

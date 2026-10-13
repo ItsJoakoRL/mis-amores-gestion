@@ -67,6 +67,19 @@ async function main() {
     porDescripcion.get(k).push(a);
   }
 
+  // El stock de un artículo es "stock inicial (stockBase) + suma de sus
+  // movimientos": al fijar el stock real desde acá hay que dejar también el
+  // stockBase que hace cerrar esa cuenta (si no, la app lo recalcula y lo
+  // vuelve al valor anterior).
+  const sumaMovimientos = new Map();
+  for (const m of await db
+    .collection('movimientos_stock')
+    .aggregate([{ $group: { _id: '$articuloId', total: { $sum: '$cantidad' } } }])
+    .toArray()) {
+    sumaMovimientos.set(String(m._id), m.total);
+  }
+  const redondear = (n) => Math.round(n * 1000) / 1000;
+
   const ahora = new Date().toISOString();
   let actualizados = 0;
   let creados = 0;
@@ -88,6 +101,7 @@ async function main() {
             $set: {
               precioVenta: item.precioVenta,
               stock,
+              stockBase: redondear(stock - (sumaMovimientos.get(String(actual._id)) ?? 0)),
               stockMinimo: item.stockMinimo,
               stockIdeal: item.stockIdeal,
               familiaId,
@@ -112,6 +126,7 @@ async function main() {
         precioLista3: 0,
         utilidadPct: 0,
         stock,
+        stockBase: stock,
         stockMinimo: item.stockMinimo,
         stockIdeal: item.stockIdeal,
         unidad: 'unidad',

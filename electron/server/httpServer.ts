@@ -154,7 +154,8 @@ export function obtenerIpsLan(): string[] {
 export async function iniciarServidorWeb(
   distDir: string,
   infoPc: () => InfoPc,
-  sync: Omit<DepsRutasSync, 'requiereAdmin'>
+  // null: la sincronización no pudo arrancar; igual se atiende a los celulares.
+  sync: Omit<DepsRutasSync, 'requiereAdmin'> | null
 ): Promise<InfoServidorWeb> {
   const app = express();
   app.use(cors());
@@ -203,7 +204,7 @@ export async function iniciarServidorWeb(
         // Los productos que vinieron de una base anterior no tienen "stock
         // inicial": se les calcula para que el stock siga cerrando, y se anota
         // en el diario para que las otras PCs también lo reciban.
-        if (simular === false) {
+        if (simular === false && sync) {
           await completarStockBase(sync.diario);
           await sync.diario.barrer({ colecciones: ['articulos'], marcaNuevos: 'ahora' });
         }
@@ -249,7 +250,15 @@ export async function iniciarServidorWeb(
   );
 
   // --- Sincronización entre PCs (ver sync/rutas.ts) ---
-  registrarRutasSync(app, { ...sync, requiereAdmin: (req) => void requiereAdmin(req) });
+  if (sync) {
+    registrarRutasSync(app, { ...sync, requiereAdmin: (req) => void requiereAdmin(req) });
+  } else {
+    // La sincronización de esta PC no pudo arrancar: que las otras PCs lo
+    // sepan (en vez de creer que esta tiene una versión que no sabe sincronizar).
+    app.all('/api/sync/*splat', (_req, res) => {
+      res.json({ ok: false, error: 'La sincronización de esta PC no pudo arrancar. Reiniciá Mis Amores en esa PC.' });
+    });
+  }
 
   // --- Auth ---
   app.post(

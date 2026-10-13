@@ -696,6 +696,64 @@ function pausa(ms: number): Promise<void> {
 function guardarPares(pares: ParConfig[]) {
   guardarConfiguracion({ ...config, pares });
   config = leerConfiguracion();
+  void guardarIdentidadEnBase();
+}
+
+// Una segunda copia de quién es esta PC en la red (su identificador, la clave y
+// las otras PCs), en la propia base: si el archivo de configuración se pierde,
+// la PC no se queda sin red ni obliga a volver a sumarla (lo que borraría sus
+// datos). No se sincroniza con las otras PCs. Va atada a esta máquina: si la
+// base se clona en otra PC (exportar / importar), la copia NO vale ahí, y las
+// dos PCs no terminan con el mismo identificador.
+function huellaDeEstaMaquina(): string {
+  return crypto.createHash('sha1').update(`${os.hostname()}|${app.getPath('userData')}`).digest('hex');
+}
+
+async function guardarIdentidadEnBase(): Promise<void> {
+  try {
+    if (!config.claveRed) return;
+    await getDbCruda()
+      .collection<{ _id: string }>('ajustes_sistema')
+      .updateOne(
+        { _id: 'red' },
+        {
+          $set: {
+            idPc: config.idPc,
+            claveRed: config.claveRed,
+            pares: config.pares,
+            maquina: huellaDeEstaMaquina(),
+          },
+        },
+        { upsert: true }
+      );
+  } catch (err) {
+    logCrash('red', err);
+  }
+}
+
+async function restaurarIdentidadDesdeBase(): Promise<void> {
+  // Sólo si la configuración parece recién creada: sin clave, sin otras PCs.
+  if (config.claveRed || config.pares.length > 0 || config.inicial === 'traer') return;
+  try {
+    const doc = await getDbCruda()
+      .collection<{ _id: string; idPc?: string; claveRed?: string; pares?: ParConfig[]; maquina?: string }>(
+        'ajustes_sistema'
+      )
+      .findOne({ _id: 'red' });
+    if (
+      doc &&
+      doc.maquina === huellaDeEstaMaquina() &&
+      typeof doc.idPc === 'string' &&
+      typeof doc.claveRed === 'string' &&
+      doc.claveRed
+    ) {
+      guardarConfiguracion({ ...config, idPc: doc.idPc, claveRed: doc.claveRed, pares: Array.isArray(doc.pares) ? doc.pares : [] });
+      config = leerConfiguracion();
+      logCrash('red', 'se recuperó la identidad de la red desde la base (faltaba el archivo de configuración)');
+    }
+  } catch (err) {
+    logCrash('red', err);
+  }
 }
 
 // --- Sumar esta PC a la red de otra ---
@@ -744,6 +802,7 @@ async function adoptarRed(union: RespuestaUnirse, direccion: string): Promise<vo
   config = leerConfiguracion();
   await motor.aplicarDescarga(par, descarga);
   await diario.marcarBarrido();
+  await guardarIdentidadEnBase();
   motor.agregarPar(par);
   for (const otro of union.pares) if (otro.idPc !== config.idPc) motor.agregarPar(otro);
 
@@ -813,6 +872,7 @@ async function salirDeLaRed(): Promise<boolean> {
     nombreAnterior: null,
   });
   config = leerConfiguracion();
+  await guardarIdentidadEnBase();
   logCrash('red', 'esta PC salió de la red');
   return true;
 }
@@ -919,6 +979,7 @@ async function primeraSincronizacion(): Promise<boolean> {
 // sincronizar. Devuelve false si todavía no se pueden usar los datos.
 async function prepararSincronizacion(): Promise<boolean> {
   const db = getDbCruda();
+  await restaurarIdentidadDesdeBase();
   diario = new Diario(db, new Reloj(config.idPc), config.idPc);
   diario.alFallar = (etiqueta, err) => logCrash(etiqueta, err);
   await diario.iniciar();
@@ -965,24 +1026,30 @@ async function prepararSincronizacion(): Promise<boolean> {
   await d.barrer({ marcaNuevos: primera ? 'base' : 'ahora' });
   await d.marcarBarrido();
   await recalcularTodoElStock(d);
+  await guardarIdentidadEnBase();
   return true;
 }
 
 // Cada tanto: encuentra lo que se haya cambiado sin pasar por el diario y
 // deja el stock cerrando con los movimientos.
 function iniciarMantenimiento() {
+  let vuelta = 0;
   const tarea = async () => {
     if (!diario) return;
     try {
+      vuelta += 1;
       await completarStockBase(diario);
       await diario.barrer({ marcaNuevos: 'ahora' });
-      await recalcularTodoElStock(diario);
+      // Recalcular todo el stock es más pesado: una vez por hora alcanza (cada
+      // cambio que llega o se hace acá ya deja su stock bien).
+      if (vuelta % 2 === 1) await recalcularTodoElStock(diario);
+      await guardarIdentidadEnBase();
     } catch (err) {
       logCrash('mantenimiento', err);
     }
   };
-  setTimeout(() => void tarea(), 60_000);
-  temporizadorMantenimiento = setInterval(() => void tarea(), 10 * 60_000);
+  setTimeout(() => void tarea(), 2 * 60_000);
+  temporizadorMantenimiento = setInterval(() => void tarea(), 30 * 60_000);
 }
 
 function escaparHtml(texto: string): string {
@@ -1116,6 +1183,8 @@ async function arrancar(): Promise<boolean> {
     logCrash('sync-arranque', err);
     instalarDiario(null);
     motor = null;
+    diario = null;
+    aplicador = null;
   }
   if (!datosListos) {
     estadoArranque = 'esperando';
@@ -1152,7 +1221,7 @@ async function arrancar(): Promise<boolean> {
             alVerPar: (idPc: string) => motor?.alVerPar(idPc),
           }
         : null;
-    if (!sync) throw new Error('La sincronización no está disponible: sólo se atiende a los celulares.');
+    // Sin sincronización (falló al armarse) igual se atiende a los celulares.
     const { detener, ...infoParaRenderer } = await iniciarServidorWeb(path.join(__dirname, '../../dist'), infoPc, sync);
     // infoServidorWeb se manda tal cual al renderer por IPC (ver
     // sistemaInfoRed más abajo) — "detener" no viaja ahí porque una función
