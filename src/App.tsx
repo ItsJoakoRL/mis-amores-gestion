@@ -7,6 +7,7 @@ import ArticulosPage from './modules/articulos/ArticulosPage';
 import VentasPage from './modules/ventas/VentasPage';
 import ReportesPage from './modules/reportes/ReportesPage';
 import ClientesPage from './modules/clientes/ClientesPage';
+import RecordatoriosPage from './modules/recordatorios/RecordatoriosPage';
 import UsuariosPage from './modules/usuarios/UsuariosPage';
 import ConfiguracionPage from './modules/configuracion/ConfiguracionPage';
 
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/ventas" element={<VentasPage />} />
         <Route path="/reportes" element={<ReportesPage />} />
         <Route path="/clientes" element={<ClientesPage />} />
+        <Route path="/recordatorios" element={<RecordatoriosPage />} />
         <Route path="/usuarios" element={esAdmin ? <UsuariosPage /> : <Navigate to="/" replace />} />
         <Route
           path="/configuracion"

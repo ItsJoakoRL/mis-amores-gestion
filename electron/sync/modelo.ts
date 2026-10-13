@@ -15,6 +15,7 @@ export const COLECCIONES_REPLICADAS = [
   'ajustes_cuenta',
   'movimientos_stock',
   'historial_precios',
+  'recordatorios',
 ] as const;
 export type ColeccionReplicada = (typeof COLECCIONES_REPLICADAS)[number];
 
@@ -45,6 +46,12 @@ export const REFERENCIAS: Record<string, Record<string, ColeccionReplicada>> = {
   ajustes_cuenta: { clienteId: 'clientes', usuarioId: 'usuarios' },
   movimientos_stock: { articuloId: 'articulos', usuarioId: 'usuarios' },
   historial_precios: { articuloId: 'articulos', usuarioId: 'usuarios' },
+  recordatorios: {
+    creadoPorId: 'usuarios',
+    hechoPorId: 'usuarios',
+    articuloId: 'articulos',
+    clienteId: 'clientes',
+  },
 };
 
 // Colecciones donde dos documentos "iguales" cargados a la vez en PCs

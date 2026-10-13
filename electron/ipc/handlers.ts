@@ -57,7 +57,15 @@ import {
   eliminarPago,
   eliminarAjuste,
 } from '../repositories/clientes';
-import type { ClienteInput, MetodoPago, VentaInput } from '../../shared/types';
+import {
+  listRecordatorios,
+  resumenRecordatorios,
+  crearRecordatorio,
+  actualizarRecordatorio,
+  marcarRecordatorioHecho,
+  eliminarRecordatorio,
+} from '../repositories/recordatorios';
+import type { ClienteInput, MetodoPago, RecordatorioInput, VentaInput } from '../../shared/types';
 
 // Envuelve cada handler para devolver siempre { ok, data } o { ok:false, error },
 // así el renderer nunca tiene que lidiar con excepciones sin capturar de IPC.
@@ -405,6 +413,46 @@ export function registrarHandlers() {
       if (tipo === 'venta') await eliminarVenta(id, sesion.id);
       else if (tipo === 'pago') await eliminarPago(id);
       else await eliminarAjuste(id);
+      return true;
+    })
+  );
+
+  // --- Recordatorios (cualquiera con sesión los ve, los anota y los marca) ---
+  ipcMain.handle(Channels.recordatoriosList, (_e, estado: 'pendientes' | 'hechos') =>
+    wrap(() => {
+      requiereSesion();
+      return listRecordatorios(estado === 'hechos' ? 'hechos' : 'pendientes');
+    })
+  );
+  ipcMain.handle(Channels.recordatoriosResumen, () =>
+    wrap(() => {
+      requiereSesion();
+      return resumenRecordatorios();
+    })
+  );
+  ipcMain.handle(Channels.recordatoriosCrear, (_e, input: RecordatorioInput) =>
+    wrap(() => {
+      const sesion = requiereSesion();
+      return crearRecordatorio(input, sesion.id);
+    })
+  );
+  ipcMain.handle(Channels.recordatoriosActualizar, (_e, id: string, input: RecordatorioInput) =>
+    wrap(() => {
+      requiereSesion();
+      return actualizarRecordatorio(id, input);
+    })
+  );
+  ipcMain.handle(Channels.recordatoriosMarcarHecho, (_e, id: string, hecho: boolean) =>
+    wrap(async () => {
+      const sesion = requiereSesion();
+      await marcarRecordatorioHecho(id, hecho === true, sesion.id);
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.recordatoriosEliminar, (_e, id: string) =>
+    wrap(async () => {
+      const sesion = requiereSesion();
+      await eliminarRecordatorio(id, sesion.id, sesion.rol === 'admin');
       return true;
     })
   );

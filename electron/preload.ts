@@ -26,6 +26,9 @@ import type {
   Cliente,
   ClienteInput,
   MovimientoCuenta,
+  Recordatorio,
+  RecordatorioInput,
+  ResumenRecordatorios,
   InfoRed,
   InfoActualizacion,
   EstadoRed,
@@ -116,6 +119,16 @@ const api = {
       invoke<boolean>(Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
     eliminarMovimiento: (tipo: 'venta' | 'pago' | 'ajuste', id: string) =>
       invoke<boolean>(Channels.clientesEliminarMovimiento, tipo, id),
+  },
+  recordatorios: {
+    list: (estado: 'pendientes' | 'hechos' = 'pendientes') =>
+      invoke<Recordatorio[]>(Channels.recordatoriosList, estado),
+    resumen: () => invoke<ResumenRecordatorios>(Channels.recordatoriosResumen),
+    crear: (input: RecordatorioInput) => invoke<Recordatorio>(Channels.recordatoriosCrear, input),
+    actualizar: (id: string, input: RecordatorioInput) =>
+      invoke<Recordatorio>(Channels.recordatoriosActualizar, id, input),
+    marcarHecho: (id: string, hecho: boolean) => invoke<boolean>(Channels.recordatoriosMarcarHecho, id, hecho),
+    eliminar: (id: string) => invoke<boolean>(Channels.recordatoriosEliminar, id),
   },
   usuarios: {
     list: () => invoke<Usuario[]>(Channels.usuariosList),

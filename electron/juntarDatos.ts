@@ -31,6 +31,7 @@ export const COLECCIONES_A_JUNTAR = [
   'ajustes_cuenta',
   'movimientos_stock',
   'historial_precios',
+  'recordatorios',
 ] as const;
 type NombreColeccion = (typeof COLECCIONES_A_JUNTAR)[number];
 
@@ -134,6 +135,7 @@ function resumenVacio(): ResumenJuntar {
     movimientosNuevos: 0,
     historialNuevo: 0,
     imagenesCopiadas: 0,
+    recordatoriosNuevos: 0,
     avisos: [],
   };
 }
@@ -172,11 +174,12 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
   ]);
   const idsDe = async (nombre: string) =>
     new Set((await db.collection(nombre).find({}, { projection: { _id: 1 } }).toArray()).map((d) => hex(d._id)));
-  const [idsVentas, idsPagos, idsAjustes, idsMovimientos] = await Promise.all([
+  const [idsVentas, idsPagos, idsAjustes, idsMovimientos, idsRecordatorios] = await Promise.all([
     idsDe('ventas'),
     idsDe('pagos_cuenta'),
     idsDe('ajustes_cuenta'),
     idsDe('movimientos_stock'),
+    idsDe('recordatorios'),
   ]);
   const idsHistorial = new Set(historialD.map((h) => hex(h._id)));
 
@@ -439,6 +442,16 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
   const movimientosNuevos = origen.movimientos_stock
     .filter((m) => !idsMovimientos.has(hex(m._id)))
     .map((m) => ({ ...m, articuloId: remapear(mapaArticulos, m.articuloId), usuarioId: remapear(usuarios.mapa, m.usuarioId) }));
+  const recordatoriosNuevos = origen.recordatorios
+    .filter((r) => !idsRecordatorios.has(hex(r._id)))
+    .map((r) => ({
+      ...r,
+      creadoPorId: remapear(usuarios.mapa, r.creadoPorId),
+      hechoPorId: r.hechoPorId ? remapear(usuarios.mapa, r.hechoPorId) : null,
+      articuloId: r.articuloId ? remapear(mapaArticulos, r.articuloId) : null,
+      clienteId: r.clienteId ? remapear(clientes.mapa, r.clienteId) : null,
+    }));
+  resumen.recordatoriosNuevos = recordatoriosNuevos.length;
   resumen.ventasNuevas = ventasNuevas.length;
   resumen.pagosNuevos = pagosNuevos.length;
   resumen.ajustesNuevos = ajustesNuevos.length;
@@ -509,6 +522,7 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
       });
   }
   await insertar('movimientos_stock', movimientosNuevos);
+  await insertar('recordatorios', recordatoriosNuevos);
 
   return resumen;
 }

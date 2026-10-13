@@ -183,6 +183,14 @@ export function crearWebApiClient(): Api {
         req('POST', `/api/clientes/${clienteId}/pago`, { monto, nota, metodoPago }),
       eliminarMovimiento: (tipo, id) => req('DELETE', `/api/clientes/movimientos/${tipo}/${id}`),
     },
+    recordatorios: {
+      list: (estado = 'pendientes') => req('GET', `/api/recordatorios${query({ estado })}`),
+      resumen: () => req('GET', '/api/recordatorios/resumen'),
+      crear: (input) => req('POST', '/api/recordatorios', input),
+      actualizar: (id, input) => req('PUT', `/api/recordatorios/${id}`, input),
+      marcarHecho: (id, hecho) => req('POST', `/api/recordatorios/${id}/hecho`, { hecho }),
+      eliminar: (id) => req('DELETE', `/api/recordatorios/${id}`),
+    },
     usuarios: {
       list: () => req('GET', '/api/usuarios'),
       crear: (nombre, usuario, password, rol: Rol, genero: Genero) =>

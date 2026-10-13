@@ -23,6 +23,7 @@ const COLECCIONES_DE_DATOS = new Set([
   'marcas',
   'proveedores',
   'usuarios',
+  'recordatorios',
 ]);
 
 const emisor = new EventEmitter();

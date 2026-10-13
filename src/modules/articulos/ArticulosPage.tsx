@@ -1,6 +1,8 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  BellRing,
   Plus,
   Search,
   AlertTriangle,
@@ -45,6 +47,13 @@ export default function ArticulosPage() {
   const [cartelExito, setCartelExito] = useState<string | null>(null);
   const [mostrandoArmarCuenta, setMostrandoArmarCuenta] = useState(false);
 
+  // Si se llegó desde un recordatorio ("ajustar el stock de tal producto"),
+  // se abre directo la ventana que corresponde, y al terminar se pregunta si
+  // el recordatorio ya está hecho.
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const recordatorioPendiente = useRef<string | null>(null);
+
   const [modoSeleccion, setModoSeleccion] = useState(false);
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
 
@@ -53,6 +62,38 @@ export default function ArticulosPage() {
   // quiera ver más hace click, en vez de renderizar todo siempre.
   const TANDA = 100;
   const [limiteVisible, setLimiteVisible] = useState(TANDA);
+
+  useEffect(() => {
+    const id = params.get('abrir');
+    if (!id) return;
+    const accion = params.get('accion');
+    recordatorioPendiente.current = params.get('recordatorio');
+    setParams({}, { replace: true });
+    window.api.articulos
+      .get(id)
+      .then((a) => {
+        if (!a) {
+          setError('Ese producto ya no existe.');
+          recordatorioPendiente.current = null;
+          return;
+        }
+        if (accion === 'editar') setEditando(a);
+        else setAjustandoStock(a);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo abrir el producto'));
+  }, [params, setParams]);
+
+  function preguntarSiYaEsta() {
+    const id = recordatorioPendiente.current;
+    if (!id) return;
+    recordatorioPendiente.current = null;
+    if (confirm('¿Ya está? ¿Marcar el recordatorio como hecho?')) {
+      window.api.recordatorios
+        .marcarHecho(id, true)
+        .then(() => setCartelExito('Recordatorio marcado como hecho'))
+        .catch(() => {});
+    }
+  }
 
   useEffect(() => {
     if (!mostrandoPapelera) setModoSeleccion(false);
@@ -475,6 +516,13 @@ export default function ArticulosPage() {
                       ) : (
                         <>
                           <button
+                            onClick={() => navigate(`/recordatorios?articulo=${a.id}`)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-orange-50 hover:text-orange-600"
+                            title="Anotar un recordatorio sobre este producto"
+                          >
+                            <BellRing className="h-4 w-4" />
+                          </button>
+                          <button
                             data-tour="art-stock"
                             onClick={() => setAjustandoStock(a)}
                             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
@@ -526,6 +574,7 @@ export default function ArticulosPage() {
           onCerrar={() => {
             setEditando(null);
             setCodigoParaNuevo(undefined);
+            recordatorioPendiente.current = null;
             scanRef.current?.focus();
           }}
           onGuardado={() => {
@@ -534,6 +583,7 @@ export default function ArticulosPage() {
             setCodigoParaNuevo(undefined);
             cargar();
             scanRef.current?.focus();
+            preguntarSiYaEsta();
           }}
         />
       )}
@@ -545,12 +595,14 @@ export default function ArticulosPage() {
           articulo={ajustandoStock}
           onCerrar={() => {
             setAjustandoStock(null);
+            recordatorioPendiente.current = null;
             scanRef.current?.focus();
           }}
           onGuardado={() => {
             setAjustandoStock(null);
             cargar();
             scanRef.current?.focus();
+            preguntarSiYaEsta();
           }}
         />
       )}

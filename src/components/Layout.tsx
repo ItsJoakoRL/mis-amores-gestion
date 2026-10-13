@@ -19,14 +19,16 @@ import {
   IceCreamCone,
   Milk,
   Settings,
+  BellRing,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
 import IndicadorRed from './IndicadorRed';
+import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
-type AcentoNav = 'brand' | 'sky' | 'emerald' | 'violet' | 'amber' | 'rose' | 'slate';
+type AcentoNav = 'brand' | 'sky' | 'emerald' | 'violet' | 'amber' | 'orange' | 'rose' | 'slate';
 
 // Mismos productos de almacén que en el login, pero bien tenues sobre fondo
 // claro — para que las pantallas con poco contenido (ej. el Panel) no se
@@ -59,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/ventas', label: 'Calendario', icon: Calendar, color: 'emerald' },
   { to: '/reportes', label: 'Reportes', icon: BarChart3, color: 'violet' },
   { to: '/clientes', label: 'Clientes (fiado)', icon: Contact, color: 'amber' },
+  { to: '/recordatorios', label: 'Recordatorios', icon: BellRing, color: 'orange' },
   { to: '/usuarios', label: 'Usuarios', icon: Users, color: 'rose', soloAdmin: true },
   { to: '/configuracion', label: 'Configuración', icon: Settings, color: 'slate', soloAdmin: true, soloEscritorio: true },
 ];
@@ -71,6 +74,7 @@ const NAV_ACTIVO: Record<AcentoNav, string> = {
   emerald: 'bg-emerald-50 text-emerald-700',
   violet: 'bg-violet-50 text-violet-700',
   amber: 'bg-amber-50 text-amber-700',
+  orange: 'bg-orange-50 text-orange-700',
   rose: 'bg-rose-50 text-rose-700',
   slate: 'bg-slate-100 text-slate-700',
 };
@@ -80,6 +84,7 @@ const NAV_ICONO: Record<AcentoNav, string> = {
   emerald: 'text-emerald-500',
   violet: 'text-violet-500',
   amber: 'text-amber-500',
+  orange: 'text-orange-500',
   rose: 'text-rose-500',
   slate: 'text-slate-500',
 };
@@ -93,6 +98,9 @@ export default function Layout() {
   // Vive acá (no en una pantalla en particular) para que el aviso de versión
   // nueva se vea desde cualquier parte de la app, no sólo desde el Panel.
   const infoActualizacion = useActualizacion();
+  // Cuántos recordatorios pendientes hay: se muestra en el menú, así se nota
+  // desde cualquier pantalla que hay algo para hacer.
+  const recordatorios = useResumenRecordatorios();
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-[#f5f8fd]">
@@ -189,6 +197,20 @@ export default function Layout() {
             >
               <item.icon className={`h-4 w-4 ${item.proximamente ? '' : NAV_ICONO[item.color]}`} />
               <span className="flex-1">{item.label}</span>
+              {item.to === '/recordatorios' && recordatorios && recordatorios.pendientes > 0 && (
+                <span
+                  className={`min-w-[1.4rem] rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold text-white ${
+                    recordatorios.urgentes > 0 || recordatorios.vencidos > 0 ? 'bg-red-500' : 'bg-orange-500'
+                  }`}
+                  title={
+                    recordatorios.urgentes > 0 || recordatorios.vencidos > 0
+                      ? `${recordatorios.pendientes} pendientes (hay urgentes o vencidos)`
+                      : `${recordatorios.pendientes} pendientes`
+                  }
+                >
+                  {recordatorios.pendientes}
+                </span>
+              )}
               {item.proximamente && (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-400">Pronto</span>
               )}

@@ -49,6 +49,13 @@ export const Channels = {
   clientesRegistrarPago: 'clientes:registrarPago',
   clientesEliminarMovimiento: 'clientes:eliminarMovimiento',
 
+  recordatoriosList: 'recordatorios:list',
+  recordatoriosResumen: 'recordatorios:resumen',
+  recordatoriosCrear: 'recordatorios:crear',
+  recordatoriosActualizar: 'recordatorios:actualizar',
+  recordatoriosMarcarHecho: 'recordatorios:marcarHecho',
+  recordatoriosEliminar: 'recordatorios:eliminar',
+
   usuariosList: 'usuarios:list',
   usuariosCreate: 'usuarios:create',
   usuariosUpdate: 'usuarios:update',

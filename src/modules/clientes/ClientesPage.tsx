@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { UserPlus, X, Wallet, Clock, Trash2, Search, StickyNote, CheckCircle2, Circle } from 'lucide-react';
+import { UserPlus, X, Wallet, Clock, Trash2, Search, StickyNote, CheckCircle2, Circle, BellRing } from 'lucide-react';
 import type { Cliente, MetodoPago, MovimientoCuenta, Venta } from '@shared/types';
 import { formatearCantidad, formatearMoneda, formatearMonedaConCentavos, parsearMonto } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
@@ -69,6 +70,12 @@ export default function ClientesPage() {
   const [mostrarNuevo, setMostrarNuevo] = useState(false);
   const [clienteAbierto, setClienteAbierto] = useState<Cliente | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Si se llegó desde un recordatorio ("cobrarle a tal cliente"), se abre
+  // directo su cuenta (o el pago), y al terminar se pregunta si ya está hecho.
+  const [params, setParams] = useSearchParams();
+  const [abrirPago, setAbrirPago] = useState(false);
+  const pendienteAbrir = useRef<{ id: string; accion: string | null; recordatorio: string | null } | null>(null);
+  const recordatorioPendiente = useRef<string | null>(null);
   const [ultimosFiados, setUltimosFiados] = useState<Venta[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [soloConDeuda, setSoloConDeuda] = useState(false);
@@ -88,6 +95,36 @@ export default function ClientesPage() {
 
   useEffect(() => cargar(), []);
   useRecargarAlVolver(() => cargar(true));
+
+  useEffect(() => {
+    const id = params.get('abrir');
+    if (!id) return;
+    pendienteAbrir.current = { id, accion: params.get('accion'), recordatorio: params.get('recordatorio') };
+    setParams({}, { replace: true });
+  }, [params, setParams]);
+
+  useEffect(() => {
+    const p = pendienteAbrir.current;
+    if (!p || cargando) return;
+    pendienteAbrir.current = null;
+    const c = clientes.find((x) => x.id === p.id);
+    if (!c) {
+      setError('Ese cliente ya no está en la lista.');
+      return;
+    }
+    recordatorioPendiente.current = p.recordatorio;
+    setAbrirPago(p.accion === 'pago');
+    setClienteAbierto(c);
+  }, [clientes, cargando]);
+
+  function preguntarSiYaEsta() {
+    const id = recordatorioPendiente.current;
+    if (!id) return;
+    recordatorioPendiente.current = null;
+    if (confirm('¿Ya está? ¿Marcar el recordatorio como hecho?')) {
+      window.api.recordatorios.marcarHecho(id, true).catch(() => {});
+    }
+  }
 
   const totalDeuda = clientes.reduce((acc, c) => acc + Math.max(c.saldo, 0), 0);
   const cantidadConDeuda = clientes.filter((c) => c.saldo > 0).length;
@@ -315,8 +352,16 @@ export default function ClientesPage() {
       {clienteAbierto && (
         <ClienteDetalleModal
           cliente={clienteAbierto}
-          onCerrar={() => setClienteAbierto(null)}
-          onCambio={cargar}
+          abrirPago={abrirPago}
+          onCerrar={() => {
+            setClienteAbierto(null);
+            setAbrirPago(false);
+            recordatorioPendiente.current = null;
+          }}
+          onCambio={() => {
+            cargar();
+            preguntarSiYaEsta();
+          }}
         />
       )}
     </div>
@@ -461,16 +506,20 @@ function NuevoClienteModal({
 
 function ClienteDetalleModal({
   cliente,
+  abrirPago,
   onCerrar,
   onCambio,
 }: {
   cliente: Cliente;
+  /** Abrir directo el cuadro para registrar un pago (viene de un recordatorio). */
+  abrirPago?: boolean;
   onCerrar: () => void;
   onCambio: () => void;
 }) {
+  const navigate = useNavigate();
   const [movimientos, setMovimientos] = useState<MovimientoCuenta[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [mostrarPago, setMostrarPago] = useState(false);
+  const [mostrarPago, setMostrarPago] = useState(abrirPago === true);
 
   function cargar() {
     setCargando(true);
@@ -540,6 +589,14 @@ function ClienteDetalleModal({
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => navigate(`/recordatorios?cliente=${cliente.id}`)}
+              title="Anotar un recordatorio sobre este cliente (por ejemplo, cobrarle)"
+            >
+              <BellRing className="h-4 w-4" />
+              Recordatorio
+            </button>
             <button className="btn-primary" onClick={() => setMostrarPago(true)}>
               Registrar pago
             </button>

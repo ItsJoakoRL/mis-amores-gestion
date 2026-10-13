@@ -594,7 +594,11 @@ export class Motor {
   }
 
   private iguales(a: ResumenRed, b: ResumenRed): boolean {
-    return COLECCIONES_REPLICADAS.every((c) => a[c]?.huella === b[c]?.huella && a[c]?.vivos === b[c]?.vivos);
+    // Sólo lo que las dos conocen: una PC con una versión más vieja puede no
+    // tener alguna colección nueva.
+    return COLECCIONES_REPLICADAS.every(
+      (c) => !a[c] || !b[c] || (a[c].huella === b[c].huella && a[c].vivos === b[c].vivos)
+    );
   }
 
   /** Compara con cada PC en línea; si no coincide (y sigue sin coincidir un

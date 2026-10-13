@@ -18,6 +18,11 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       texto: 'Si algún producto se está por terminar, te lo marca acá para que sepas qué reponer.',
     },
     {
+      selector: '[data-tour="panel-recordatorios"]',
+      titulo: 'Recordatorios',
+      texto: 'Lo que hay para hacer o cambiar, anotado entre todas. Tocá acá para ver la lista completa o anotar algo.',
+    },
+    {
       selector: '[data-tour="panel-ventas-hoy"]',
       titulo: 'Ventas de hoy',
       texto: 'Tocá acá para ver el detalle de lo que se vendió hoy, o entrá al Calendario para ver otros días.',
@@ -105,6 +110,20 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       selector: '[data-tour="cli-ultimos-fiados"]',
       titulo: 'Últimos fiados',
       texto: 'Acá ves los últimos fiados de todos los clientes juntos, sin entrar uno por uno.',
+    },
+  ],
+  Recordatorios: [
+    {
+      selector: '[data-tour="rec-nuevo"]',
+      titulo: 'Anotar algo',
+      texto:
+        'Escribí lo que hay que hacer o cambiar, elegí para qué es y, si corre apuro, ponele un día o marcalo como urgente. Lo ven todas, en las PCs y en los celulares.',
+    },
+    {
+      selector: '[data-tour="rec-lista"]',
+      titulo: 'Pendientes y hechos',
+      texto:
+        'Cuando alguien lo hace, toca el círculo para marcarlo como hecho: queda anotado quién lo hizo. En el menú de la izquierda aparece cuántos quedan pendientes.',
     },
   ],
   Configuración: [

@@ -76,6 +76,14 @@ import {
   eliminarPago,
   eliminarAjuste,
 } from '../repositories/clientes';
+import {
+  listRecordatorios,
+  resumenRecordatorios,
+  crearRecordatorio,
+  actualizarRecordatorio,
+  marcarRecordatorioHecho,
+  eliminarRecordatorio,
+} from '../repositories/recordatorios';
 
 // La versión "en vivo" (desarrollo) usa un puerto distinto al de la app
 // instalada de verdad — así se puede tener las dos abiertas a la vez sin que
@@ -578,6 +586,52 @@ export async function iniciarServidorWeb(
       if (tipo === 'venta') await eliminarVenta(id, sesion.id);
       else if (tipo === 'pago') await eliminarPago(id);
       else await eliminarAjuste(id);
+      return true;
+    })
+  );
+
+  // --- Recordatorios ---
+  app.get(
+    '/api/recordatorios/resumen',
+    ruta((req) => {
+      requiereSesion(req);
+      return resumenRecordatorios();
+    })
+  );
+  app.get(
+    '/api/recordatorios',
+    ruta((req) => {
+      requiereSesion(req);
+      return listRecordatorios(req.query.estado === 'hechos' ? 'hechos' : 'pendientes');
+    })
+  );
+  app.post(
+    '/api/recordatorios',
+    ruta((req) => {
+      const sesion = requiereSesion(req);
+      return crearRecordatorio(req.body, sesion.id);
+    })
+  );
+  app.put(
+    '/api/recordatorios/:id',
+    ruta((req) => {
+      requiereSesion(req);
+      return actualizarRecordatorio(req.params.id as string, req.body);
+    })
+  );
+  app.post(
+    '/api/recordatorios/:id/hecho',
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      await marcarRecordatorioHecho(req.params.id as string, req.body.hecho === true, sesion.id);
+      return true;
+    })
+  );
+  app.delete(
+    '/api/recordatorios/:id',
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      await eliminarRecordatorio(req.params.id as string, sesion.id, sesion.rol === 'admin');
       return true;
     })
   );

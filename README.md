@@ -84,6 +84,10 @@ build-assets/        ícono de la app
 - **admin** (la jefa): acceso total, incluyendo precio de costo, eliminar artículos y gestionar usuarios.
 - **empleado**: puede cargar artículos y stock, pero no ve/edita precio de costo ni puede eliminar ni gestionar usuarios.
 
+## Recordatorios
+
+Pantalla común (en el menú, con el número de pendientes) para anotar lo que hay que hacer, cambiar, reponer o cobrar, con día opcional y marca de urgente, para que todas estén al tanto. Se anotan desde las PCs y los celulares, se sincronizan como el resto de los datos y queda registrado quién lo anotó y quién lo hizo. Cualquiera con sesión los ve y los marca; los borra quien los anotó o una administradora. Un recordatorio puede estar **atado a un producto o a un cliente**: en la lista tiene botones que llevan directo a ajustar su stock, editarlo, ver su cuenta o registrarle un pago (y al terminar pregunta si ya se puede marcar como hecho). También se puede anotar un recordatorio desde la fila de un producto o desde la cuenta de un cliente.
+
 ## Próximos módulos
 
 Proveedores/Compras — pendiente de implementar sobre esta misma base de datos.

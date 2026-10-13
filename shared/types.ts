@@ -247,6 +247,7 @@ export interface ResumenJuntar {
   movimientosNuevos: number;
   historialNuevo: number;
   imagenesCopiadas: number;
+  recordatoriosNuevos: number;
   avisos: string[];
 }
 
@@ -313,6 +314,51 @@ export interface ResumenDiaVentas {
   totalCobrado: number;
   totalFiado: number;
   cantidadVentas: number;
+}
+
+/** Para qué es el recordatorio (sólo para distinguirlos de un vistazo). */
+export type TipoRecordatorio = 'hacer' | 'cambiar' | 'reponer' | 'cobrar' | 'otro';
+
+/** Algo que hay que hacer o cambiar, anotado para que todas estén al tanto. */
+export interface Recordatorio {
+  id: string;
+  texto: string;
+  tipo: TipoRecordatorio;
+  urgente: boolean;
+  /** 'YYYY-MM-DD' (para qué día), o null si no tiene fecha. */
+  paraFecha: string | null;
+  /** Producto al que se refiere (para ir directo a ajustar su stock o editarlo). */
+  articuloId: string | null;
+  /** Cliente al que se refiere (para ir directo a su cuenta o a cobrarle). */
+  clienteId: string | null;
+  /** Nombre del producto o cliente, para mostrarlo. */
+  vinculoNombre: string | null;
+  /** El producto o cliente todavía existe (si no, el atajo no se ofrece). */
+  vinculoExiste: boolean;
+  hecho: boolean;
+  creadoEn: string;
+  creadoPorId: string | null;
+  creadoPorNombre: string | null;
+  hechoEn: string | null;
+  hechoPorNombre: string | null;
+}
+
+export interface RecordatorioInput {
+  texto: string;
+  tipo: TipoRecordatorio;
+  urgente: boolean;
+  paraFecha: string | null;
+  /** Como mucho uno de los dos: a qué producto o cliente se refiere. */
+  articuloId?: string | null;
+  clienteId?: string | null;
+}
+
+export interface ResumenRecordatorios {
+  pendientes: number;
+  urgentes: number;
+  /** Con fecha de un día que ya pasó y sin hacer. */
+  vencidos: number;
+  paraHoy: number;
 }
 
 export interface Cliente {

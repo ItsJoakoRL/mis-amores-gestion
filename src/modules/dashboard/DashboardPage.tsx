@@ -1,8 +1,18 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, DollarSign, PackageX, Boxes, ReceiptText, ArrowRight, Smartphone } from 'lucide-react';
-import type { DashboardStats, ResumenDiaVentas } from '@shared/types';
+import {
+  AlertTriangle,
+  DollarSign,
+  PackageX,
+  Boxes,
+  ReceiptText,
+  ArrowRight,
+  Smartphone,
+  BellRing,
+  Flame,
+} from 'lucide-react';
+import type { DashboardStats, Recordatorio, ResumenDiaVentas } from '@shared/types';
 import { formatearMoneda } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import AccesoCelularModal from './AccesoCelularModal';
@@ -14,6 +24,7 @@ export default function DashboardPage() {
   const { sesion } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [ventasHoy, setVentasHoy] = useState<ResumenDiaVentas | null>(null);
+  const [recordatorios, setRecordatorios] = useState<Recordatorio[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mostrarAccesoCelular, setMostrarAccesoCelular] = useState(false);
 
@@ -23,6 +34,7 @@ export default function DashboardPage() {
       .then(setStats)
       .catch((err) => setError(err.message));
     window.api.ventas.resumenHoy().then(setVentasHoy).catch(() => {});
+    window.api.recordatorios.list('pendientes').then(setRecordatorios).catch(() => {});
   }
 
   useEffect(cargar, []);
@@ -114,6 +126,49 @@ export default function DashboardPage() {
           </div>
         </div>
         <ArrowRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5" />
+      </Link>
+
+      <Link
+        to="/recordatorios"
+        data-tour="panel-recordatorios"
+        className="group mt-4 block animate-slide-up card p-6 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+        style={{ animationDelay: '300ms' }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-sm shadow-orange-500/30">
+              <BellRing className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-medium text-slate-700">Recordatorios</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {recordatorios === null
+                  ? 'Cargando...'
+                  : recordatorios.length === 0
+                    ? 'No hay nada pendiente. ¡Todo al día!'
+                    : `${recordatorios.length} pendiente(s) para hacer o cambiar`}
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5" />
+        </div>
+        {recordatorios && recordatorios.length > 0 && (
+          <ul className="mt-4 space-y-1.5 border-t border-slate-100 pt-3">
+            {recordatorios.slice(0, 3).map((r) => (
+              <li key={r.id} className="flex items-start gap-2 text-sm text-slate-600">
+                {r.urgente ? (
+                  <Flame className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                ) : (
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
+                )}
+                <span className="min-w-0 break-words">{r.texto}</span>
+              </li>
+            ))}
+            {recordatorios.length > 3 && (
+              <li className="pl-6 text-xs text-slate-400">y {recordatorios.length - 3} más...</li>
+            )}
+          </ul>
+        )}
       </Link>
 
       {mostrarAccesoCelular && <AccesoCelularModal onCerrar={() => setMostrarAccesoCelular(false)} />}

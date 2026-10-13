@@ -17,6 +17,7 @@ import { exportarDatosParaJuntar } from './juntarDatos';
 import { escucharCambios } from './cambiosEnVivo';
 import { cargarCopiaEnEstaPc, claveDeCopia, leerMetaCopia } from './replica';
 import { carpetaImagenes } from './imagenes';
+import { limpiarRecordatoriosHechos } from './repositories/recordatorios';
 import { Diario } from './sync/diario';
 import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
 import { Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
@@ -1040,6 +1041,7 @@ function iniciarMantenimiento() {
       vuelta += 1;
       await completarStockBase(diario);
       await diario.barrer({ marcaNuevos: 'ahora' });
+      await limpiarRecordatoriosHechos().catch(() => {});
       // Recalcular todo el stock es más pesado: una vez por hora alcanza (cada
       // cambio que llega o se hace acá ya deja su stock bien).
       if (vuelta % 2 === 1) await recalcularTodoElStock(diario);

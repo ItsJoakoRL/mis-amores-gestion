@@ -758,6 +758,111 @@ async function extras() {
   ok(true, 'y sigue sincronizando');
   await hasta(coinciden, 'que coincidan al final', 40000);
   ok(true, 'las dos terminan iguales');
+
+  // ---- 20. Recordatorios compartidos ----
+  log('\n[20] Recordatorios: lo que se anota en una PC lo ven todas');
+  const rec = await api(pcs.A, 'POST', '/api/recordatorios', {
+    texto: 'Cambiar el precio de las gaseosas',
+    tipo: 'cambiar',
+    urgente: true,
+    paraFecha: null,
+  });
+  ok(rec.texto === 'Cambiar el precio de las gaseosas' && rec.urgente === true && !!rec.creadoPorNombre, 'se anota con quién lo anotó');
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/recordatorios')).some((r) => r.id === rec.id), 'que B lo vea');
+  const resB = await api(pcs.B, 'GET', '/api/recordatorios/resumen');
+  ok(resB.pendientes >= 1 && resB.urgentes >= 1, `en B figura como pendiente y urgente (${resB.pendientes} pendientes, ${resB.urgentes} urgentes)`);
+  await api(pcs.B, 'POST', `/api/recordatorios/${rec.id}/hecho`, { hecho: true });
+  await hasta(
+    async () => (await api(pcs.A, 'GET', '/api/recordatorios?estado=hechos')).some((r) => r.id === rec.id && r.hecho && r.hechoPorNombre),
+    'que A lo vea hecho'
+  );
+  ok(!(await api(pcs.A, 'GET', '/api/recordatorios')).some((r) => r.id === rec.id), 'marcado como hecho en B, sale de los pendientes de A (y queda quién lo hizo)');
+  await api(pcs.A, 'POST', `/api/recordatorios/${rec.id}/hecho`, { hecho: false });
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/recordatorios')).some((r) => r.id === rec.id), 'que vuelva a pendiente en B');
+  ok(true, 'se puede volver a poner como pendiente');
+
+  // Una empleada no puede borrar lo que anotó otra persona, pero sí lo suyo.
+  await api(pcs.A, 'POST', '/api/usuarios', { nombre: 'Ana', usuario: 'ana', password: 'clave123', rol: 'empleado', genero: 'F' });
+  await hasta(async () => login(pcs.B, 'ana', 'clave123'), 'que ana pueda entrar en B');
+  const tokenAna = (
+    await (
+      await fetch(`http://127.0.0.1:${pcs.B.puerto}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: 'ana', password: 'clave123' }),
+      })
+    ).json()
+  ).data.token;
+  const comoAna = async (metodo, ruta, cuerpo) =>
+    (
+      await fetch(`http://127.0.0.1:${pcs.B.puerto}${ruta}`, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenAna}` },
+        body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
+      })
+    ).json();
+  const ajeno = await comoAna('DELETE', `/api/recordatorios/${rec.id}`);
+  ok(ajeno.ok === false && /anotó|administradora/i.test(ajeno.error), 'una empleada no puede borrar el recordatorio de otra persona');
+  const propio = await comoAna('POST', '/api/recordatorios', { texto: 'Avisar a Pedro', tipo: 'hacer', urgente: false, paraFecha: '2030-01-05' });
+  ok(propio.ok === true && propio.data.paraFecha === '2030-01-05', 'pero sí anotar los suyos (con fecha)');
+  ok((await comoAna('DELETE', `/api/recordatorios/${propio.data.id}`)).ok === true, 'y borrarlos');
+  const vacio = await comoAna('POST', '/api/recordatorios', { texto: '   ', tipo: 'hacer', urgente: false, paraFecha: null });
+  ok(vacio.ok === false, 'un recordatorio vacío no se guarda');
+  await hasta(coinciden, 'que las dos coincidan con los recordatorios', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 21. Recordatorios atados a un producto o a un cliente ----
+  log('\n[21] Recordatorios con atajo a un producto o a un cliente');
+  const prod = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'PARA EL ATAJO', stock: 3 }));
+  const cli = await api(pcs.A, 'POST', '/api/clientes', { nombre: 'CLIENTE DEL ATAJO', nota: null, deudaInicial: 250 });
+  const rp = await api(pcs.A, 'POST', '/api/recordatorios', {
+    texto: 'Ajustar el stock, contar de nuevo',
+    tipo: 'reponer',
+    urgente: false,
+    paraFecha: null,
+    articuloId: prod.id,
+  });
+  ok(rp.articuloId === prod.id && rp.vinculoNombre === 'PARA EL ATAJO' && rp.vinculoExiste === true, 'queda atado al producto, con su nombre');
+  const rc = await api(pcs.A, 'POST', '/api/recordatorios', {
+    texto: 'Cobrarle lo del fiado',
+    tipo: 'cobrar',
+    urgente: false,
+    paraFecha: null,
+    clienteId: cli.id,
+    articuloId: null,
+  });
+  ok(rc.clienteId === cli.id && rc.vinculoNombre === 'CLIENTE DEL ATAJO', 'o a un cliente');
+  const dosA = await api(pcs.A, 'POST', '/api/recordatorios', {
+    texto: 'Con las dos cosas',
+    tipo: 'otro',
+    urgente: false,
+    paraFecha: null,
+    articuloId: prod.id,
+    clienteId: cli.id,
+  });
+  ok(!!dosA.articuloId && !dosA.clienteId, 'si se manda un producto y un cliente, queda sólo uno (el producto)');
+  const inexistente = await api(pcs.A, 'POST', '/api/recordatorios', {
+    texto: 'Atado a algo que no existe',
+    tipo: 'otro',
+    urgente: false,
+    paraFecha: null,
+    articuloId: 'a'.repeat(24),
+  });
+  ok(inexistente.articuloId === null && inexistente.vinculoExiste === false, 'un producto que no existe no se ata');
+  await hasta(async () => {
+    const lista = await api(pcs.B, 'GET', '/api/recordatorios');
+    return lista.find((r) => r.id === rp.id)?.vinculoNombre === 'PARA EL ATAJO' && lista.find((r) => r.id === rc.id)?.clienteId === cli.id;
+  }, 'que B vea los atajos');
+  ok(true, 'las dos PCs ven a qué producto o cliente se refiere cada uno');
+  await api(pcs.A, 'DELETE', `/api/articulos/${prod.id}`);
+  await api(pcs.A, 'POST', '/api/articulos/eliminar-definitivo', { ids: [prod.id] });
+  await hasta(async () => {
+    const r = (await api(pcs.B, 'GET', '/api/recordatorios')).find((x) => x.id === rp.id);
+    return r && r.vinculoExiste === false && r.vinculoNombre === 'PARA EL ATAJO';
+  }, 'que B vea que el producto ya no existe');
+  ok(true, 'si el producto se borra, el recordatorio sigue (con su nombre) y avisa que "ya no está"');
+  await hasta(coinciden, 'que coincidan con los atajos', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
 }
 
 async function todo() {

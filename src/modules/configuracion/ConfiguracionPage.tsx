@@ -631,6 +631,7 @@ function ListaResumen({ resumen: r }: { resumen: ResumenJuntar }) {
     [r.usuariosNuevos, 'usuario(s) nuevos'],
     [r.rubrosNuevos + r.marcasNuevas + r.proveedoresNuevos, 'rubro(s), marca(s) o proveedor(es) nuevos'],
     [r.imagenesCopiadas, 'foto(s) de productos'],
+    [r.recordatoriosNuevos, 'recordatorio(s)'],
   ];
   const conAlgo = filas.filter(([n]) => n > 0);
   return (

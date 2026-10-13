@@ -261,6 +261,77 @@ async function principal() {
     log('   (captura guardada en ' + process.env.MIS_AMORES_CAPTURA + ')');
   }
 
+  // ---- La pantalla de Recordatorios ----
+  log('\n[5b] La pantalla de Recordatorios');
+  await pantalla.evaluar(
+    "window.api.recordatorios.crear({ texto: 'Cambiar el precio de las gaseosas', tipo: 'cambiar', urgente: true, paraFecha: null })"
+  );
+  await pantalla.evaluar(
+    "window.api.recordatorios.crear({ texto: 'Reponer los alfajores del mostrador', tipo: 'reponer', urgente: false, paraFecha: null })"
+  );
+  await pantalla.evaluar("location.hash = '#/recordatorios'; location.reload(); 1");
+  await esperar(1500);
+  const textoRec = await hasta(async () => {
+    const t = await pantalla.evaluar('document.body.innerText');
+    return t.includes('Cambiar el precio de las gaseosas') && t.includes('Anotar') ? t : null;
+  }, 'que se vea la pantalla de Recordatorios', 30000);
+  ok(textoRec.includes('Reponer los alfajores del mostrador'), 'se ven los recordatorios anotados');
+  ok(/Urgente/.test(textoRec) && /Pendientes \(2\)/.test(textoRec), 'marca lo urgente y cuenta los pendientes (2)');
+  const enMenu = await pantalla.evaluar(
+    "Array.from(document.querySelectorAll('aside a')).find(a => a.innerText.includes('Recordatorios'))?.innerText || ''"
+  );
+  ok(/Recordatorios\s*\n?\s*2/.test(enMenu), `el menú muestra cuántos hay pendientes (${JSON.stringify(enMenu)})`);
+  if (process.env.MIS_AMORES_CAPTURA2) {
+    const captura = await pantalla.orden('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(process.env.MIS_AMORES_CAPTURA2, Buffer.from(captura.data, 'base64'));
+    log('   (captura guardada)');
+  }
+
+  // ---- Atajos desde un recordatorio ----
+  log('\n[5c] Del recordatorio a la pantalla que corresponde');
+  const productoB = await pantalla.evaluar("window.api.articulos.list({ busqueda: 'PROPIO DE B' }).then(l => l[0])");
+  const clienteAna = await pantalla.evaluar("window.api.clientes.list().then(l => l.find(c => c.nombre === 'ANA GOMEZ'))");
+  await pantalla.evaluar(
+    `window.api.recordatorios.crear({ texto: 'Ajustar el stock de este producto', tipo: 'reponer', urgente: false, paraFecha: null, articuloId: '${productoB.id}' })`
+  );
+  await pantalla.evaluar(
+    `window.api.recordatorios.crear({ texto: 'Cobrarle a Ana', tipo: 'cobrar', urgente: false, paraFecha: null, clienteId: '${clienteAna.id}' })`
+  );
+  await pantalla.evaluar("location.hash = '#/recordatorios'; location.reload(); 1");
+  await esperar(1500);
+  const conAtajos = await hasta(async () => {
+    const t = await pantalla.evaluar('document.body.innerText');
+    return t.includes('Ajustar stock') && t.includes('Registrar pago') ? t : null;
+  }, 'que aparezcan los botones de atajo', 30000);
+  ok(conAtajos.includes('PROPIO DE B') && conAtajos.includes('ANA GOMEZ') && /Editar producto/.test(conAtajos) && /Ver cuenta/.test(conAtajos), 'cada recordatorio muestra el producto o cliente y sus botones');
+  // Tocar "Ajustar stock" abre directo esa ventana.
+  await pantalla.evaluar(
+    "Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Ajustar stock').click(); 1"
+  );
+  const enArticulos = await hasta(async () => {
+    const t = await pantalla.evaluar('document.body.innerText');
+    return location_ok(t) ? t : null;
+    function location_ok(texto) {
+      return texto.includes('Ajustar stock') && texto.includes('PROPIO DE B') && texto.includes('Stock actual');
+    }
+  }, 'que se abra el ajuste de stock del producto', 20000).catch(() => null);
+  const hashArticulos = await pantalla.evaluar('location.hash');
+  ok(/#\/articulos/.test(hashArticulos), `el botón lleva a Artículos y stock (${hashArticulos})`);
+  ok(!!enArticulos, 'y abre directo la ventana de ajustar el stock de ese producto');
+  if (process.env.MIS_AMORES_CAPTURA3) {
+    const c3 = await pantalla.orden('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(process.env.MIS_AMORES_CAPTURA3, Buffer.from(c3.data, 'base64'));
+  }
+  // Y para un cliente: directo al pago.
+  await pantalla.evaluar(
+    `location.hash = '#/clientes?abrir=${clienteAna.id}&accion=pago'; 1`
+  );
+  const enCliente = await hasta(async () => {
+    const t = await pantalla.evaluar('document.body.innerText');
+    return t.includes('ANA GOMEZ') && /Registrar pago/.test(t) && /Monto|Cuánto|pagó/i.test(t) ? t : null;
+  }, 'que se abra el pago del cliente', 20000).catch(() => null);
+  ok(!!enCliente, 'el botón de un cliente abre directo el cuadro para registrarle un pago');
+
   // ---- Olvidar una PC ----
   log('\n[6] Sacar una PC de la lista');
   await pantalla.evaluar(`window.escritorio.olvidarPc('${A.idPc}')`);
