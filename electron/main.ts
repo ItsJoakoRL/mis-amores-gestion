@@ -11,7 +11,8 @@ import { registrarHandlers } from './ipc/handlers';
 import { iniciarServidorWeb, obtenerIpsLan, PUERTO } from './server/httpServer';
 import { iniciarMdns, NOMBRE_HOST } from './server/mdns';
 import { cargarSesionesGuardadas, invalidarTodasLasSesiones, invalidarTokensDeUsuario } from './server/tokenSessions';
-import { requiereAdmin, setSesion } from './session';
+import { getSesion, requiereAdmin, setSesion } from './session';
+import { getUsuario } from './repositories/usuarios';
 import { guardarConfiguracion, leerConfiguracion } from './configuracion';
 import { exportarDatosParaJuntar } from './juntarDatos';
 import { escucharCambios } from './cambiosEnVivo';
@@ -976,6 +977,23 @@ async function primeraSincronizacion(): Promise<boolean> {
   return false;
 }
 
+// Cuando otra PC cambia o desactiva a un usuario, la sesión abierta en esta PC
+// tiene que reflejarlo: si no, quien estaba logueada seguía con su rol y sus
+// permisos de antes hasta cerrar sesión (los celulares ya se cerraban solos).
+// La pantalla se entera sola: al llegar el aviso de datos cambiados vuelve a
+// pedir la sesión (ver AuthContext).
+async function refrescarSesionDeEscritorio(idUsuario: string): Promise<void> {
+  const sesion = getSesion();
+  if (!sesion || sesion.id !== idUsuario) return;
+  const actual = await getUsuario(idUsuario);
+  if (!actual || !actual.activo) {
+    setSesion(null);
+    return;
+  }
+  const { activo: _activo, ...datosSesion } = actual;
+  setSesion(datosSesion);
+}
+
 // Arma el diario, el aplicador y el motor, y deja la base lista para
 // sincronizar. Devuelve false si todavía no se pueden usar los datos.
 async function prepararSincronizacion(): Promise<boolean> {
@@ -997,7 +1015,10 @@ async function prepararSincronizacion(): Promise<boolean> {
   aplicador = new Aplicador(d, {
     carpetaImagenes: carpetaImagenes(),
     alAvisar: (texto) => void d.avisar(texto).catch((err) => logCrash('aviso', err)),
-    alCambiarUsuario: (id) => invalidarTokensDeUsuario(id),
+    alCambiarUsuario: (id) => {
+      invalidarTokensDeUsuario(id);
+      void refrescarSesionDeEscritorio(id).catch((err) => logCrash('sesion-escritorio', err));
+    },
     alFallar: logCrash,
   });
   motor = new Motor({

@@ -74,6 +74,11 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
   if (!articulo) {
     throw new Error('El artículo no existe');
   }
+  // Un artículo en la papelera conserva su código de barras: sin esta
+  // revisión se lo podía escanear y vender como si siguiera activo.
+  if (!articulo.activo) {
+    throw new Error(`"${articulo.descripcion}" está en la papelera: no se puede vender`);
+  }
   if (articulo.unidad !== 'peso' && !Number.isInteger(input.cantidad)) {
     throw new Error(`"${articulo.descripcion}" se vende por unidad: la cantidad tiene que ser un número entero`);
   }

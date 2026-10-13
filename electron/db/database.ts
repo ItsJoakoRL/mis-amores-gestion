@@ -211,7 +211,7 @@ async function seedIfEmpty(database: Db) {
 
   const familias = database.collection('familias');
   if ((await familias.countDocuments()) === 0) {
-    const familiasBase = ['COMESTIBLE', 'BEBIDAS', 'LIMPIEZA', 'PERFUMERIA', 'KIOSCO', 'VARIOS'];
+    const familiasBase = ['COMESTIBLE', 'BEBIDAS', 'LIMPIEZA', 'PERFUMERIA', 'VARIOS'];
     await familias.insertMany(familiasBase.map((nombre) => ({ nombre })));
   }
 }

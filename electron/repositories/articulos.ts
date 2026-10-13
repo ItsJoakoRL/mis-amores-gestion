@@ -243,29 +243,7 @@ export async function actualizarArticulo(
         : 0,
   };
 
-  const historial = getDb().collection('historial_precios');
   const ahora = new Date().toISOString();
-
-  if (input.precioCosto !== actual.precioCosto) {
-    await historial.insertOne({
-      articuloId: new ObjectId(id),
-      tipo: 'costo',
-      precioAnterior: actual.precioCosto,
-      precioNuevo: input.precioCosto,
-      usuarioId: new ObjectId(usuarioId),
-      fecha: ahora,
-    });
-  }
-  if (input.precioVenta !== actual.precioVenta) {
-    await historial.insertOne({
-      articuloId: new ObjectId(id),
-      tipo: 'venta',
-      precioAnterior: actual.precioVenta,
-      precioNuevo: input.precioVenta,
-      usuarioId: new ObjectId(usuarioId),
-      fecha: ahora,
-    });
-  }
 
   const camposComunes = {
     descripcion: input.descripcion,
@@ -304,6 +282,32 @@ export async function actualizarArticulo(
   } catch (err) {
     if (esErrorDuplicado(err)) throw new Error('Ya existe un artículo con ese código de barras');
     throw err;
+  }
+
+  // El historial se anota recién ahora, con el cambio ya guardado: si la
+  // edición fallaba (por ejemplo, un código de barras repetido), antes
+  // quedaba anotado un cambio de precio que nunca se aplicó — y cada reintento
+  // sumaba otro.
+  const historial = getDb().collection('historial_precios');
+  if (input.precioCosto !== actual.precioCosto) {
+    await historial.insertOne({
+      articuloId: new ObjectId(id),
+      tipo: 'costo',
+      precioAnterior: actual.precioCosto,
+      precioNuevo: input.precioCosto,
+      usuarioId: new ObjectId(usuarioId),
+      fecha: ahora,
+    });
+  }
+  if (input.precioVenta !== actual.precioVenta) {
+    await historial.insertOne({
+      articuloId: new ObjectId(id),
+      tipo: 'venta',
+      precioAnterior: actual.precioVenta,
+      precioNuevo: input.precioVenta,
+      usuarioId: new ObjectId(usuarioId),
+      fecha: ahora,
+    });
   }
 
   return (await getArticulo(id))!;

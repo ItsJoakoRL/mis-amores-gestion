@@ -45,11 +45,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refrescarSesion = useCallback(async () => {
     try {
-      setSesion(await window.api.auth.sesionActual());
+      const nueva = await window.api.auth.sesionActual();
+      // Si no cambió nada se deja el mismo objeto: esto corre con cada aviso
+      // de datos cambiados y no tiene que volver a dibujar toda la app.
+      setSesion((actual) => (JSON.stringify(actual) === JSON.stringify(nueva) ? actual : nueva));
     } catch {
       // Si no se pudo consultar, sigue la sesión que había.
     }
   }, []);
+
+  // Si otra PC desactiva o le cambia el rol a quien está usando esta, la PC ya
+  // lo sabe (ver refrescarSesionDeEscritorio en main.ts): acá se vuelve a
+  // pedir la sesión para que se vea — la pantalla de ingreso, o los permisos
+  // nuevos — en vez de seguir como si nada hasta cerrar sesión a mano. Sólo en
+  // la PC: el celular ya vuelve al login solo (EVENTO_SESION_VENCIDA) y no
+  // conviene abrirle una conexión en vivo más.
+  const haySesion = sesion !== null;
+  useEffect(() => {
+    if (!haySesion || !/Electron/i.test(navigator.userAgent)) return;
+    const dejarDeEscuchar = window.api.sistema.onDatosCambio?.(() => void refrescarSesion());
+    return () => dejarDeEscuchar?.();
+  }, [haySesion, refrescarSesion]);
 
   return (
     <AuthContext.Provider

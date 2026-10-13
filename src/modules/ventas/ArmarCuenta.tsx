@@ -97,7 +97,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         guardado.carrito.forEach((l, i) => {
           const actualizado = actualizados[i];
           // null: ya no existe; undefined: no se pudo consultar (queda como estaba).
-          if (actualizado === null) quitar.add(l.producto.id);
+          // Uno que se mandó a la papelera tampoco se puede vender: se saca igual.
+          if (actualizado === null || (actualizado && !actualizado.activo)) quitar.add(l.producto.id);
           else if (actualizado) actualizadosPorId.set(l.producto.id, actualizado);
         });
         setCarrito((actual) =>
@@ -147,14 +148,24 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
       setResultados([]);
       return;
     }
+    // Con WiFi lenta una respuesta vieja puede llegar después de la nueva: si
+    // el término ya cambió (o se eligió un producto), esa respuesta se ignora.
+    let vigente = true;
     const debounce = setTimeout(() => {
       setBuscando(true);
       window.api.articulos
         .list({ busqueda: termino.trim() })
-        .then((lista) => setResultados(lista.slice(0, 6)))
-        .finally(() => setBuscando(false));
+        .then((lista) => {
+          if (vigente) setResultados(lista.slice(0, 6));
+        })
+        .finally(() => {
+          if (vigente) setBuscando(false);
+        });
     }, 200);
-    return () => clearTimeout(debounce);
+    return () => {
+      vigente = false;
+      clearTimeout(debounce);
+    };
   }, [termino, producto]);
 
   function elegirProducto(a: Articulo) {
@@ -195,7 +206,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     if (!codigo) return;
     try {
       const encontrado = await window.api.articulos.buscarPorCodigo(codigo);
-      if (encontrado) {
+      if (encontrado && !encontrado.activo) {
+        // Está en la papelera (se dio de baja pero conserva su código).
+        setError(`"${encontrado.descripcion}" está en la papelera: no se puede vender.`);
+        setTermino('');
+        setResultados([]);
+      } else if (encontrado) {
         if (encontrado.unidad === 'peso') {
           // Se vende por peso: no hay forma de saber cuántos kg son con sólo
           // el código, así que igual pide confirmar la cantidad a mano.
@@ -209,8 +225,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           setResultados([]);
           setError(null);
         }
-      } else if (resultados.length > 0) {
-        elegirProducto(resultados[0]);
+      } else {
+        // Se busca de nuevo en lugar de usar la lista que está en pantalla: si
+        // se escribió rápido y se apretó Enter, esa lista puede ser la de una
+        // palabra anterior y se elegiría otro producto.
+        const lista = await window.api.articulos.list({ busqueda: codigo });
+        if (lista.length > 0) elegirProducto(lista[0]);
       }
     } catch {
       // si falla la búsqueda por código, no hacemos nada — el usuario puede

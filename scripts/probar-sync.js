@@ -863,6 +863,45 @@ async function extras() {
   ok(true, 'si el producto se borra, el recordatorio sigue (con su nombre) y avisa que "ya no está"');
   await hasta(coinciden, 'que coincidan con los atajos', 40000);
   ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 22. Papelera e historial de precios ----
+  log('\n[22] Un producto de la papelera no se vende, y el historial sólo anota lo que se guardó');
+  const falla = async (fn) => {
+    try {
+      await fn();
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+  const enPapelera = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'EN LA PAPELERA', codigoBarras: '7794444', stock: 5 }));
+  await api(pcs.A, 'DELETE', `/api/articulos/${enPapelera.id}`);
+  const errVenta = await falla(() => api(pcs.A, 'POST', '/api/ventas', { articuloId: enPapelera.id, cantidad: 1, metodoPago: 'efectivo' }));
+  ok(!!errVenta && /papelera/i.test(errVenta), `vender un producto de la papelera se rechaza (${errVenta})`);
+  ok((await stockDe(pcs.A, 'EN LA PAPELERA')) === 5, 'y no se le descuenta stock');
+  await api(pcs.A, 'POST', `/api/articulos/${enPapelera.id}/restaurar`);
+  await api(pcs.A, 'POST', '/api/ventas', { articuloId: enPapelera.id, cantidad: 1, metodoPago: 'efectivo' });
+  ok((await stockDe(pcs.A, 'EN LA PAPELERA')) === 4, 'restaurado, se vende normalmente');
+
+  const conCodigo = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'CON CODIGO', codigoBarras: '7795555', precioVenta: 100 }));
+  const otroCodigo = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'OTRO CODIGO', codigoBarras: '7796666', precioVenta: 100 }));
+  const errCodigo = await falla(() =>
+    api(pcs.A, 'PUT', `/api/articulos/${otroCodigo.id}`, {
+      input: { ...aEntrada(otroCodigo), precioVenta: 777, codigoBarras: conCodigo.codigoBarras },
+      original: aEntrada(otroCodigo),
+    })
+  );
+  ok(!!errCodigo && /código/i.test(errCodigo), `editar con un código repetido se rechaza (${errCodigo})`);
+  ok((await api(pcs.A, 'GET', `/api/articulos/${otroCodigo.id}/historial-precios`)).length === 0, 'y el historial no anota un cambio de precio que no se aplicó');
+  ok((await porDescripcion(pcs.A, 'OTRO CODIGO')).precioVenta === 100, 'el precio quedó como estaba');
+  await api(pcs.A, 'PUT', `/api/articulos/${otroCodigo.id}`, {
+    input: { ...aEntrada(otroCodigo), precioVenta: 120 },
+    original: aEntrada(otroCodigo),
+  });
+  const hist = await api(pcs.A, 'GET', `/api/articulos/${otroCodigo.id}/historial-precios`);
+  ok(hist.length === 1 && hist[0].precioAnterior === 100 && hist[0].precioNuevo === 120, 'cuando la edición sí se guarda, el cambio queda anotado una vez');
+  await hasta(coinciden, 'que coincidan al final', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
 }
 
 async function todo() {

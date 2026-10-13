@@ -75,6 +75,12 @@ export async function verificarCredenciales(usuario: string, password: string): 
   return mapDoc(doc);
 }
 
+export async function getUsuario(id: string): Promise<Usuario | null> {
+  if (!ObjectId.isValid(id)) return null;
+  const doc = await coleccion().findOne({ _id: new ObjectId(id) });
+  return doc ? mapDoc(doc) : null;
+}
+
 export async function listUsuarios(): Promise<Usuario[]> {
   const docs = await coleccion().find().sort({ nombre: 1 }).toArray();
   return docs.map(mapDoc);
