@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { getArticulo, ajustarStock } from './articulos';
@@ -137,7 +138,13 @@ export async function eliminarVenta(id: string, usuarioId: string): Promise<void
   try {
     const articuloId = venta.articuloId.toHexString();
     if (await getArticulo(articuloId)) {
-      await ajustarStock(articuloId, venta.cantidad, 'ingreso', 'Venta anulada', usuarioId);
+      // El movimiento de reposición tiene un _id que sale de la venta: si dos
+      // PCs anulan la misma venta a la vez (antes de enterarse una de la otra),
+      // las dos generan el MISMO movimiento y el stock se repone una sola vez.
+      const idMovimiento = new ObjectId(
+        crypto.createHash('sha1').update(`anulacion:${id}`).digest().subarray(0, 12)
+      );
+      await ajustarStock(articuloId, venta.cantidad, 'ingreso', 'Venta anulada', usuarioId, idMovimiento);
     }
   } catch (err) {
     // No se pudo reponer el stock: se vuelve a guardar la venta tal cual

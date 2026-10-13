@@ -110,13 +110,18 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
   Configuración: [
     {
       selector: '[data-tour="conf-modo"]',
-      titulo: 'El rol de esta PC',
-      texto: 'Acá ves si esta PC es la principal (la que guarda todos los datos) o si está conectada a la principal.',
+      titulo: 'Todas las PCs son iguales',
+      texto: 'Cada PC guarda todos los datos y trabaja sola. Lo que se carga en una aparece en las demás al instante.',
+    },
+    {
+      selector: '[data-tour="conf-pcs"]',
+      titulo: 'Las otras PCs',
+      texto: 'Acá ves cuáles están en línea y si están al día. Si una estaba apagada, se pone al día sola cuando vuelve.',
     },
     {
       selector: '[data-tour="conf-conectar"]',
-      titulo: 'Conectar a la principal',
-      texto: 'Si esta PC no va a ser la principal, conectala a la que sí: sus datos se pasan a la principal y desde ahí trabajan las dos con lo mismo.',
+      titulo: 'Sumar otra PC',
+      texto: 'Para que otra PC comparta los datos del negocio, sumala desde acá con la cuenta de administradora.',
     },
   ],
   Usuarios: [

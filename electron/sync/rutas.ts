@@ -1,0 +1,136 @@
+// Lo que cada PC le ofrece a las otras PCs de la red por HTTP (las mismas que
+// ya sirven a los celulares, en el mismo puerto):
+//
+//   GET  /api/sync/hola      quién soy y qué PCs conozco
+//   GET  /api/sync/cambios   los cambios desde una secuencia (espera si no hay)
+//   GET  /api/sync/resumen   una "foto" para comprobar que coincidimos
+//   POST /api/sync/unirse    otra PC se suma a esta red (con cuenta de admin)
+//
+// Todo menos "unirse" va con la clave de la red en la cabecera X-Clave-Red:
+// sólo las PCs que se sumaron con una cuenta de administradora la tienen.
+import crypto from 'crypto';
+import type { Express, Request, Response } from 'express';
+import { BSON } from 'mongodb';
+import type { Diario } from './diario';
+import { idDeRed, type HolaSync, type Motor, type ParConfig } from './motor';
+
+const MAX_ESPERA_MS = 25_000;
+const MAX_LIMITE = 1000;
+
+export interface DepsRutasSync {
+  diario: Diario;
+  motor: Motor;
+  claveRed: () => string;
+  yo: () => { idPc: string; nombrePc: string; version: string };
+  pares: () => ParConfig[];
+  /** Tira un error si la petición no viene de una administradora con sesión. */
+  requiereAdmin: (req: Request) => void;
+  /** Una PC se sumó a la red: hay que empezar a sincronizar con ella. */
+  alUnirse: (par: ParConfig) => void;
+  /** Una PC de la red acaba de pedirnos cambios (está en línea). */
+  alVerPar: (idPc: string) => void;
+}
+
+function enviar(res: Response, cuerpo: unknown, estado = 200): void {
+  res.status(estado).type('application/json').send(BSON.EJSON.stringify(cuerpo as Record<string, unknown>, { relaxed: false }));
+}
+
+export function registrarRutasSync(app: Express, deps: DepsRutasSync): void {
+  function claveValida(req: Request): boolean {
+    const recibida = req.headers['x-clave-red'];
+    if (typeof recibida !== 'string' || recibida.length < 16) return false;
+    const real = Buffer.from(deps.claveRed());
+    const otra = Buffer.from(recibida);
+    return otra.length === real.length && crypto.timingSafeEqual(otra, real);
+  }
+
+  // Envuelve cada ruta con el formato { ok, data } / { ok:false, error } del resto de la API.
+  function ruta(
+    requiereClave: boolean,
+    fn: (req: Request) => Promise<unknown> | unknown
+  ): (req: Request, res: Response) => Promise<void> {
+    return async (req, res) => {
+      if (requiereClave && !claveValida(req)) {
+        enviar(res, { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta).' }, 401);
+        return;
+      }
+      try {
+        enviar(res, { ok: true, data: await fn(req) });
+      } catch (err) {
+        enviar(res, { ok: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+      }
+    };
+  }
+
+  app.get(
+    '/api/sync/hola',
+    ruta(true, (): HolaSync => {
+      const yo = deps.yo();
+      return {
+        app: 'mis-amores-gestion',
+        idPc: yo.idPc,
+        nombrePc: yo.nombrePc,
+        idRed: idDeRed(deps.claveRed()),
+        version: yo.version,
+        epoca: deps.diario.epoca,
+        seq: deps.diario.seqActual(),
+        pares: deps.pares(),
+      };
+    })
+  );
+
+  app.get(
+    '/api/sync/cambios',
+    ruta(true, async (req) => {
+      const desde = Math.max(0, Math.floor(Number(req.query.desde) || 0));
+      const limite = Math.min(MAX_LIMITE, Math.max(1, Math.floor(Number(req.query.limite) || 500)));
+      const esperar = Math.min(MAX_ESPERA_MS, Math.max(0, Math.floor(Number(req.query.esperar) || 0)));
+
+      // Quien pide con la clave de la red es una PC de la red: si no la
+      // conocíamos, se la anota para empezar a pedirle también.
+      const yoPide = typeof req.query.yo === 'string' ? req.query.yo : '';
+      const puerto = Math.floor(Number(req.query.puerto) || 0);
+      if (yoPide && puerto > 0 && yoPide !== deps.yo().idPc && !deps.pares().some((p) => p.idPc === yoPide)) {
+        const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+        const nombre = typeof req.query.nombre === 'string' && req.query.nombre ? req.query.nombre : 'PC del negocio';
+        if (ip) deps.alUnirse({ idPc: yoPide, nombre, direccion: `${ip}:${puerto}` });
+      } else if (yoPide) {
+        deps.alVerPar(yoPide);
+      }
+
+      if (esperar > 0) await deps.diario.esperarCambios(desde, esperar);
+      const { items, hasta, maxSeq } = await deps.diario.cambiosDesde(desde, limite);
+      return { idPc: deps.yo().idPc, epoca: deps.diario.epoca, items, hasta, maxSeq };
+    })
+  );
+
+  app.get(
+    '/api/sync/resumen',
+    ruta(true, () => deps.motor.resumen())
+  );
+
+  app.post(
+    '/api/sync/unirse',
+    ruta(false, (req) => {
+      deps.requiereAdmin(req);
+      const { idPc, nombrePc, puerto } = (req.body ?? {}) as { idPc?: string; nombrePc?: string; puerto?: number };
+      if (!idPc || typeof idPc !== 'string') throw new Error('Faltan los datos de la PC que se suma');
+      const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+      const yo = deps.yo();
+      if (idPc === yo.idPc) throw new Error('Esa es esta misma PC.');
+      deps.alUnirse({
+        idPc,
+        nombre: typeof nombrePc === 'string' && nombrePc ? nombrePc : 'PC del negocio',
+        direccion: `${ip}:${Number(puerto) || 4000}`,
+      });
+      const clave = deps.claveRed();
+      return {
+        claveRed: clave,
+        idRed: idDeRed(clave),
+        idPc: yo.idPc,
+        nombrePc: yo.nombrePc,
+        pares: deps.pares().filter((p) => p.idPc !== idPc),
+      };
+    })
+  );
+}

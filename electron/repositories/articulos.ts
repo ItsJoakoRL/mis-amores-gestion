@@ -1,5 +1,5 @@
 import { ObjectId, type Collection } from 'mongodb';
-import { getDb } from '../db/database';
+import { enTransaccion, getDb } from '../db/database';
 import { formatearCantidad, redondearCantidad } from '../../shared/formato';
 import type {
   Articulo,
@@ -23,6 +23,10 @@ interface ArticuloDoc {
   precioLista3: number;
   utilidadPct: number;
   stock: number;
+  /** El stock con el que se cargó el artículo. El stock de cada momento es
+   * esto más la suma de sus movimientos: así dos PCs que venden lo mismo a la
+   * vez llegan al mismo número (ver sync/aplicar.ts). */
+  stockBase: number;
   stockMinimo: number;
   stockIdeal: number;
   unidad: UnidadVenta;
@@ -152,6 +156,7 @@ export async function crearArticulo(input: ArticuloInput): Promise<Articulo> {
     precioLista3: input.precioLista3,
     utilidadPct: input.utilidadPct,
     stock: input.stock,
+    stockBase: input.stock,
     stockMinimo: input.stockMinimo,
     stockIdeal: input.stockIdeal,
     unidad: input.unidad,
@@ -365,7 +370,10 @@ export async function ajustarStock(
   cantidadPedida: number,
   tipo: 'ingreso' | 'egreso' | 'ajuste',
   motivo: string | null,
-  usuarioId: string
+  usuarioId: string,
+  /** Si se indica, el movimiento se guarda con ese _id: así, si dos PCs hacen
+   * "lo mismo" a la vez (anular la misma venta), terminan con un solo movimiento. */
+  idMovimiento?: ObjectId
 ): Promise<Articulo> {
   if (typeof cantidadPedida !== 'number' || !Number.isFinite(cantidadPedida)) {
     throw new Error('La cantidad no es un número válido');
@@ -376,63 +384,90 @@ export async function ajustarStock(
   const objectId = new ObjectId(id);
   const ahora = new Date().toISOString();
 
-  let movimiento: number;
-  let nuevoStock: number;
+  // El cambio del stock y el movimiento que lo explica van juntos: si entre
+  // los dos se metiera un cambio de otra PC y recalculara el stock con los
+  // movimientos, el descuento recién hecho se deshacía.
+  await enTransaccion(async () => {
+    let movimiento: number;
+    let nuevoStock: number;
 
-  if (tipo === 'ajuste') {
-    // Ajuste manual: fija el stock al número indicado (no es un delta).
-    if (cantidad < 0) throw new Error('El stock no puede quedar en un número negativo');
-    const actual = await coleccion().findOneAndUpdate(
-      { _id: objectId },
-      { $set: { stock: cantidad, actualizadoEn: ahora } },
-      { returnDocument: 'before' }
-    );
-    if (!actual) throw new Error('El artículo no existe');
-    nuevoStock = cantidad;
-    movimiento = redondearCantidad(cantidad - actual.stock);
-  } else {
-    const delta = tipo === 'egreso' ? -cantidad : cantidad;
-    // Suma atómica: si dos ventas del mismo artículo llegan casi juntas
-    // (dos celulares, o celular + PC), Mongo procesa una después de la otra
-    // en vez de que una pise el cálculo de la otra. La condición
-    // "stock >= lo que se necesita" en el filtro (sólo para egresos) hace
-    // que la operación entera falle en vez de dejar el stock negativo. Es un
-    // update con pipeline (en vez de $inc) para poder redondear en la misma
-    // operación; el "+ 0" convierte en 0 el -0 que puede dejar el redondeo.
-    const condicion =
-      delta < 0 ? { _id: objectId, stock: { $gte: -delta - TOLERANCIA_STOCK } } : { _id: objectId };
-    const actualizado = await coleccion().findOneAndUpdate(
-      condicion,
-      [
-        {
-          $set: {
-            stock: { $add: [{ $round: [{ $add: ['$stock', delta] }, DECIMALES_STOCK] }, 0] },
-            actualizadoEn: ahora,
+    if (tipo === 'ajuste') {
+      // Ajuste manual: fija el stock al número indicado (no es un delta).
+      if (cantidad < 0) throw new Error('El stock no puede quedar en un número negativo');
+      const actual = await coleccion().findOneAndUpdate(
+        { _id: objectId },
+        { $set: { stock: cantidad, actualizadoEn: ahora } },
+        { returnDocument: 'before' }
+      );
+      if (!actual) throw new Error('El artículo no existe');
+      nuevoStock = cantidad;
+      movimiento = redondearCantidad(cantidad - actual.stock);
+    } else {
+      const delta = tipo === 'egreso' ? -cantidad : cantidad;
+      // Suma atómica: si dos ventas del mismo artículo llegan casi juntas
+      // (dos celulares, o celular + PC), Mongo procesa una después de la otra
+      // en vez de que una pise el cálculo de la otra. La condición
+      // "stock >= lo que se necesita" en el filtro (sólo para egresos) hace
+      // que la operación entera falle en vez de dejar el stock negativo. Es un
+      // update con pipeline (en vez de $inc) para poder redondear en la misma
+      // operación; el "+ 0" convierte en 0 el -0 que puede dejar el redondeo.
+      const condicion =
+        delta < 0 ? { _id: objectId, stock: { $gte: -delta - TOLERANCIA_STOCK } } : { _id: objectId };
+      const actualizado = await coleccion().findOneAndUpdate(
+        condicion,
+        [
+          {
+            $set: {
+              stock: { $add: [{ $round: [{ $add: ['$stock', delta] }, DECIMALES_STOCK] }, 0] },
+              actualizadoEn: ahora,
+            },
           },
-        },
-      ],
-      { returnDocument: 'after' }
-    );
-    if (!actualizado) {
-      const existe = await coleccion().findOne({ _id: objectId });
-      if (!existe) throw new Error('El artículo no existe');
-      throw new Error(`No hay stock suficiente (quedan ${formatearCantidad(existe.stock)})`);
+        ],
+        { returnDocument: 'after' }
+      );
+      if (!actualizado) {
+        const existe = await coleccion().findOne({ _id: objectId });
+        if (!existe) throw new Error('El artículo no existe');
+        throw new Error(`No hay stock suficiente (quedan ${formatearCantidad(existe.stock)})`);
+      }
+      nuevoStock = actualizado.stock;
+      movimiento = delta;
     }
-    nuevoStock = actualizado.stock;
-    movimiento = delta;
-  }
 
-  await getDb()
-    .collection('movimientos_stock')
-    .insertOne({
-      articuloId: objectId,
-      tipo,
-      cantidad: movimiento,
-      stockResultante: nuevoStock,
-      motivo,
-      usuarioId: new ObjectId(usuarioId),
-      fecha: ahora,
-    });
+    try {
+      await getDb()
+        .collection('movimientos_stock')
+        .insertOne({
+          ...(idMovimiento ? { _id: idMovimiento } : {}),
+          articuloId: objectId,
+          tipo,
+          cantidad: movimiento,
+          stockResultante: nuevoStock,
+          motivo,
+          usuarioId: new ObjectId(usuarioId),
+          fecha: ahora,
+        });
+    } catch (err) {
+      if (!idMovimiento || !esErrorDuplicado(err)) throw err;
+      // Otra PC ya anotó este mismo movimiento (la misma venta anulada a la
+      // vez): no se cuenta dos veces, y el stock se vuelve a calcular con los
+      // movimientos que hay.
+      const sumas = await getDb()
+        .collection('movimientos_stock')
+        .aggregate<{ total: number }>([
+          { $match: { articuloId: objectId } },
+          { $group: { _id: null, total: { $sum: '$cantidad' } } },
+        ])
+        .toArray();
+      const art = await coleccion().findOne({ _id: objectId });
+      if (art && typeof art.stockBase === 'number') {
+        await coleccion().updateOne(
+          { _id: objectId },
+          { $set: { stock: redondearCantidad(art.stockBase + (sumas[0]?.total ?? 0)) } }
+        );
+      }
+    }
+  });
 
   return (await getArticulo(id))!;
 }

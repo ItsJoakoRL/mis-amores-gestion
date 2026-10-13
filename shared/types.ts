@@ -154,95 +154,73 @@ export interface InfoActualizacion {
  * venció) — el cliente web lo reconoce para volver a la pantalla de login. */
 export const MENSAJE_SIN_SESION = 'No hay una sesión iniciada';
 
-/** "principal": esta PC tiene la base de datos (como siempre). "conectada":
- * esta PC no guarda nada propio — muestra y guarda todo en la PC principal,
- * igual que un celular. */
-export type ModoPc = 'principal' | 'conectada';
-
-/** Lo que responde /api/sistema/info: con esto otra PC reconoce a la
- * principal en la red (y no se confunde conectándose a sí misma). */
+/** Lo que responde /api/sistema/info: con esto otra PC reconoce a ésta en la
+ * red (y no se suma a sí misma). */
 export interface InfoPc {
   app: 'mis-amores-gestion';
   idPc: string;
   nombrePc: string;
   version: string;
-  modo: ModoPc;
-  /** Cuántas veces cambió de PC la principal. Si dos PCs se creen la
-   * principal, la de número mayor es la verdadera. (Ausente en versiones viejas.) */
+  /** Las versiones anteriores distinguían una PC "principal" de las
+   * "conectadas": ahora todas son iguales, y acá siempre dice "principal"
+   * para que esas versiones sigan reconociéndola. */
+  modo: 'principal';
+  /** Identifica la red de PCs del negocio: todas las PCs de la misma red lo
+   * tienen igual. (Ausente en versiones anteriores.) */
+  idRed?: string;
   generacion?: number;
 }
 
-/** Una PC encontrada en la red al buscar la principal desde otra PC. */
+/** Una PC encontrada en la red al buscar con cuál sumarse. */
 export interface PcEncontrada {
   direccion: string;
   nombrePc: string | null;
   version: string | null;
-  /** Responde, pero con una versión de la app que todavía no sabe recibir otra PC. */
+  /** Responde, pero con una versión de la app que todavía no sabe sumarse. */
   versionVieja: boolean;
+  /** Ya es parte de la misma red que esta PC. */
+  enMiRed: boolean;
 }
 
-/** En qué modo está esta PC (para la pantalla de Configuración). */
-export interface InfoModoPc {
-  modo: ModoPc;
-  direccionPrincipal: string | null;
-  nombrePrincipal: string | null;
+/** Cómo anda la sincronización con una de las otras PCs. */
+export interface PcDeLaRed {
+  idPc: string;
+  nombrePc: string;
+  direccion: string;
+  /** Contesta en este momento. */
+  enLinea: boolean;
+  /** Última vez que se habló con ella (ISO). */
+  ultimaVez: string | null;
+  /** Cambios que esa PC tiene y esta todavía no aplicó. */
+  pendientes: number;
+  error: string | null;
+}
+
+export interface AvisoDeRed {
+  id: string;
+  fecha: string;
+  texto: string;
+}
+
+/** Todo lo que muestra la pantalla de Configuración sobre la red de PCs. */
+export interface EstadoRed {
   idPc: string;
   nombrePc: string;
   versionApp: string;
-  /** Sólo en la principal: las PCs conectadas que guardan una copia de sus datos. */
-  copias: CopiaDeOtraPc[];
+  pcs: PcDeLaRed[];
+  /** Hay cambios llegando o aplicándose ahora. */
+  sincronizando: boolean;
+  /** Esta PC está trayendo todos los datos de otra (primera vez). */
+  poniendoseAlDia: boolean;
+  progreso: { hecho: number; total: number } | null;
+  /** Cosas que pasaron al unir cambios y que conviene que alguien revise. */
+  avisos: AvisoDeRed[];
+  /** La PC venía "conectada" a otra con la versión anterior y todavía no se
+   * pudo sumar sola: acá está cuál era, para sumarla desde Configuración. */
+  pendienteDeSumarse: { direccion: string; nombre: string | null } | null;
 }
 
-/** Una PC conectada que copia los datos de la principal (lo ve la principal). */
-export interface CopiaDeOtraPc {
-  idPc: string;
-  nombrePc: string;
-  /** Última vez que esa PC se comunicó con la principal (ISO). */
-  ultimaVez: string;
-  /** Cuándo se hizo su última copia completa (ISO), o null si todavía no. */
-  ultimaCopia: string | null;
-  /** Su copia tiene todo lo último que se cargó en la principal. */
-  alDia: boolean;
-}
-
-/** Cómo anda la copia de seguridad de los datos en una PC conectada. */
-export interface EstadoCopia {
-  /** Esta PC ya tiene permiso para copiar los datos de la principal. */
-  activa: boolean;
-  ultimaCopia: string | null;
-  /** La copia tiene todo lo último que se cargó en la principal. */
-  alDia: boolean;
-  copiando: boolean;
-  error: string | null;
-  /** La principal contesta en este momento. */
-  principalAlcanzable: boolean;
-  nombrePrincipal: string | null;
-  /** Qué hay en la copia guardada. */
-  resumen: { articulos: number; clientes: number; ventas: number } | null;
-}
-
-export interface CredencialesAdmin {
-  usuario: string;
-  password: string;
-}
-
-export interface HacerPrincipalInput extends CredencialesAdmin {
-  /** Hace falta si la principal no contesta: se usa la última copia guardada,
-   * sin lo que se haya cargado después. */
-  aceptaCopiaVieja?: boolean;
-}
-
-/** Qué pasó al pasar la principal a esta PC. */
-export interface ResultadoHacerPrincipal {
-  /** La principal no contestaba: se usó la última copia guardada. */
-  usoCopia: boolean;
-  fechaCopia: string | null;
-  /** La otra PC quedó conectada a esta (si no se pudo avisar, hay que hacerlo a mano). */
-  otraPcAvisada: boolean;
-  nombreOtraPc: string | null;
-}
-
-/** Lo que manda una PC para juntar sus datos en la principal. */
+/** Lo que manda una PC para juntar sus datos con los de otra. */
 export interface DatosParaJuntar {
   nombrePc: string;
   /** Cada colección como EJSON (así viajan tal cual los ObjectId). */
@@ -272,12 +250,23 @@ export interface ResumenJuntar {
   avisos: string[];
 }
 
-export interface ConexionPrincipalInput {
+export interface SumarPcInput {
+  /** Dirección de la PC con la que se suma ("192.168.1.50" o con puerto). */
   direccion: string;
+  /** Cuenta de administradora de esa PC. */
   usuario: string;
   password: string;
   /** true: sólo calcula qué se juntaría, sin tocar nada. */
   simular: boolean;
+  /** Esta PC no tiene nada propio para pasar (venía conectada a la otra, o es
+   * nueva): sólo trae los datos de la red, sin juntar los suyos. */
+  soloTraer?: boolean;
+}
+
+export interface ResultadoSumarPc {
+  /** Lo que se juntó de esta PC (null si sólo se trajo lo de la red). */
+  resumen: ResumenJuntar | null;
+  nombrePc: string;
 }
 
 export interface ApiResult<T> {

@@ -1,27 +1,38 @@
-// Qué rol tiene esta PC en el negocio: "principal" (tiene la base de datos,
-// como siempre) o "conectada" (usa la de otra PC de la red). Se guarda en un
+// Cómo se relaciona esta PC con las demás del negocio. Se guarda en un
 // archivito en la carpeta de datos de la app, que las actualizaciones no tocan.
+//
+// Todas las PCs son iguales: cada una tiene su base completa y se mantiene al
+// día con las otras (ver electron/sync). Lo único que hace falta saber acá es
+// con quiénes se habla ("pares") y la clave de la red que los reconoce.
 import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { ModoPc } from '../shared/types';
+
+export interface ParGuardado {
+  idPc: string;
+  nombre: string;
+  /** "192.168.1.50:4000" */
+  direccion: string;
+}
 
 export interface ConfiguracionPc {
   /** Identificador propio de esta PC, para reconocerla en la red (y que no
-   * se conecte a sí misma ni se confunda de PC si cambia la IP). */
+   * se confunda de PC si le cambia la IP). */
   idPc: string;
-  modo: ModoPc;
-  /** Sólo en modo conectada: dónde está la PC principal ("192.168.1.50:4000"). */
-  direccionPrincipal: string | null;
-  /** El idPc de la principal — si cambia de IP, se la vuelve a encontrar por esto. */
-  idPrincipal: string | null;
-  nombrePrincipal: string | null;
-  /** Sólo en modo conectada: la clave con la que esta PC copia los datos de
-   * la principal (ver replica.ts). La da la principal al conectarse. */
-  claveCopia: string | null;
-  /** Cuántas veces cambió de PC la principal (ver InfoPc.generacion). */
-  generacion: number;
+  /** La clave que comparten las PCs del negocio. null: todavía no tiene (se
+   * crea al arrancar, o se recibe al sumarse a la red de otra PC). */
+  claveRed: string | null;
+  /** Las otras PCs de la red. */
+  pares: ParGuardado[];
+  /** 'traer': esta PC venía "conectada" a otra con la versión anterior y su
+   * base propia no sirve: al arrancar tiene que traer todos los datos de la red
+   * (con un respaldo de lo que tuviera). */
+  inicial: 'listo' | 'traer';
+  /** Si venía conectada a otra PC (versión anterior), cuál: sirve para
+   * ofrecer sumarse a su red si no se pudo hacer solo. */
+  direccionAnterior: string | null;
+  nombreAnterior: string | null;
 }
 
 function archivo(): string {
@@ -30,26 +41,58 @@ function archivo(): string {
 
 let enMemoria: ConfiguracionPc | null = null;
 
+function esTexto(valor: unknown): valor is string {
+  return typeof valor === 'string' && valor.length > 0;
+}
+
 export function leerConfiguracion(): ConfiguracionPc {
   if (enMemoria) return enMemoria;
-  let leida: Partial<ConfiguracionPc> = {};
+  let leida: Record<string, unknown> = {};
+  let existia = true;
   try {
-    leida = JSON.parse(fs.readFileSync(archivo(), 'utf-8')) as Partial<ConfiguracionPc>;
+    leida = JSON.parse(fs.readFileSync(archivo(), 'utf-8')) as Record<string, unknown>;
   } catch {
-    // Primera vez (o archivo roto): arranca como principal, que es lo de siempre.
+    existia = false;
   }
-  const conectada = leida.modo === 'conectada' && typeof leida.direccionPrincipal === 'string' && leida.direccionPrincipal;
-  enMemoria = {
-    idPc: typeof leida.idPc === 'string' && leida.idPc ? leida.idPc : crypto.randomUUID(),
-    modo: conectada ? 'conectada' : 'principal',
-    direccionPrincipal: conectada ? leida.direccionPrincipal! : null,
-    idPrincipal: conectada && typeof leida.idPrincipal === 'string' ? leida.idPrincipal : null,
-    nombrePrincipal: conectada && typeof leida.nombrePrincipal === 'string' ? leida.nombrePrincipal : null,
-    claveCopia: conectada && typeof leida.claveCopia === 'string' && leida.claveCopia ? leida.claveCopia : null,
-    generacion: typeof leida.generacion === 'number' && leida.generacion > 0 ? Math.floor(leida.generacion) : 0,
+
+  const config: ConfiguracionPc = {
+    idPc: esTexto(leida.idPc) ? leida.idPc : crypto.randomUUID(),
+    claveRed: esTexto(leida.claveRed) ? leida.claveRed : null,
+    pares: [],
+    inicial: leida.inicial === 'traer' ? 'traer' : 'listo',
+    direccionAnterior: esTexto(leida.direccionAnterior) ? leida.direccionAnterior : null,
+    nombreAnterior: esTexto(leida.nombreAnterior) ? leida.nombreAnterior : null,
   };
-  if (!leida.idPc) guardarConfiguracion(enMemoria);
-  return enMemoria;
+
+  if (Array.isArray(leida.pares)) {
+    for (const p of leida.pares as Array<Record<string, unknown>>) {
+      if (p && esTexto(p.idPc) && esTexto(p.direccion)) {
+        config.pares.push({ idPc: p.idPc, nombre: esTexto(p.nombre) ? p.nombre : 'PC del negocio', direccion: p.direccion });
+      }
+    }
+  }
+
+  // Versión anterior: la PC estaba "conectada" a una principal. Pasa a ser una
+  // más de la red de esa PC; la clave de copia que tenía es la clave de la red.
+  if (leida.modo === 'conectada' && esTexto(leida.direccionPrincipal)) {
+    const nombre = esTexto(leida.nombrePrincipal) ? leida.nombrePrincipal : 'la otra PC';
+    config.direccionAnterior = leida.direccionPrincipal;
+    config.nombreAnterior = nombre;
+    if (esTexto(leida.claveCopia)) {
+      config.claveRed = leida.claveCopia;
+      // Sin el identificador de la otra PC no se la puede anotar como par: se
+      // la busca por su dirección anterior (ver direccionesCandidatas).
+      if (esTexto(leida.idPrincipal)) {
+        config.pares = [{ idPc: leida.idPrincipal, nombre, direccion: leida.direccionPrincipal }];
+      }
+      config.inicial = 'traer';
+    }
+  }
+
+  enMemoria = config;
+  const cambioDeFormato = 'modo' in leida || 'generacion' in leida || 'direccionPrincipal' in leida;
+  if (!existia || !esTexto(leida.idPc) || cambioDeFormato) guardarConfiguracion(config);
+  return config;
 }
 
 export function guardarConfiguracion(config: ConfiguracionPc): void {

@@ -12,8 +12,11 @@ import { getDb } from './db/database';
 
 const DIAS_A_CONSERVAR = 14;
 
+// (Con MIS_AMORES_CARPETA_RESPALDOS se puede elegir otra, para que las pruebas
+// no escriban en los respaldos reales.)
 export function carpetaRespaldos(): string {
-  return path.join(app.getPath('documents'), 'Mis Amores - Respaldos');
+  const otra = process.env.MIS_AMORES_CARPETA_RESPALDOS;
+  return otra ? path.resolve(otra) : path.join(app.getPath('documents'), 'Mis Amores - Respaldos');
 }
 
 function hoyYMD(): string {
@@ -25,11 +28,13 @@ function hoyYMD(): string {
 
 // Guarda cada colección de una base en un .json dentro de la carpeta. Recibe
 // la base porque a veces hay que respaldar una que esta app no tiene abierta
-// (ej. al pasar a ser la principal; ver replica.ts).
+// (ej. al cargar una copia guardada; ver replica.ts).
 export async function respaldarBase(db: Db, carpetaDestino: string): Promise<number> {
   fs.mkdirSync(carpetaDestino, { recursive: true });
 
-  const colecciones = await db.listCollections().toArray();
+  // El diario de sincronización (_sync_*) no es un dato del negocio: se
+  // rearma solo, y en un respaldo sólo estorbaría al restaurar.
+  const colecciones = (await db.listCollections().toArray()).filter((c) => !c.name.startsWith('_sync_'));
   let totalDocs = 0;
   for (const { name } of colecciones) {
     const docs = await db.collection(name).find({}).toArray();

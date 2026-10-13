@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
+import IndicadorRed from './IndicadorRed';
 import { etiquetaRol } from '@shared/types';
 
 type AcentoNav = 'brand' | 'sky' | 'emerald' | 'violet' | 'amber' | 'rose' | 'slate';
@@ -201,6 +202,7 @@ export default function Layout() {
         </nav>
 
         <div className="border-t border-slate-200 p-3">
+          {window.escritorio && <IndicadorRed />}
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
               {sesion?.nombre?.[0]?.toUpperCase() ?? '?'}

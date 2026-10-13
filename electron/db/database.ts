@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { MongoClient, type Collection, type Db, type Document } from 'mongodb';
 import { notificarEscritura } from '../cambiosEnVivo';
+import type { Diario } from '../sync/diario';
+import { esReplicada } from '../sync/modelo';
 
 // Se puede apuntar a otro servidor (por ej. si el negocio abre otro local y
 // quiere compartir el catálogo entre PCs en red) definiendo estas variables de
@@ -10,9 +12,10 @@ export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? 'mis_amores_gestio
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
-// La misma base, pero que se niega a escribir mientras se pasa la principal a
-// otra PC (ver bloquearEscrituras): así nada se carga a medio traspaso.
+// La misma base, pero con cada escritura pasando por el diario de cambios (ver
+// sync/diario.ts): así lo que se carga en esta PC viaja a las demás.
 let dbProtegida: Db | null = null;
+let diario: Diario | null = null;
 
 const METODOS_DE_ESCRITURA = new Set([
   'insertOne',
@@ -33,17 +36,17 @@ const METODOS_DE_ESCRITURA = new Set([
   'rename',
 ]);
 
-let escriturasBloqueadas = false;
-
-export const MENSAJE_ESCRITURA_BLOQUEADA =
-  'Se está pasando la PC principal a otra PC. Esperá unos segundos y volvé a intentar.';
-
-export function bloquearEscrituras(bloquear: boolean): void {
-  escriturasBloqueadas = bloquear;
+/** Desde que se instala el diario, las escrituras de las colecciones que se
+ * replican entre PCs quedan anotadas (ver sync/diario.ts). */
+export function instalarDiario(nuevo: Diario | null): void {
+  diario = nuevo;
 }
 
-export function escriturasEstanBloqueadas(): boolean {
-  return escriturasBloqueadas;
+/** Varias escrituras seguidas que tienen que quedar juntas: ningún cambio que
+ * llegue de otra PC se mete en el medio (ej. descontar el stock y anotar el
+ * movimiento que lo explica). */
+export function enTransaccion<T>(tarea: () => Promise<T>): Promise<T> {
+  return diario ? diario.conLlave(tarea) : tarea();
 }
 
 function protegerColeccion(coleccion: Collection<Document>): Collection<Document> {
@@ -53,8 +56,8 @@ function protegerColeccion(coleccion: Collection<Document>): Collection<Document
       if (typeof valor !== 'function') return valor;
       if (typeof propiedad === 'string' && METODOS_DE_ESCRITURA.has(propiedad)) {
         return (...args: unknown[]) =>
-          escriturasBloqueadas
-            ? Promise.reject(new Error(MENSAJE_ESCRITURA_BLOQUEADA))
+          diario && esReplicada(objetivo.collectionName)
+            ? diario.envolver(objetivo, propiedad, args)
             : (valor as (...a: unknown[]) => unknown).apply(objetivo, args);
       }
       return (valor as (...a: unknown[]) => unknown).bind(objetivo);
@@ -80,6 +83,14 @@ export function getDb(): Db {
     throw new Error('La base de datos todavía no fue inicializada');
   }
   return dbProtegida;
+}
+
+/** La base sin pasar por el diario: sólo para el propio motor de sincronización. */
+export function getDbCruda(): Db {
+  if (!db) {
+    throw new Error('La base de datos todavía no fue inicializada');
+  }
+  return db;
 }
 
 // Los comandos de Mongo que escriben, para avisar "algo cambió" a las
@@ -125,6 +136,14 @@ export async function initDatabase(): Promise<Db> {
   await migrarCodigosBarraNulos(db);
 
   return dbProtegida;
+}
+
+/** Vuelve a crear los índices (por ejemplo, después de cargar una copia que
+ * reemplazó las colecciones y se llevó los índices con ellas). */
+export async function asegurarIndices(): Promise<void> {
+  if (!db) throw new Error('La base de datos todavía no fue inicializada');
+  await crearIndices(db);
+  await migrarCodigosBarraNulos(db);
 }
 
 export async function closeDatabase(): Promise<void> {

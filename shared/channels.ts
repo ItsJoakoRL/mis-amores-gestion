@@ -67,16 +67,15 @@ export const Channels = {
   // pantalla (webContents.send) cada vez que cambia el estado de la actualización.
   sistemaCambioActualizacion: 'sistema:cambioActualizacion',
 
-  // PC principal / PC conectada (ver electron/main.ts)
-  escritorioModo: 'escritorio:modo',
-  escritorioBuscarPrincipales: 'escritorio:buscarPrincipales',
-  escritorioConectar: 'escritorio:conectar',
-  escritorioDesconectar: 'escritorio:desconectar',
+  // Red de PCs (ver electron/main.ts y electron/sync)
+  escritorioRed: 'escritorio:red',
+  escritorioBuscarPcs: 'escritorio:buscarPcs',
+  escritorioSumarPc: 'escritorio:sumarPc',
+  escritorioSalirDeLaRed: 'escritorio:salirDeLaRed',
+  escritorioRevisarRed: 'escritorio:revisarRed',
+  escritorioBorrarAvisos: 'escritorio:borrarAvisos',
+  escritorioOlvidarPc: 'escritorio:olvidarPc',
   escritorioReintentar: 'escritorio:reintentar',
-  // Copia de seguridad en la PC conectada y traspaso de la principal (ver electron/replica.ts)
-  escritorioEstadoCopia: 'escritorio:estadoCopia',
-  escritorioActivarCopia: 'escritorio:activarCopia',
-  escritorioHacerPrincipal: 'escritorio:hacerPrincipal',
 
   // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.
   sistemaDatosCambio: 'sistema:datosCambio',

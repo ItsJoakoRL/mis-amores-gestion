@@ -24,15 +24,9 @@ import { juntarDatos } from '../juntarDatos';
 import { respaldoExtra } from '../backup';
 import { carpetaImagenes } from '../imagenes';
 import { escucharCambios } from '../cambiosEnVivo';
-import {
-  armarManifiesto,
-  cancelarTraspaso,
-  claveDeCopia,
-  claveEsValida,
-  coleccionComoTexto,
-  iniciarTraspaso,
-  registrarCopia,
-} from '../replica';
+import { armarManifiesto, claveDeCopia, claveEsValida, coleccionComoTexto } from '../replica';
+import { completarStockBase } from '../sync/aplicar';
+import { registrarRutasSync, type DepsRutasSync } from '../sync/rutas';
 import { crearToken, obtenerSesionPorToken, eliminarToken } from './tokenSessions';
 import { NOMBRE_HOST } from './mdns';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
@@ -88,7 +82,7 @@ import {
 // una le gane el puerto a la otra y la conexión del celular falle con
 // "EADDRINUSE". (En desarrollo se puede elegir otro con MIS_AMORES_PUERTO,
 // para probar dos "PCs" en la misma máquina.)
-export const PUERTO = process.env.NODE_ENV === 'development' ? Number(process.env.MIS_AMORES_PUERTO) || 4001 : 4000;
+export const PUERTO = Number(process.env.MIS_AMORES_PUERTO) || (process.env.NODE_ENV === 'development' ? 4001 : 4000);
 
 // Para el nombre de la carpeta del respaldo previo a juntar datos, en hora local.
 function marcaDeTiempo(): string {
@@ -157,17 +151,10 @@ export function obtenerIpsLan(): string[] {
   return candidatas.sort((a, b) => a.prioridad - b.prioridad).map((c) => c.ip);
 }
 
-/** Lo que esta PC tiene que hacer, desde main.ts, cuando otra PC le pide
- * pasarle el papel de principal. */
-export interface AccionesTraspaso {
-  /** Esta PC deja de ser la principal y pasa a estar conectada a la otra. */
-  cederPrincipal: (nueva: { direccion: string; idPrincipal: string; nombrePrincipal: string }) => Promise<void>;
-}
-
 export async function iniciarServidorWeb(
   distDir: string,
   infoPc: () => InfoPc,
-  acciones: AccionesTraspaso
+  sync: Omit<DepsRutasSync, 'requiereAdmin'>
 ): Promise<InfoServidorWeb> {
   const app = express();
   app.use(cors());
@@ -186,16 +173,17 @@ export async function iniciarServidorWeb(
     };
   }
 
-  // --- PC principal / PC conectada ---
+  // --- Red de PCs ---
   // Para que otra PC del negocio reconozca a esta en la red antes de
-  // conectarse (sin sesión: hace falta para encontrarla).
+  // sumarse (sin sesión: hace falta para encontrarla).
   app.get(
     '/api/sistema/info',
     ruta(() => infoPc())
   );
   // Recibe toda la base de otra PC y la junta con la de acá (ver
-  // juntarDatos.ts). Va antes del express.json() general porque los datos
-  // pesan mucho más que el límite normal de un pedido.
+  // juntarDatos.ts): es lo que se hace una vez, al sumar a la red una PC que
+  // ya tenía datos propios. Va antes del express.json() general porque los
+  // datos pesan mucho más que el límite normal de un pedido.
   let juntandoAhora = false;
   app.post(
     '/api/sistema/juntar-datos',
@@ -206,12 +194,20 @@ export async function iniciarServidorWeb(
       const { datos, simular } = req.body as { datos: DatosParaJuntar; simular?: boolean };
       juntandoAhora = true;
       try {
-        return await juntarDatos(datos, {
+        const resumen = await juntarDatos(datos, {
           // Si no se aclara, se simula: escribir tiene que ser a propósito.
           simular: simular !== false,
           carpetaImagenes: carpetaImagenes(),
           antesDeEscribir: () => respaldoExtra(`antes-de-juntar-${marcaDeTiempo()}`),
         });
+        // Los productos que vinieron de una base anterior no tienen "stock
+        // inicial": se les calcula para que el stock siga cerrando, y se anota
+        // en el diario para que las otras PCs también lo reciban.
+        if (simular === false) {
+          await completarStockBase(sync.diario);
+          await sync.diario.barrer({ colecciones: ['articulos'], marcaNuevos: 'ahora' });
+        }
+        return resumen;
       } finally {
         juntandoAhora = false;
       }
@@ -220,9 +216,9 @@ export async function iniciarServidorWeb(
 
   app.use(express.json());
 
-  // --- Copia de seguridad y traspaso de la principal (ver replica.ts) ---
-  // Las PCs conectadas piden con su clave de copia (sin contraseñas); una
-  // administradora también puede pedir con su sesión.
+  // --- Compatibilidad con la versión anterior (ver replica.ts) ---
+  // Una PC que todavía no se actualizó se "conecta" a ésta y guarda una copia
+  // de sus datos: se le sigue dando hasta que se actualice.
   async function autorizarCopia(req: Request): Promise<void> {
     if (await claveEsValida(req.headers['x-clave-copia'])) return;
     requiereAdmin(req);
@@ -231,17 +227,8 @@ export async function iniciarServidorWeb(
     '/api/copia/manifiesto',
     ruta(async (req) => {
       await autorizarCopia(req);
-      const q = req.query;
-      if (typeof q.pc === 'string' && q.pc) {
-        registrarCopia({
-          idPc: q.pc,
-          nombrePc: typeof q.nombre === 'string' ? q.nombre : '',
-          copiaFecha: typeof q.copia === 'string' ? q.copia : null,
-          copiaVersion: typeof q.version === 'string' ? q.version : null,
-        });
-      }
       const yo = infoPc();
-      return armarManifiesto(yo.idPc, yo.nombrePc, yo.generacion ?? 0);
+      return armarManifiesto(yo.idPc, yo.nombrePc, 0);
     })
   );
   app.get('/api/copia/coleccion/:nombre', async (req, res) => {
@@ -260,36 +247,9 @@ export async function iniciarServidorWeb(
       return { clave: await claveDeCopia() };
     })
   );
-  app.post(
-    '/api/copia/traspaso/iniciar',
-    ruta((req) => {
-      const sesion = requiereAdmin(req);
-      iniciarTraspaso(sesion.usuario);
-      return true;
-    })
-  );
-  app.post(
-    '/api/copia/traspaso/cancelar',
-    ruta((req) => {
-      requiereAdmin(req);
-      cancelarTraspaso();
-      return true;
-    })
-  );
-  app.post(
-    '/api/copia/traspaso/terminar',
-    ruta(async (req) => {
-      requiereAdmin(req);
-      const { direccion, idPrincipal, nombrePrincipal } = req.body as {
-        direccion?: string;
-        idPrincipal?: string;
-        nombrePrincipal?: string;
-      };
-      if (!direccion || !idPrincipal) throw new Error('Faltan los datos de la nueva PC principal');
-      await acciones.cederPrincipal({ direccion, idPrincipal, nombrePrincipal: nombrePrincipal ?? 'la PC principal' });
-      return true;
-    })
-  );
+
+  // --- Sincronización entre PCs (ver sync/rutas.ts) ---
+  registrarRutasSync(app, { ...sync, requiereAdmin: (req) => void requiereAdmin(req) });
 
   // --- Auth ---
   app.post(

@@ -1,7 +1,7 @@
-// Junta en esta PC (la principal) los datos de otra PC del negocio que hasta
-// ahora usaba su propia base — para que, al pasar a usar una sola base para
-// todo, no se pierda nada de lo que se cargó allá: ventas, fiados, pagos,
-// clientes, productos nuevos, códigos de barras, precios y stock.
+// Junta en esta PC los datos de otra PC del negocio que hasta ahora trabajaba
+// por su cuenta — para que, al sumarla a la red (donde todas las PCs comparten
+// los datos), no se pierda nada de lo que se cargó allá: ventas, fiados,
+// pagos, clientes, productos nuevos, códigos de barras, precios y stock.
 //
 // Las dos bases arrancaron de la misma copia (el respaldo con el que se armó
 // cada PC), así que mucho tiene el mismo _id en las dos. Lo cargado después
@@ -400,7 +400,7 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
 
   if (codigosDistintos > 0) {
     resumen.avisos.push(
-      `${codigosDistintos} producto(s) tienen un código de barras distinto en cada PC: se dejó el de la principal.`
+      `${codigosDistintos} producto(s) tienen un código de barras distinto en cada PC: se dejó el de esta PC.`
     );
   }
   if (ajustadosConAjusteManual > 0) {
@@ -510,7 +510,7 @@ export async function juntarDatos(datos: DatosParaJuntar, opciones: OpcionesJunt
   return resumen;
 }
 
-// Lo que manda esta PC cuando se conecta a la principal: toda su base (las
+// Lo que manda esta PC cuando se suma a la red de otra: toda su base (las
 // colecciones que importan) y las fotos de sus productos.
 export async function exportarDatosParaJuntar(nombrePc: string): Promise<DatosParaJuntar> {
   const db = getDb();

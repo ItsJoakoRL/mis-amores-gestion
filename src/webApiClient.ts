@@ -55,13 +55,13 @@ async function req<T>(method: string, ruta: string, body?: unknown): Promise<T> 
     });
   } catch {
     // Antes salía "Failed to fetch", que no le dice nada a nadie.
-    throw new Error('No hay conexión con la PC principal. Revisá el WiFi y que esa PC esté prendida con Mis Amores abierto.');
+    throw new Error('No hay conexión con la PC. Revisá el WiFi y que esa PC esté prendida con Mis Amores abierto.');
   }
   let json: { ok: boolean; data?: T; error?: string };
   try {
     json = (await res.json()) as { ok: boolean; data?: T; error?: string };
   } catch {
-    throw new Error('La PC principal respondió algo inesperado. Probá de nuevo en un ratito.');
+    throw new Error('La PC respondió algo inesperado. Probá de nuevo en un ratito.');
   }
   if (!json.ok) {
     if (json.error === MENSAJE_SIN_SESION && token) {
@@ -194,10 +194,10 @@ export function crearWebApiClient(): Api {
       eliminar: (id) => req('DELETE', `/api/usuarios/${id}`),
     },
     imagenes: {
-      // Elegir una foto abre el explorador de archivos de Windows de la PC
-      // que tiene los datos: desde un celular (o la PC conectada) no se puede.
+      // Elegir una foto abre el explorador de archivos de Windows de la PC:
+      // desde un celular no se puede.
       seleccionar: async () => {
-        throw new Error('Las fotos de los productos se eligen desde la PC principal.');
+        throw new Error('Las fotos de los productos se eligen desde una PC.');
       },
     },
     sistema: {

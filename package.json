@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",
@@ -11,7 +11,10 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:electron && vite build",
     "build:win": "npm run build && electron-builder --win --publish always",
-    "actualizaciones:servir": "node scripts/servidor-actualizaciones.js"
+    "actualizaciones:servir": "node scripts/servidor-actualizaciones.js",
+    "probar:sync": "node scripts/probar-sync.js",
+    "probar:union": "node scripts/probar-union.js",
+    "probar:azar": "node scripts/probar-azar.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

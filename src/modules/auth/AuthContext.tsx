@@ -25,8 +25,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setCargando(false));
   }, []);
 
-  // En el celular (o la PC conectada), si la PC principal avisa que la
-  // sesión ya no vale, se vuelve al login (ver webApiClient.ts).
+  // En el celular, si la PC avisa que la sesión ya no vale, se vuelve al
+  // login (ver webApiClient.ts).
   useEffect(() => {
     const alVencer = () => setSesion(null);
     window.addEventListener(EVENTO_SESION_VENCIDA, alVencer);

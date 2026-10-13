@@ -5,8 +5,6 @@ import type { EstadoActualizacion, InfoActualizacion } from '@shared/types';
 // En qué anda la actualización de la app de esta PC — lo lleva el proceso
 // principal (electron/main.ts) y avisa cada vez que cambia. Desde el celular
 // no hay nada instalado que actualizar, así que ahí queda siempre en null.
-// (En la PC conectada la pantalla viene de la principal, pero esto sigue
-// siendo lo de esta PC: llega por window.escritorio, no por los datos.)
 export function useActualizacion(): InfoActualizacion | null {
   const [info, setInfo] = useState<InfoActualizacion | null>(null);
 

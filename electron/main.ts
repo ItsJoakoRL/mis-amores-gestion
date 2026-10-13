@@ -1,49 +1,38 @@
 import { app, BrowserWindow, dialog, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import express from 'express';
-import http from 'http';
 import multicastDns from 'multicast-dns';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
-import { initDatabase, closeDatabase } from './db/database';
-import { respaldarSiCorresponde } from './backup';
+import { initDatabase, closeDatabase, getDbCruda, instalarDiario, asegurarIndices } from './db/database';
+import { respaldarSiCorresponde, respaldoExtra } from './backup';
 import { registrarHandlers } from './ipc/handlers';
 import { iniciarServidorWeb, obtenerIpsLan, PUERTO } from './server/httpServer';
 import { iniciarMdns, NOMBRE_HOST } from './server/mdns';
-import { cargarSesionesGuardadas } from './server/tokenSessions';
-import { requiereAdmin } from './session';
+import { cargarSesionesGuardadas, invalidarTodasLasSesiones, invalidarTokensDeUsuario } from './server/tokenSessions';
+import { requiereAdmin, setSesion } from './session';
 import { guardarConfiguracion, leerConfiguracion } from './configuracion';
 import { exportarDatosParaJuntar } from './juntarDatos';
 import { escucharCambios } from './cambiosEnVivo';
-import {
-  cargarCopiaEnEstaPc,
-  bajarCopia,
-  claveDeCopia,
-  esAdminDeLaCopia,
-  estadoDeLaCopia,
-  iniciarCopiaAutomatica,
-  leerMetaCopia,
-  listarCopias,
-  pausarCopiaAutomatica,
-  reanudarCopiaAutomatica,
-} from './replica';
+import { cargarCopiaEnEstaPc, claveDeCopia, leerMetaCopia } from './replica';
+import { carpetaImagenes } from './imagenes';
+import { Diario } from './sync/diario';
+import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
+import { Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
+import { Reloj } from './sync/reloj';
 import { Channels } from '../shared/channels';
 import type {
   ApiResult,
-  ConexionPrincipalInput,
-  CredencialesAdmin,
   EstadoActualizacion,
-  EstadoCopia,
-  HacerPrincipalInput,
-  ResultadoHacerPrincipal,
+  EstadoRed,
   InfoActualizacion,
-  InfoModoPc,
   InfoPc,
   InfoRed,
   PcEncontrada,
+  ResultadoSumarPc,
   ResumenJuntar,
+  SumarPcInput,
 } from '../shared/types';
 
 // Diagnóstico temporal: si algo revienta antes de que haya ventana (y por lo
@@ -71,10 +60,14 @@ if (!app.isPackaged) {
   app.setPath('userData', carpeta ? path.resolve(carpeta) : path.join(app.getPath('appData'), 'mis-amores-gestion-dev'));
 }
 
-// Si esta PC es la principal (tiene la base de datos) o está conectada a la
-// principal de otra PC (ver configuracion.ts). Cambiar de modo reinicia la app.
+// Todas las PCs del negocio son iguales: cada una tiene su base completa y se
+// mantiene al día con las otras (ver electron/sync). Esto lee con quiénes habla
+// y la clave de la red (ver configuracion.ts).
 let config = leerConfiguracion();
-const modoConectada = config.modo === 'conectada';
+
+// Para las pruebas automáticas: arranca todo (base, servidor, sincronización)
+// sin abrir ventana ni ícono en la bandeja.
+const sinVentana = process.env.MIS_AMORES_SIN_VENTANA === '1';
 
 // Como la app se minimiza a la bandeja en vez de cerrarse de verdad, si
 // alguien la abre de nuevo (doble click en el ícono) sin darse cuenta de que
@@ -97,17 +90,24 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 // Se pone en true sólo cuando de verdad hay que cerrar todo (desde el menú
 // de la bandeja). El resto del tiempo, cerrar la ventana la esconde nomás —
-// así un click de más en la "X" no apaga el servidor que usa el celular.
+// así un click de más en la "X" no apaga el servidor que usa el celular ni la
+// sincronización con las otras PCs.
 let saliendoDeVerdad = false;
 let avisoBandejaMostrado = false;
+// 'esperando': esta PC todavía no tiene los datos de la red (ver
+// primeraSincronizacion) y la ventana muestra un cartel en vez de la app.
+let estadoArranque: 'iniciando' | 'listo' | 'esperando' = 'iniciando';
 
 function createWindow() {
+  if (sinVentana) return;
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 640,
     backgroundColor: '#f2f7fd',
+    // (Para las pruebas automáticas que manejan la pantalla sin mostrarla.)
+    show: process.env.MIS_AMORES_VENTANA_OCULTA !== '1',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '../../build-assets/icon.png'),
     webPreferences: {
@@ -119,25 +119,11 @@ function createWindow() {
       // require() polyfillado que sólo resuelve módulos nativos de Node, así que
       // esos require() fallarían en silencio y window.api nunca se expondría.
       sandbox: false,
-      // El preload lo lee para saber qué exponer: conectada, la pantalla
-      // habla con la principal por la red (como un celular), no por IPC.
-      additionalArguments: [`--mis-amores-modo=${config.modo}`],
     },
   });
 
-  if (modoConectada) {
-    cargarPrincipal();
-    const ventana = mainWindow;
-    // La pantalla viene de la otra PC: que no pueda abrir ventanas nuevas ni
-    // irse a cualquier otra dirección.
-    ventana.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    ventana.webContents.on('will-navigate', (e, url) => {
-      if (!url.startsWith(`http://${config.direccionPrincipal}/`) && !url.startsWith('data:')) e.preventDefault();
-    });
-    ventana.webContents.on('did-fail-load', (_e, codigo, _descripcion, _url, esPaginaPrincipal) => {
-      // -3 es "cancelado" (ej. se recargó a mitad de camino): no es un error.
-      if (esPaginaPrincipal && codigo !== -3) mostrarSinConexion();
-    });
+  if (estadoArranque === 'esperando') {
+    mostrarEsperandoRed();
   } else if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -146,7 +132,7 @@ function createWindow() {
   }
 
   // Cerrar la ventana no cierra la app: la esconde. El servidor para el
-  // celular y la conexión a la base siguen andando en segundo plano.
+  // celular, la base y la sincronización siguen andando en segundo plano.
   mainWindow.on('close', (e) => {
     if (!saliendoDeVerdad) {
       e.preventDefault();
@@ -155,9 +141,8 @@ function createWindow() {
         avisoBandejaMostrado = true;
         tray?.displayBalloon({
           title: 'Mis Amores sigue funcionando',
-          content: modoConectada
-            ? 'Se minimizó a la bandeja. Para cerrarla del todo, click derecho en el ícono de la bandeja y "Salir de verdad".'
-            : 'Se minimizó a la bandeja para que el celular pueda seguir usándola. Para cerrarla del todo, click derecho en el ícono de la bandeja y "Salir de verdad".',
+          content:
+            'Se minimizó a la bandeja para que el celular y las otras PCs sigan al día. Para cerrarla del todo, click derecho en el ícono de la bandeja y "Salir de verdad".',
         });
       }
     }
@@ -179,6 +164,7 @@ function mostrarVentana() {
 }
 
 function crearBandeja() {
+  if (sinVentana) return;
   const icono = nativeImage.createFromPath(path.join(__dirname, '../../build-assets/icon.ico'));
   tray = new Tray(icono);
   tray.on('click', mostrarVentana);
@@ -213,7 +199,7 @@ function actualizarMenuBandeja() {
   }
 
   const hayActualizacion = estado.tipo === 'disponible' || estado.tipo === 'lista';
-  const nombre = modoConectada ? `Mis Amores - Gestión (conectada a ${config.nombrePrincipal ?? 'la PC principal'})` : 'Mis Amores - Gestión';
+  const nombre = 'Mis Amores - Gestión';
   tray.setToolTip(hayActualizacion ? `${nombre} — hay una actualización` : nombre);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -221,7 +207,7 @@ function actualizarMenuBandeja() {
       itemActualizacion,
       { type: 'separator' },
       {
-        label: modoConectada ? 'Salir de verdad' : 'Salir de verdad (apaga el acceso desde el celular)',
+        label: 'Salir de verdad (apaga el acceso desde el celular y la sincronización)',
         click: () => {
           saliendoDeVerdad = true;
           app.quit();
@@ -493,11 +479,17 @@ function configurarActualizaciones() {
   setInterval(chequeoAutomatico, 2 * 60 * 60 * 1000);
 }
 
-// --- PC principal / PC conectada ---
-// En el negocio hay más de una PC, y antes cada una tenía su propia base: lo
-// que se cargaba en una no aparecía en la otra. Ahora una es la "principal"
-// (tiene la base) y la otra se "conecta" a ella: abre la app de la principal
-// por la red, igual que un celular, y así todo queda en un solo lugar.
+// --- Red de PCs ---
+// En el negocio hay más de una PC y todas son iguales: cada una guarda todos
+// los datos y trabaja sola (aunque no vea a las otras), y lo que se carga en
+// cualquiera llega a las demás en vivo por el WiFi del local, sin internet ni
+// PC "principal" (ver electron/sync). Si una estaba apagada, al volver se pone
+// al día sola.
+
+let diario: Diario | null = null;
+let motor: Motor | null = null;
+let aplicador: Aplicador | null = null;
+let temporizadorMantenimiento: NodeJS.Timeout | null = null;
 
 // Mismo formato { ok, data } / { ok:false, error } que el resto de la app,
 // así el preload desenvuelve el error con su mensaje tal cual.
@@ -509,26 +501,19 @@ async function wrapEscritorio<T>(fn: () => Promise<T> | T): Promise<ApiResult<T>
   }
 }
 
+function miIdRed(): string | null {
+  return config.claveRed ? idDeRed(config.claveRed) : null;
+}
+
 function infoPc(): InfoPc {
   return {
     app: 'mis-amores-gestion',
     idPc: config.idPc,
     nombrePc: os.hostname(),
     version: app.getVersion(),
-    modo: config.modo,
-    generacion: config.generacion,
-  };
-}
-
-function infoModo(): InfoModoPc {
-  return {
-    modo: config.modo,
-    direccionPrincipal: config.direccionPrincipal,
-    nombrePrincipal: config.nombrePrincipal,
-    idPc: config.idPc,
-    nombrePc: os.hostname(),
-    versionApp: app.getVersion(),
-    copias: modoConectada ? [] : listarCopias(),
+    // Las versiones anteriores distinguían "principal" de "conectada".
+    modo: 'principal',
+    idRed: miIdRed() ?? undefined,
   };
 }
 
@@ -538,12 +523,12 @@ function normalizarDireccion(texto: string): string {
     .trim()
     .replace(/^https?:\/\//i, '')
     .replace(/\/.*$/, '');
-  if (!limpio) throw new Error('Escribí la dirección de la PC principal (por ejemplo 192.168.1.50).');
+  if (!limpio) throw new Error('Escribí la dirección de la otra PC (por ejemplo 192.168.1.50).');
   return /:\d+$/.test(limpio) ? limpio : `${limpio}:4000`;
 }
 
 const MENSAJE_VERSION_VIEJA =
-  'Esa PC respondió, pero con una versión de Mis Amores que todavía no sabe recibir otra PC. Actualizala primero.';
+  'Esa PC respondió, pero con una versión de Mis Amores que todavía no sabe sumarse a la red. Actualizala primero.';
 
 async function pedirJson<T>(
   url: string,
@@ -580,7 +565,7 @@ async function obtenerInfoPc(direccion: string): Promise<InfoPc> {
 }
 
 // Pregunta en la red quién es "misamores.local": lo contesta la app de cada
-// PC principal con su IP (ver server/mdns.ts).
+// PC con su IP (ver server/mdns.ts).
 function consultarMdns(esperaMs: number): Promise<string[]> {
   return new Promise((resolve) => {
     const ips = new Set<string>();
@@ -618,18 +603,31 @@ function consultarMdns(esperaMs: number): Promise<string[]> {
   });
 }
 
-// Las PCs principales que hay en la red (sin contar a esta), con su info.
-async function buscarConInfo(): Promise<Array<{ direccion: string; info: InfoPc | null }>> {
+// Las direcciones donde puede haber otra PC con Mis Amores.
+async function direccionesCandidatas(): Promise<Set<string>> {
   const ips = await consultarMdns(2500);
   const direcciones = new Set(ips.map((ip) => `${ip}:4000`));
-  // En desarrollo, la principal de prueba escucha en otro puerto.
-  if (!app.isPackaged) for (const ip of [...ips, '127.0.0.1']) for (const puerto of [4001, 4002]) direcciones.add(`${ip}:${puerto}`);
-  if (config.direccionPrincipal) direcciones.add(config.direccionPrincipal);
+  // En desarrollo, las PCs de prueba escuchan en otros puertos.
+  if (!app.isPackaged) {
+    const extra = (process.env.MIS_AMORES_PUERTOS_BUSQUEDA ?? '')
+      .split(',')
+      .map((p) => Number(p))
+      .filter((p) => p > 0);
+    for (const ip of [...ips, '127.0.0.1']) for (const puerto of [4001, 4002, ...extra]) direcciones.add(`${ip}:${puerto}`);
+  }
+  for (const p of config.pares) direcciones.add(p.direccion);
+  // Una PC que venía "conectada" a otra la busca donde estaba.
+  if (config.direccionAnterior) direcciones.add(config.direccionAnterior);
+  return direcciones;
+}
 
+// Las PCs con Mis Amores que hay en la red (sin contar a esta), con su info.
+async function buscarConInfo(): Promise<Array<{ direccion: string; info: InfoPc | null }>> {
+  const direcciones = await direccionesCandidatas();
   const encontradas = await Promise.all(
     [...direcciones].map(async (direccion) => {
       try {
-        return { direccion, info: await obtenerInfoPc(direccion) as InfoPc | null };
+        return { direccion, info: (await obtenerInfoPc(direccion)) as InfoPc | null };
       } catch (err) {
         // Contesta pero no sabe decir quién es: tiene una versión vieja.
         return err instanceof Error && err.message === MENSAJE_VERSION_VIEJA ? { direccion, info: null } : null;
@@ -639,7 +637,7 @@ async function buscarConInfo(): Promise<Array<{ direccion: string; info: InfoPc 
   const porPc = new Map<string, { direccion: string; info: InfoPc | null }>();
   for (const e of encontradas) {
     if (!e) continue;
-    if (e.info && (e.info.idPc === config.idPc || e.info.modo !== 'principal')) continue;
+    if (e.info && e.info.idPc === config.idPc) continue;
     const clave = e.info?.idPc ?? e.direccion;
     // La misma PC puede aparecer por dos caminos: mejor la IP de la red que 127.0.0.1.
     if (!porPc.has(clave) || porPc.get(clave)!.direccion.startsWith('127.')) porPc.set(clave, e);
@@ -647,13 +645,36 @@ async function buscarConInfo(): Promise<Array<{ direccion: string; info: InfoPc 
   return [...porPc.values()];
 }
 
-async function buscarPcsPrincipales(): Promise<PcEncontrada[]> {
+async function buscarPcsParaSumar(): Promise<PcEncontrada[]> {
+  const mia = miIdRed();
   return (await buscarConInfo()).map(({ direccion, info }) => ({
     direccion,
     nombrePc: info?.nombrePc ?? null,
     version: info?.version ?? null,
     versionVieja: !info,
+    enMiRed: !!info && !!mia && info.idRed === mia,
   }));
+}
+
+// Las PCs de MI red que contestan (con la clave): lo que usa el motor para
+// encontrar de nuevo a una PC que cambió de dirección y para descubrir PCs
+// nuevas.
+async function buscarPcsConHola(): Promise<Array<{ direccion: string; hola: HolaSync }>> {
+  if (!motor) return [];
+  const m = motor;
+  const direcciones = await direccionesCandidatas();
+  const lista: Array<{ direccion: string; hola: HolaSync }> = [];
+  await Promise.all(
+    [...direcciones].map(async (direccion) => {
+      try {
+        const hola = await m.hola(direccion, 2500);
+        if (hola.idPc !== config.idPc && hola.idRed === miIdRed()) lista.push({ direccion, hola });
+      } catch {
+        // No es una PC de esta red (o no contesta): no cuenta.
+      }
+    })
+  );
+  return lista;
 }
 
 function reiniciarApp() {
@@ -662,15 +683,86 @@ function reiniciarApp() {
   app.exit(0);
 }
 
-// Pasa los datos de esta PC a la principal y, si no es una simulación, deja
-// esta PC conectada a esa (y se reinicia en ese modo).
-async function conectarAPrincipal(p: ConexionPrincipalInput): Promise<{ resumen: ResumenJuntar; nombrePrincipal: string }> {
+function marcaDeTiempo(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+function pausa(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function guardarPares(pares: ParConfig[]) {
+  guardarConfiguracion({ ...config, pares });
+  config = leerConfiguracion();
+}
+
+// --- Sumar esta PC a la red de otra ---
+
+interface RespuestaUnirse {
+  claveRed: string;
+  idRed: string;
+  idPc: string;
+  nombrePc: string;
+  pares: ParConfig[];
+}
+
+// Deja esta PC con los datos de la red: respalda lo que tenía, lo reemplaza
+// por lo que tiene la otra PC (que ya incluye lo que esta le pasó) y empieza
+// a mantenerse al día.
+async function adoptarRed(union: RespuestaUnirse, direccion: string): Promise<void> {
+  if (!diario || !motor) throw new Error('La sincronización todavía no arrancó. Probá de nuevo en unos segundos.');
+  const par: ParConfig = { idPc: union.idPc, nombre: union.nombrePc, direccion };
+
+  // Primero se baja TODO de la otra PC (sin tocar nada de esta): si la red se
+  // corta en el medio, esta PC queda exactamente como estaba.
+  const clavePrevia = config.claveRed;
+  guardarConfiguracion({ ...config, claveRed: union.claveRed });
+  config = leerConfiguracion();
+  let descarga;
+  try {
+    descarga = await motor.descargarTodo(par);
+  } catch (err) {
+    guardarConfiguracion({ ...config, claveRed: clavePrevia });
+    config = leerConfiguracion();
+    throw err;
+  }
+
+  // Con todo en mano: respaldo de lo que había, y se reemplaza.
+  await respaldoExtra(`antes-de-sumarse-a-la-red-${marcaDeTiempo()}`);
+  motor.quitarTodos();
+  await diario.vaciarTodo();
+  guardarConfiguracion({
+    ...config,
+    claveRed: union.claveRed,
+    pares: [],
+    inicial: 'listo',
+    direccionAnterior: null,
+    nombreAnterior: null,
+  });
+  config = leerConfiguracion();
+  await motor.aplicarDescarga(par, descarga);
+  await diario.marcarBarrido();
+  motor.agregarPar(par);
+  for (const otro of union.pares) if (otro.idPc !== config.idPc) motor.agregarPar(otro);
+
+  // Las cuentas y sesiones de antes ya no existen: hay que volver a entrar
+  // (la pantalla lo avisa y ofrece el botón).
+  invalidarTodasLasSesiones();
+  setSesion(null);
+}
+
+async function sumarPcALaRed(p: SumarPcInput): Promise<ResultadoSumarPc> {
   requiereAdmin();
-  if (modoConectada) throw new Error('Esta PC ya está conectada a una PC principal.');
   const direccion = normalizarDireccion(p.direccion);
   const info = await obtenerInfoPc(direccion);
   if (info.idPc === config.idPc) throw new Error('Esa dirección es esta misma PC: tenés que elegir la otra.');
-  if (info.modo !== 'principal') throw new Error('Esa PC está conectada a otra: la principal es la que guarda los datos.');
+  if (!info.idRed) throw new Error(MENSAJE_VERSION_VIEJA);
+  const mia = miIdRed();
+  if (mia && info.idRed === mia && config.pares.some((x) => x.idPc === info.idPc)) {
+    throw new Error('Esa PC ya forma parte de la misma red que esta.');
+  }
 
   const base = `http://${direccion}`;
   const sesion = await pedirJson<{ token: string; rol: string }>(`${base}/api/auth/login`, {
@@ -678,431 +770,262 @@ async function conectarAPrincipal(p: ConexionPrincipalInput): Promise<{ resumen:
     cuerpo: { usuario: String(p.usuario ?? '').trim(), password: String(p.password ?? '') },
   });
   try {
-    if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora de la PC principal.');
-    const datos = await exportarDatosParaJuntar(os.hostname());
-    const resumen = await pedirJson<ResumenJuntar>(`${base}/api/sistema/juntar-datos`, {
+    if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora de la otra PC.');
+
+    // Lo que esta PC tiene de propio se pasa a la otra primero (una sola vez).
+    let resumen: ResumenJuntar | null = null;
+    if (!p.soloTraer) {
+      const datos = await exportarDatosParaJuntar(os.hostname());
+      resumen = await pedirJson<ResumenJuntar>(`${base}/api/sistema/juntar-datos`, {
+        metodo: 'POST',
+        token: sesion.token,
+        cuerpo: { datos, simular: p.simular === true },
+        esperaMs: 10 * 60 * 1000,
+      });
+    }
+    if (p.simular === true) return { resumen, nombrePc: info.nombrePc };
+
+    const union = await pedirJson<RespuestaUnirse>(`${base}/api/sync/unirse`, {
       metodo: 'POST',
       token: sesion.token,
-      cuerpo: { datos, simular: p.simular === true },
-      esperaMs: 10 * 60 * 1000,
+      cuerpo: { idPc: config.idPc, nombrePc: os.hostname(), puerto: PUERTO },
     });
-    if (p.simular !== true) {
-      // Con esta clave la PC conectada guarda una copia de los datos de la
-      // principal (ver replica.ts). Si la principal es de una versión que
-      // todavía no la da, queda sin copia hasta que se la active desde
-      // Configuración.
-      const claveCopia = await pedirJson<{ clave: string }>(`${base}/api/copia/clave`, { token: sesion.token })
-        .then((r) => r.clave)
-        .catch(() => null);
-      guardarConfiguracion({
-        ...config,
-        modo: 'conectada',
-        direccionPrincipal: direccion,
-        idPrincipal: info.idPc,
-        nombrePrincipal: info.nombrePc,
-        claveCopia,
-      });
-      config = leerConfiguracion();
-      logCrash('modo', `esta PC pasa a estar conectada a ${info.nombrePc} (${direccion})`);
-      // Un toque después, para que la pantalla alcance a mostrar el resultado.
-      setTimeout(reiniciarApp, 4000);
-    }
-    return { resumen, nombrePrincipal: info.nombrePc };
+    await adoptarRed(union, direccion);
+    logCrash('red', `esta PC se sumó a la red de ${info.nombrePc} (${direccion})`);
+    return { resumen, nombrePc: info.nombrePc };
   } finally {
     pedirJson(`${base}/api/auth/logout`, { metodo: 'POST', token: sesion.token }).catch(() => {});
   }
 }
 
-// Vuelve a usar la base propia de esta PC (la que quedó como estaba el día
-// que se conectó a la principal).
-function desconectar(): boolean {
-  if (!modoConectada) return false;
-  guardarConfiguracion({ ...config, modo: 'principal', direccionPrincipal: null, idPrincipal: null, nombrePrincipal: null, claveCopia: null });
+// Esta PC deja de sincronizar con las demás: se queda con sus datos, como
+// una red de una sola PC (con una clave nueva, así las otras no la buscan).
+async function salirDeLaRed(): Promise<boolean> {
+  requiereAdmin();
+  if (!motor) throw new Error('La sincronización todavía no arrancó.');
+  motor.quitarTodos();
+  guardarConfiguracion({
+    ...config,
+    claveRed: crypto.randomBytes(24).toString('hex'),
+    pares: [],
+    inicial: 'listo',
+    direccionAnterior: null,
+    nombreAnterior: null,
+  });
   config = leerConfiguracion();
-  logCrash('modo', 'esta PC vuelve a usar su base propia');
-  setTimeout(reiniciarApp, 500);
+  logCrash('red', 'esta PC salió de la red');
   return true;
 }
 
-// --- Copia de seguridad y cambio de PC principal ---
-// Las PCs conectadas guardan sola una copia de los datos de la principal
-// (ver replica.ts). Con eso, si se cambia de PC o la principal se rompe, una
-// PC conectada se puede convertir en la principal sin perder lo cargado.
-let copiaAutomatica: { detener: () => void; revisarYa: () => void } | null = null;
-let traspasoEnCurso = false;
-
-function iniciarCopiaEnSegundoPlano() {
-  copiaAutomatica = iniciarCopiaAutomatica({
-    configuracion: () => config,
-    quienSoy: () => ({ idPc: config.idPc, nombrePc: os.hostname() }),
-    registrar: logCrash,
-    // Si la principal cambió de dirección (el router le dio otra IP, o se
-    // pasó a otra PC), se la vuelve a buscar por su identificador.
-    reencontrarPrincipal: async () => {
-      if (traspasoEnCurso || !config.idPrincipal) return;
-      const hallada = (await buscarConInfo()).find((e) => e.info?.idPc === config.idPrincipal);
-      if (!hallada?.info || hallada.direccion === config.direccionPrincipal) return;
-      guardarConfiguracion({ ...config, direccionPrincipal: hallada.direccion, nombrePrincipal: hallada.info.nombrePc });
-      config = leerConfiguracion();
-      logCrash('copia', `la PC principal ahora está en ${hallada.direccion}`);
-      if (mainWindow && !mainWindow.isDestroyed()) cargarPrincipal();
-    },
-  });
-}
-
-async function estadoCopia(): Promise<EstadoCopia> {
-  if (!modoConectada) throw new Error('La copia de los datos sólo corresponde a una PC conectada.');
-  const meta = leerMetaCopia();
-  const estado = estadoDeLaCopia();
-  const direccion = config.direccionPrincipal;
-  const alcanzable = direccion ? await obtenerInfoPc(direccion).then(() => true, () => false) : false;
+async function estadoRed(): Promise<EstadoRed> {
+  const m = motor?.estado();
   return {
-    activa: config.claveCopia !== null,
-    ultimaCopia: meta?.fecha ?? null,
-    alDia: estado.alDia && meta !== null,
-    copiando: estado.copiando,
-    error: config.claveCopia ? estado.error : null,
-    principalAlcanzable: alcanzable,
-    nombrePrincipal: config.nombrePrincipal,
-    resumen: meta?.resumen ?? null,
+    idPc: config.idPc,
+    nombrePc: os.hostname(),
+    versionApp: app.getVersion(),
+    pcs: (m?.pares ?? config.pares.map((p) => ({ ...p, enLinea: false, ultimaVez: null, pendientes: 0, error: null }))).map(
+      (p) => ({
+        idPc: p.idPc,
+        nombrePc: 'nombre' in p ? p.nombre : '',
+        direccion: p.direccion,
+        enLinea: p.enLinea,
+        ultimaVez: p.ultimaVez,
+        pendientes: p.pendientes,
+        error: p.error,
+      })
+    ),
+    sincronizando: m?.sincronizando ?? false,
+    poniendoseAlDia: m?.poniendoseAlDia ?? false,
+    progreso: m?.progreso ?? null,
+    avisos: diario ? await diario.avisos() : [],
+    pendienteDeSumarse:
+      config.pares.length === 0 && config.direccionAnterior
+        ? { direccion: config.direccionAnterior, nombre: config.nombreAnterior }
+        : null,
   };
 }
 
-// Para las PCs que se conectaron antes de que existiera la copia: se le pide
-// la clave a la principal con una cuenta de administradora.
-async function activarCopia(p: CredencialesAdmin): Promise<EstadoCopia> {
-  if (!modoConectada || !config.direccionPrincipal) throw new Error('Esta PC no está conectada a una PC principal.');
-  const base = `http://${config.direccionPrincipal}`;
-  const sesion = await pedirJson<{ token: string; rol: string }>(`${base}/api/auth/login`, {
-    metodo: 'POST',
-    cuerpo: { usuario: String(p.usuario ?? '').trim(), password: String(p.password ?? '') },
-  });
-  try {
-    if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora.');
-    const { clave } = await pedirJson<{ clave: string }>(`${base}/api/copia/clave`, { token: sesion.token });
-    guardarConfiguracion({ ...config, claveCopia: clave });
-    config = leerConfiguracion();
-  } finally {
-    pedirJson(`${base}/api/auth/logout`, { metodo: 'POST', token: sesion.token }).catch(() => {});
-  }
-  copiaAutomatica?.revisarYa();
-  return estadoCopia();
-}
+// --- Del arranque ---
 
-// La dirección con la que las otras PCs y los celulares encuentran a esta.
-function direccionDeEstaPc(): string {
-  return `${obtenerIpsLan()[0] ?? '127.0.0.1'}:${PUERTO}`;
-}
+// Una PC que venía "conectada" a otra (versión anterior) no tiene datos
+// propios que sirvan: al arrancar trae los de la red. Si la otra PC no está,
+// usa la última copia que había guardado. Devuelve false si no pudo ninguna
+// de las dos (entonces espera, con un cartel, a que la otra PC esté).
+async function primeraSincronizacion(): Promise<boolean> {
+  if (config.inicial !== 'traer' || !motor || !diario) return true;
+  const m = motor;
+  const d = diario;
 
-// Esta PC pasa a ser la principal.
-// - Si la principal contesta: se llevan sus datos más recientes (mientras
-//   tanto no acepta cambios, para no perder nada) y esa PC queda conectada
-//   a esta.
-// - Si no contesta (se rompió, o ya no está): se usa la última copia
-//   guardada, y hay que aceptar que lo cargado después no va a estar.
-// En los dos casos esta PC toma el identificador de la principal anterior,
-// así las otras PCs la encuentran sola. Lo que había en la base propia de
-// esta PC se respalda antes de reemplazarla.
-async function hacerPrincipalEstaPc(p: HacerPrincipalInput): Promise<ResultadoHacerPrincipal> {
-  if (!modoConectada) throw new Error('Esta PC ya es la principal.');
-  if (traspasoEnCurso) throw new Error('Ya se está pasando la principal a esta PC. Esperá a que termine.');
-  const usuario = String(p.usuario ?? '').trim();
-  const password = String(p.password ?? '');
-  if (!usuario || !password) throw new Error('Escribí el usuario y la contraseña de una cuenta de administradora.');
-
-  traspasoEnCurso = true;
-  let terminado = false;
-  try {
-    await pausarCopiaAutomatica();
-
-    // ¿La principal contesta? Si cambió de dirección se la busca por su identificador.
-    let direccion = config.direccionPrincipal;
-    let info = direccion ? await obtenerInfoPc(direccion).catch(() => null) : null;
-    if (!info || (config.idPrincipal && info.idPc !== config.idPrincipal)) {
-      const hallada = (await buscarConInfo()).find((e) => e.info && (!config.idPrincipal || e.info.idPc === config.idPrincipal));
-      direccion = hallada?.direccion ?? null;
-      info = hallada?.info ?? null;
-    }
-    const idHeredado = config.idPrincipal ?? config.idPc;
-    const nombreAnterior = info?.nombrePc ?? config.nombrePrincipal;
-    // Un número más que el de la principal anterior (o el de la copia): así,
-    // si la anterior vuelve a prenderse, se sabe cuál es la verdadera.
-    const generacionNueva = Math.max(info?.generacion ?? 0, leerMetaCopia()?.generacion ?? 0, config.generacion) + 1;
-
-    let resultado: ResultadoHacerPrincipal;
-    if (info && direccion) {
-      const base = `http://${direccion}`;
-      const sesion = await pedirJson<{ token: string; rol: string }>(`${base}/api/auth/login`, {
-        metodo: 'POST',
-        cuerpo: { usuario, password },
-      });
-      let traspasoAbierto = false;
+  let par: ParConfig | null = null;
+  const limite = Date.now() + 25_000;
+  while (!par && Date.now() < limite) {
+    for (const p of config.pares) {
       try {
-        if (sesion.rol !== 'admin') throw new Error('Hace falta entrar con una cuenta de administradora.');
-        // Si la principal es de una versión vieja, esto falla con un mensaje
-        // claro (hay que actualizarla primero).
-        await pedirJson(`${base}/api/copia/traspaso/iniciar`, { metodo: 'POST', token: sesion.token });
-        traspasoAbierto = true;
-        await bajarCopia(direccion, { token: sesion.token }, { idPc: config.idPc, nombrePc: os.hostname() });
-        await cargarCopiaEnEstaPc();
-        // La principal anterior deja de serlo y queda conectada a esta.
-        await pedirJson(`${base}/api/copia/traspaso/terminar`, {
-          metodo: 'POST',
-          token: sesion.token,
-          cuerpo: { direccion: direccionDeEstaPc(), idPrincipal: idHeredado, nombrePrincipal: os.hostname() },
-        });
-        traspasoAbierto = false;
-      } catch (err) {
-        if (traspasoAbierto) {
-          await pedirJson(`${base}/api/copia/traspaso/cancelar`, { metodo: 'POST', token: sesion.token }).catch(() => {});
-        }
-        throw err;
-      } finally {
-        pedirJson(`${base}/api/auth/logout`, { metodo: 'POST', token: sesion.token }).catch(() => {});
+        const h = await m.hola(p.direccion, 3000);
+        par = { idPc: h.idPc, nombre: h.nombrePc, direccion: p.direccion };
+        break;
+      } catch {
+        // No contesta en esa dirección.
       }
-      resultado = { usoCopia: false, fechaCopia: null, otraPcAvisada: true, nombreOtraPc: nombreAnterior };
-    } else {
-      const meta = leerMetaCopia();
-      if (!meta) {
-        throw new Error(
-          'La PC principal no contesta y esta PC todavía no tiene una copia de sus datos, así que no hay con qué seguir.'
-        );
-      }
-      if (p.aceptaCopiaVieja !== true) {
-        throw new Error('La PC principal no contesta. Para seguir hay que aceptar usar la última copia de los datos.');
-      }
-      if (!esAdminDeLaCopia(usuario, password)) {
-        throw new Error('Usuario o contraseña incorrectos, o la cuenta no es de administradora.');
-      }
-      await cargarCopiaEnEstaPc();
-      resultado = { usoCopia: true, fechaCopia: meta.fecha, otraPcAvisada: false, nombreOtraPc: nombreAnterior };
     }
+    if (!par) {
+      const h = (await buscarPcsConHola())[0];
+      if (h) par = { idPc: h.hola.idPc, nombre: h.hola.nombrePc, direccion: h.direccion };
+    }
+    if (!par) await pausa(2000);
+  }
 
-    guardarConfiguracion({
-      ...config,
-      idPc: idHeredado,
-      modo: 'principal',
-      direccionPrincipal: null,
-      idPrincipal: null,
-      nombrePrincipal: null,
-      claveCopia: null,
-      generacion: generacionNueva,
-    });
+  if (par) {
+    // Se baja todo antes de tocar nada: si se corta, no se perdió nada y se
+    // vuelve a intentar (esta PC sigue en "traer").
+    let descarga;
+    try {
+      descarga = await m.descargarTodo(par);
+    } catch (err) {
+      logCrash('red', err);
+      return false;
+    }
+    await respaldoExtra(`antes-de-traer-los-datos-${marcaDeTiempo()}`);
+    await d.vaciarTodo();
+    await getDbCruda().collection('sesiones').deleteMany({});
+    await m.aplicarDescarga(par, descarga);
+    await d.marcarBarrido();
+    guardarConfiguracion({ ...config, pares: [par], inicial: 'listo', direccionAnterior: null, nombreAnterior: null });
     config = leerConfiguracion();
-    terminado = true;
-    logCrash('modo', `esta PC pasa a ser la principal (${resultado.usoCopia ? 'con la última copia' : 'con los datos al día'})`);
-    setTimeout(reiniciarApp, 3000);
-    return resultado;
-  } finally {
-    if (!terminado) {
-      traspasoEnCurso = false;
-      reanudarCopiaAutomatica();
-    }
+    logCrash('red', `se trajeron los datos de ${par.nombre} (${par.direccion})`);
+    return true;
   }
+
+  if (leerMetaCopia()) {
+    await cargarCopiaEnEstaPc();
+    await asegurarIndices();
+    // La copia reemplazó la base entera: el diario vuelve a leer su estado, y
+    // lo cargado queda con la marca "de copia" (pierde contra lo de la otra PC).
+    await d.iniciar();
+    // Primero el "stock inicial" (que es parte de los datos de la copia) y
+    // recién después se anota todo como "de copia".
+    await completarStockBase(d);
+    await d.barrer({ marcaNuevos: 'copia' });
+    await d.marcarBarrido();
+    guardarConfiguracion({ ...config, inicial: 'listo' });
+    config = leerConfiguracion();
+    logCrash('red', 'la otra PC no estaba: se usó la última copia guardada');
+    return true;
+  }
+  return false;
 }
 
-// Si esta PC estuvo apagada (o rota) y otra pasó a ser la principal, al
-// volver se cree la principal otra vez — y lo que se cargue acá quedaría
-// separado de lo de la verdadera. Al arrancar se fija si hay otra PC con el
-// mismo identificador y un número de generación mayor.
-async function avisarSiOtraPcOcupoMiLugar() {
-  if (modoConectada) return;
-  try {
-    const ips = await consultarMdns(2500);
-    const propias = new Set([...obtenerIpsLan(), '127.0.0.1']);
-    const direcciones = new Set<string>();
-    for (const ip of ips) direcciones.add(`${ip}:4000`);
-    if (!app.isPackaged) for (const ip of [...ips, '127.0.0.1']) for (const puerto of [4001, 4002]) direcciones.add(`${ip}:${puerto}`);
-    for (const ip of propias) direcciones.delete(`${ip}:${PUERTO}`);
+// Arma el diario, el aplicador y el motor, y deja la base lista para
+// sincronizar. Devuelve false si todavía no se pueden usar los datos.
+async function prepararSincronizacion(): Promise<boolean> {
+  const db = getDbCruda();
+  diario = new Diario(db, new Reloj(config.idPc), config.idPc);
+  diario.alFallar = (etiqueta, err) => logCrash(etiqueta, err);
+  await diario.iniciar();
+  instalarDiario(diario);
 
-    for (const direccion of direcciones) {
-      const info = await obtenerInfoPc(direccion).catch(() => null);
-      if (!info || info.modo !== 'principal' || info.idPc !== config.idPc) continue;
-      if ((info.generacion ?? 0) <= config.generacion) continue;
-
-      logCrash('modo', `otra PC (${info.nombrePc}, ${direccion}) ocupa el lugar de la principal`);
-      traerVentanaAlFrente();
-      const { response } = await mostrarMensaje({
-        type: 'warning',
-        title: 'Esta PC ya no es la principal',
-        message: `Mientras esta PC estaba apagada, ${info.nombrePc} pasó a ser la principal.`,
-        detail:
-          'Si seguís cargando ventas acá, van a quedar separadas de las de la principal. Lo mejor es conectar esta PC a la principal ahora: lo que se cargó acá se junta con sus datos.',
-        buttons: ['Conectar esta PC ahora', 'Ahora no'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (response === 0) {
-        // Con un identificador propio, la otra PC ya no se confunde con esta
-        // y se puede elegir de la lista al conectar.
-        guardarConfiguracion({ ...config, idPc: crypto.randomUUID() });
-        config = leerConfiguracion();
-        mainWindow?.webContents.executeJavaScript("location.hash = '#/configuracion'").catch(() => {});
-      }
-      return;
-    }
-  } catch (err) {
-    logCrash('modo', err);
+  if (!config.claveRed) {
+    // La primera PC de una red usa la clave que ya tenía para las copias (así
+    // las PCs de la versión anterior que se conectaban a ella la reconocen).
+    guardarConfiguracion({ ...config, claveRed: await claveDeCopia() });
+    config = leerConfiguracion();
   }
-}
 
-// Otra PC pidió ser la principal: esta pasa a estar conectada a ella.
-async function cederPrincipal(nueva: { direccion: string; idPrincipal: string; nombrePrincipal: string }): Promise<void> {
-  if (modoConectada) throw new Error('Esta PC ya no es la principal.');
-  // La misma clave de copia sigue valiendo: viaja con los datos.
-  const claveCopia = await claveDeCopia().catch(() => null);
-  guardarConfiguracion({
-    ...config,
-    // Esta PC toma un identificador nuevo: el de la principal pasó a la otra.
-    idPc: crypto.randomUUID(),
-    modo: 'conectada',
-    direccionPrincipal: nueva.direccion,
-    idPrincipal: nueva.idPrincipal,
-    nombrePrincipal: nueva.nombrePrincipal,
-    claveCopia,
+  const d = diario;
+  aplicador = new Aplicador(d, {
+    carpetaImagenes: carpetaImagenes(),
+    alAvisar: (texto) => void d.avisar(texto).catch((err) => logCrash('aviso', err)),
+    alCambiarUsuario: (id) => invalidarTokensDeUsuario(id),
+    alFallar: logCrash,
   });
-  config = leerConfiguracion();
-  logCrash('modo', `esta PC deja de ser la principal: ahora lo es ${nueva.nombrePrincipal} (${nueva.direccion})`);
-  setTimeout(reiniciarApp, 1500);
-}
+  motor = new Motor({
+    diario: d,
+    aplicador,
+    yo: () => ({ idPc: config.idPc, nombrePc: os.hostname(), version: app.getVersion() }),
+    puerto: PUERTO,
+    claveRed: () => config.claveRed ?? '',
+    pares: () => config.pares,
+    guardarPares,
+    carpetaImagenes: carpetaImagenes(),
+    buscar: buscarPcsConHola,
+    registrar: logCrash,
+  });
 
-function cargarPrincipal() {
-  mainWindow?.loadURL(`http://${config.direccionPrincipal}/`);
-}
+  if (!(await primeraSincronizacion())) return false;
 
-// Si la principal no responde donde estaba, se la vuelve a buscar en la red
-// por su identificador — así, si el router le cambió la IP, se reconecta sola.
-async function reintentarConexion(): Promise<{ ok: boolean; mensaje?: string }> {
-  if (!modoConectada || traspasoEnCurso) return { ok: false };
-  const direccion = config.direccionPrincipal;
-  const info = direccion ? await obtenerInfoPc(direccion).catch(() => null) : null;
-  if (!info || (config.idPrincipal && info.idPc !== config.idPrincipal)) {
-    const encontrada = (await buscarConInfo()).find(
-      (e) => e.info && (!config.idPrincipal || e.info.idPc === config.idPrincipal)
-    );
-    if (!encontrada?.info) {
-      return { ok: false, mensaje: 'Todavía no aparece la PC principal. Se vuelve a probar sola en unos segundos.' };
-    }
-    guardarConfiguracion({ ...config, direccionPrincipal: encontrada.direccion, nombrePrincipal: encontrada.info.nombrePc });
-    config = leerConfiguracion();
+  // De la base de siempre a la base con sincronización: se completa el
+  // "stock inicial" de los artículos y se anota lo que ya había (como "lo de
+  // siempre" la primera vez; después, como cambios de este momento).
+  const primera = !(await d.yaSeBarrio());
+  if (primera) {
+    // Es la primera vez con esta versión: un respaldo de cómo estaba todo, por las dudas.
+    await respaldoExtra(`antes-de-la-sincronizacion-${marcaDeTiempo()}`).catch((err) => logCrash('respaldo', err));
   }
-  cargarPrincipal();
-  return { ok: true };
+  await completarStockBase(d);
+  await d.barrer({ marcaNuevos: primera ? 'base' : 'ahora' });
+  await d.marcarBarrido();
+  await recalcularTodoElStock(d);
+  return true;
+}
+
+// Cada tanto: encuentra lo que se haya cambiado sin pasar por el diario y
+// deja el stock cerrando con los movimientos.
+function iniciarMantenimiento() {
+  const tarea = async () => {
+    if (!diario) return;
+    try {
+      await completarStockBase(diario);
+      await diario.barrer({ marcaNuevos: 'ahora' });
+      await recalcularTodoElStock(diario);
+    } catch (err) {
+      logCrash('mantenimiento', err);
+    }
+  };
+  setTimeout(() => void tarea(), 60_000);
+  temporizadorMantenimiento = setInterval(() => void tarea(), 10 * 60_000);
 }
 
 function escaparHtml(texto: string): string {
   return texto.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-// Lo que se ve en esta PC (conectada) cuando la principal no responde.
-function mostrarSinConexion() {
+// Lo que se ve cuando esta PC todavía no pudo traer los datos de la red.
+function mostrarEsperandoRed() {
   if (!mainWindow) return;
-  const nombre = escaparHtml(config.nombrePrincipal ?? 'la PC principal');
-  const direccion = escaparHtml(config.direccionPrincipal ?? '');
-  // Si esta PC tiene una copia de los datos, puede pasar a ser la principal.
-  const meta = leerMetaCopia();
-  const bloquePrincipal = meta
-    ? `<div class="bloque">
-    <p>Esta PC tiene una copia de los datos del <b>${escaparHtml(new Date(meta.fecha).toLocaleString('es-AR'))}</b>
-    (${meta.resumen.articulos} productos, ${meta.resumen.clientes} clientes, ${meta.resumen.ventas} ventas).</p>
-    <button id="hacerPrincipal" class="sec">Hacer que esta PC sea la principal</button>
-    <form id="formPrincipal" style="display:none;text-align:left;margin-top:14px">
-      <p style="font-size:12px">Esta PC va a guardar los datos usando esa copia. Lo que se cargó en <b>${nombre}</b> después de esa fecha no va a estar.</p>
-      <input id="usr" placeholder="Usuario de administradora" autocomplete="off">
-      <input id="pwd" type="password" placeholder="Contraseña">
-      <label class="chk"><input type="checkbox" id="acepto"> Entiendo que se usa la copia y no los últimos datos</label>
-      <button type="submit" id="confirmarPrincipal">Pasar la principal a esta PC</button>
-    </form>
-  </div>`
-    : `<div class="bloque"><p style="font-size:12px">Esta PC todavía no tiene una copia de los datos de la principal, así que no puede ocupar su lugar.</p></div>`;
+  const nombre = escaparHtml(config.nombreAnterior ?? 'la otra PC');
+  const direccion = escaparHtml(config.pares[0]?.direccion ?? config.direccionAnterior ?? '');
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Mis Amores</title><style>
     body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#f5f8fd;color:#1e293b;display:flex;min-height:100vh;align-items:center;justify-content:center}
     .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 10px 30px rgba(15,23,42,.08);padding:32px;max-width:460px;text-align:center}
     h1{font-size:20px;margin:12px 0 8px}p{color:#64748b;line-height:1.5;margin:6px 0}
     button{margin-top:18px;background:linear-gradient(90deg,#2a5cb3,#3b76d1);color:#fff;border:0;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer}
     #estado{margin-top:14px;font-size:13px;color:#94a3b8;min-height:18px}
-    a{display:inline-block;margin-top:22px;font-size:12px;color:#94a3b8;cursor:pointer;text-decoration:underline}
-    .icono{font-size:40px}
-    .bloque{margin-top:22px;border-top:1px solid #e2e8f0;padding-top:16px}
-    button.sec{background:#fff;color:#2a5cb3;border:1px solid #b9cdee;margin-top:6px}
-    input{width:100%;box-sizing:border-box;margin-top:8px;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
-    input[type=checkbox]{width:auto;margin:0 6px 0 0}
-    .chk{display:block;margin-top:10px;font-size:12px;color:#475569}</style></head><body><div class="card">
+    .icono{font-size:40px}</style></head><body><div class="card">
     <div class="icono">📡</div>
-    <h1>No se encuentra la PC principal</h1>
-    <p>Esta PC guarda todo en <b>${nombre}</b>${direccion ? ` (${direccion})` : ''}. Fijate que esa PC esté prendida, con Mis Amores abierto y conectada al mismo WiFi.</p>
+    <h1>Falta traer los datos del negocio</h1>
+    <p>Esta PC ahora guarda sus propios datos, y la primera vez los trae de <b>${nombre}</b>${direccion ? ` (${direccion})` : ''}.
+    Prendé esa PC, con Mis Amores abierto y en el mismo WiFi, y tocá el botón.</p>
     <button id="reintentar">Reintentar ahora</button>
-    <div id="estado">Se vuelve a probar sola cada 15 segundos.</div>
-    <a id="desconectar">La PC principal no va a volver…</a>
-    ${bloquePrincipal}
+    <div id="estado">Se vuelve a probar sola cada 20 segundos.</div>
     </div><script>
     const estado = document.getElementById('estado');
     let probando = false;
-    let pasandoAPrincipal = false;
     async function reintentar() {
-      if (probando || pasandoAPrincipal) return;
+      if (probando) return;
       probando = true;
-      estado.textContent = 'Buscando la PC principal...';
+      estado.textContent = 'Buscando la otra PC...';
       try {
-        const r = await window.escritorio.reintentarConexion();
-        if (!r.ok) estado.textContent = r.mensaje || 'Todavía no aparece.';
-      } catch (e) { estado.textContent = 'Todavía no aparece.'; }
+        await window.escritorio.reintentar();
+        estado.textContent = 'Listo: los datos se trajeron. La app se reinicia sola.';
+      } catch (e) {
+        estado.textContent = (e && e.message) || 'Todavía no aparece la otra PC.';
+      }
       probando = false;
     }
     document.getElementById('reintentar').onclick = reintentar;
-    document.getElementById('desconectar').onclick = async () => {
-      if (!confirm('Sólo si la PC principal no va a volver (ej. se rompió): esta PC deja de estar conectada y vuelve a usar sus datos propios, que quedaron como estaban el día que se conectó. ¿Seguro?')) return;
-      if (!confirm('Lo que se cargó en la PC principal desde ese día NO va a aparecer acá. ¿Desconectar igual?')) return;
-      await window.escritorio.desconectar();
-    };
-    const botonPrincipal = document.getElementById('hacerPrincipal');
-    if (botonPrincipal) {
-      const formulario = document.getElementById('formPrincipal');
-      botonPrincipal.onclick = () => { formulario.style.display = 'block'; botonPrincipal.style.display = 'none'; };
-      formulario.onsubmit = async (e) => {
-        e.preventDefault();
-        if (!document.getElementById('acepto').checked) { estado.textContent = 'Tenés que aceptar que se usa la copia.'; return; }
-        pasandoAPrincipal = true;
-        document.getElementById('confirmarPrincipal').disabled = true;
-        estado.textContent = 'Cargando los datos en esta PC... puede tardar un minuto.';
-        try {
-          await window.escritorio.hacerPrincipal({
-            usuario: document.getElementById('usr').value,
-            password: document.getElementById('pwd').value,
-            aceptaCopiaVieja: true,
-          });
-          estado.textContent = 'Listo: esta PC ya es la principal. La app se reinicia sola.';
-        } catch (err) {
-          pasandoAPrincipal = false;
-          document.getElementById('confirmarPrincipal').disabled = false;
-          estado.textContent = (err && err.message) || 'No se pudo pasar la principal a esta PC.';
-        }
-      };
-    }
-    setInterval(reintentar, 15000);
+    setInterval(reintentar, 20000);
     </script></body></html>`;
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-}
-
-// Esta PC (conectada) ya no atiende a los celulares: si alguno todavía tiene
-// guardada su dirección, lo manda a la principal en vez de no contestar.
-function iniciarRedireccionALaPrincipal() {
-  const redireccion = express();
-  redireccion.use((req, res) => {
-    if (!config.direccionPrincipal) {
-      res.status(503).send('Esta PC está conectada a la PC principal.');
-      return;
-    }
-    res.redirect(307, `http://${config.direccionPrincipal}${req.originalUrl}`);
-  });
-  const servidor = http.createServer(redireccion);
-  servidor.on('error', (err) => logCrash('redireccion', err));
-  servidor.listen(PUERTO, '0.0.0.0');
-  detenerServidorWeb = () =>
-    new Promise<void>((resolve) => {
-      servidor.closeAllConnections?.();
-      servidor.close(() => resolve());
-    });
 }
 
 function registrarIpcEscritorio() {
@@ -1110,15 +1033,40 @@ function registrarIpcEscritorio() {
   ipcMain.handle(Channels.sistemaEstadoActualizacion, () => infoActualizacion());
   ipcMain.handle(Channels.sistemaDescargarActualizacion, () => descargarActualizacion());
   ipcMain.handle(Channels.sistemaInstalarActualizacion, () => instalarActualizacion());
-  ipcMain.handle(Channels.escritorioModo, () => wrapEscritorio(infoModo));
-  ipcMain.handle(Channels.escritorioBuscarPrincipales, () => wrapEscritorio(buscarPcsPrincipales));
-  ipcMain.handle(Channels.escritorioConectar, (_e, p: ConexionPrincipalInput) => wrapEscritorio(() => conectarAPrincipal(p)));
-  ipcMain.handle(Channels.escritorioDesconectar, () => wrapEscritorio(desconectar));
-  ipcMain.handle(Channels.escritorioReintentar, () => wrapEscritorio(reintentarConexion));
-  ipcMain.handle(Channels.escritorioEstadoCopia, () => wrapEscritorio(estadoCopia));
-  ipcMain.handle(Channels.escritorioActivarCopia, (_e, p: CredencialesAdmin) => wrapEscritorio(() => activarCopia(p)));
-  ipcMain.handle(Channels.escritorioHacerPrincipal, (_e, p: HacerPrincipalInput) =>
-    wrapEscritorio(() => hacerPrincipalEstaPc(p))
+  ipcMain.handle(Channels.escritorioRed, () => wrapEscritorio(estadoRed));
+  ipcMain.handle(Channels.escritorioBuscarPcs, () => wrapEscritorio(buscarPcsParaSumar));
+  ipcMain.handle(Channels.escritorioSumarPc, (_e, p: SumarPcInput) => wrapEscritorio(() => sumarPcALaRed(p)));
+  ipcMain.handle(Channels.escritorioSalirDeLaRed, () => wrapEscritorio(salirDeLaRed));
+  ipcMain.handle(Channels.escritorioRevisarRed, () =>
+    wrapEscritorio(async () => {
+      requiereAdmin();
+      if (!motor) throw new Error('La sincronización todavía no arrancó.');
+      return motor.revisarCoincidencia(true);
+    })
+  );
+  ipcMain.handle(Channels.escritorioOlvidarPc, (_e, idPc: string) =>
+    wrapEscritorio(async () => {
+      requiereAdmin();
+      motor?.quitarPar(String(idPc));
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.escritorioBorrarAvisos, () =>
+    wrapEscritorio(async () => {
+      await diario?.borrarAvisos();
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.escritorioReintentar, () =>
+    wrapEscritorio(async () => {
+      if (estadoArranque !== 'esperando') return true;
+      if (!(await primeraSincronizacion())) {
+        throw new Error('Todavía no aparece la otra PC. Se vuelve a probar sola en unos segundos.');
+      }
+      // Con los datos ya traídos, se arranca de nuevo como siempre.
+      setTimeout(reiniciarApp, 1500);
+      return true;
+    })
   );
 }
 
@@ -1143,24 +1091,40 @@ async function initDatabaseConReintentos(intentos = 8, esperaMs = 3000) {
 // otra instancia; sólo mostramos la que ya está viva.
 app.on('second-instance', mostrarVentana);
 
-// Lo que hace la PC principal al arrancar (es lo de siempre): conecta con su
-// base, atiende a los celulares y a la PC conectada, y hace los respaldos.
-async function arrancarComoPrincipal(): Promise<boolean> {
+// Lo que hace cada PC al arrancar: conecta con su base, se pone al día con las
+// otras PCs, atiende a los celulares y a las otras PCs, y hace los respaldos.
+async function arrancar(): Promise<boolean> {
   try {
     await initDatabaseConReintentos();
   } catch (err) {
     dialog.showErrorBox(
       'No se pudo conectar a la base de datos',
-      err instanceof Error ? err.message : 'Error desconocido al conectar con MongoDB.'
+      (err instanceof Error ? err.message : 'Error desconocido al conectar con MongoDB.') +
+        '\n\nOjo: todas las PCs del negocio guardan sus propios datos, así que cada una necesita ' +
+        'MongoDB instalado y andando (servicio "MongoDB" de Windows).'
     );
     app.quit();
     return false;
   }
 
+  let datosListos = true;
+  try {
+    datosListos = await prepararSincronizacion();
+  } catch (err) {
+    // La sincronización nunca tiene que impedir usar la app: si algo falla
+    // al armarla, se sigue como una PC sola y queda anotado.
+    logCrash('sync-arranque', err);
+    instalarDiario(null);
+    motor = null;
+  }
+  if (!datosListos) {
+    estadoArranque = 'esperando';
+    return true;
+  }
+
   registrarHandlers();
-  // Cuando alguien cambia datos (desde esta PC, la PC conectada o un celular),
-  // la pantalla se vuelve a cargar sola; la PC conectada y los celulares lo
-  // reciben por /api/eventos.
+  // Cuando alguien cambia datos (desde esta PC, otra PC o un celular), la
+  // pantalla se vuelve a cargar sola; los celulares lo reciben por /api/eventos.
   escucharCambios(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(Channels.sistemaDatosCambio);
   });
@@ -1176,7 +1140,20 @@ async function arrancarComoPrincipal(): Promise<boolean> {
   setInterval(() => respaldarSiCorresponde().catch((err) => logCrash('respaldo', err)), 6 * 60 * 60 * 1000);
 
   try {
-    const { detener, ...infoParaRenderer } = await iniciarServidorWeb(path.join(__dirname, '../../dist'), infoPc, { cederPrincipal });
+    const sync =
+      diario && motor
+        ? {
+            diario,
+            motor,
+            claveRed: () => config.claveRed ?? '',
+            yo: () => ({ idPc: config.idPc, nombrePc: os.hostname(), version: app.getVersion() }),
+            pares: () => config.pares,
+            alUnirse: (par: ParConfig) => motor?.agregarPar(par),
+            alVerPar: (idPc: string) => motor?.alVerPar(idPc),
+          }
+        : null;
+    if (!sync) throw new Error('La sincronización no está disponible: sólo se atiende a los celulares.');
+    const { detener, ...infoParaRenderer } = await iniciarServidorWeb(path.join(__dirname, '../../dist'), infoPc, sync);
     // infoServidorWeb se manda tal cual al renderer por IPC (ver
     // sistemaInfoRed más abajo) — "detener" no viaja ahí porque una función
     // no se puede mandar por IPC, y tampoco tiene sentido que el renderer la
@@ -1188,13 +1165,16 @@ async function arrancarComoPrincipal(): Promise<boolean> {
   } catch (err) {
     // Si el puerto está ocupado o falla por lo que sea, la app de escritorio
     // sigue funcionando igual — sólo no va a estar disponible desde el
-    // celular hasta que se reinicie.
+    // celular (ni para las otras PCs) hasta que se reinicie.
     console.error('No se pudo iniciar el acceso desde el celular:', err);
     infoServidorWeb = { error: err instanceof Error ? err.message : 'No se pudo iniciar el acceso desde el celular' };
   }
   ipcMain.handle(Channels.sistemaInfoRed, () => infoServidorWeb);
-  // Un rato después de abrir, cuando ya hay ventana para mostrar el aviso.
-  setTimeout(() => void avisarSiOtraPcOcupoMiLugar(), 8000);
+
+  // Con el servidor ya atendiendo, se empieza a hablar con las otras PCs.
+  motor?.iniciar();
+  iniciarMantenimiento();
+  estadoArranque = 'listo';
   return true;
 }
 
@@ -1209,13 +1189,7 @@ app.whenReady().then(async () => {
   }
 
   registrarIpcEscritorio();
-  if (modoConectada) {
-    // Esta PC no usa su base: abre la app de la principal (ver createWindow).
-    iniciarRedireccionALaPrincipal();
-    iniciarCopiaEnSegundoPlano();
-  } else if (!(await arrancarComoPrincipal())) {
-    return;
-  }
+  if (!(await arrancar())) return;
 
   crearBandeja();
   createWindow();
@@ -1236,6 +1210,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   saliendoDeVerdad = true;
+  if (temporizadorMantenimiento) clearInterval(temporizadorMantenimiento);
+  motor?.detener();
   detenerMdns?.();
   // Sin await a propósito: before-quit no espera promesas, y closeAllConnections
   // adentro de detenerServidorWeb ya corta las conexiones abiertas de una,

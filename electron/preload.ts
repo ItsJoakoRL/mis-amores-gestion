@@ -28,14 +28,10 @@ import type {
   MovimientoCuenta,
   InfoRed,
   InfoActualizacion,
-  InfoModoPc,
+  EstadoRed,
   PcEncontrada,
-  ConexionPrincipalInput,
-  ResumenJuntar,
-  CredencialesAdmin,
-  EstadoCopia,
-  HacerPrincipalInput,
-  ResultadoHacerPrincipal,
+  SumarPcInput,
+  ResultadoSumarPc,
 } from '../shared/types';
 
 // Desenvuelve el ApiResult del main process: si algo salió mal, tira una
@@ -150,21 +146,18 @@ const api = {
     },
   },
   // true acá (app de escritorio con su base) / false en el cliente web
-  // (celular, o la PC conectada a la principal) — sirve para mostrar cosas
-  // que sólo tienen sentido en la PC que tiene los datos, como el botón de
-  // "usar desde el celular" o elegir la foto de un producto del disco.
+  // (celular) — sirve para mostrar cosas que sólo tienen sentido en la PC,
+  // como el botón de "usar desde el celular" o elegir la foto de un producto
+  // del disco.
   esElectron: true,
 };
 
 // Lo que es de "la app de escritorio" en sí (no de los datos): las
-// actualizaciones de esta PC y si es la principal o está conectada a otra.
-// Está siempre — también en la PC conectada, donde la pantalla viene de la
-// principal pero las actualizaciones son las de esta PC.
+// actualizaciones de esta PC y cómo está sumada a la red de PCs del negocio.
 const escritorio = {
   // Por si la pantalla viene de una PC con otra versión: para que pueda
   // fijarse qué sabe hacer este puente antes de usarlo.
-  versionPuente: 2,
-  modo: () => invoke<InfoModoPc>(Channels.escritorioModo),
+  versionPuente: 3,
   // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
   // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
   actualizaciones: {
@@ -181,23 +174,19 @@ const escritorio = {
       };
     },
   },
-  buscarPcsPrincipales: () => invoke<PcEncontrada[]>(Channels.escritorioBuscarPrincipales),
-  conectarAPrincipal: (input: ConexionPrincipalInput) =>
-    invoke<{ resumen: ResumenJuntar; nombrePrincipal: string }>(Channels.escritorioConectar, input),
-  desconectar: () => invoke<boolean>(Channels.escritorioDesconectar),
-  reintentarConexion: () => invoke<{ ok: boolean; mensaje?: string }>(Channels.escritorioReintentar),
-  // (versionPuente 2) Copia de seguridad de los datos y cambio de PC principal.
-  estadoCopia: () => invoke<EstadoCopia>(Channels.escritorioEstadoCopia),
-  activarCopia: (input: CredencialesAdmin) => invoke<EstadoCopia>(Channels.escritorioActivarCopia, input),
-  hacerPrincipal: (input: HacerPrincipalInput) =>
-    invoke<ResultadoHacerPrincipal>(Channels.escritorioHacerPrincipal, input),
+  // Red de PCs: cómo anda la sincronización con las otras PCs.
+  red: () => invoke<EstadoRed>(Channels.escritorioRed),
+  buscarPcs: () => invoke<PcEncontrada[]>(Channels.escritorioBuscarPcs),
+  sumarPc: (input: SumarPcInput) => invoke<ResultadoSumarPc>(Channels.escritorioSumarPc, input),
+  salirDeLaRed: () => invoke<boolean>(Channels.escritorioSalirDeLaRed),
+  revisarRed: () => invoke<{ revisadas: number; corregidas: number }>(Channels.escritorioRevisarRed),
+  borrarAvisos: () => invoke<boolean>(Channels.escritorioBorrarAvisos),
+  olvidarPc: (idPc: string) => invoke<boolean>(Channels.escritorioOlvidarPc, idPc),
+  reintentar: () => invoke<boolean>(Channels.escritorioReintentar),
 };
 
-// Conectada a otra PC, la pantalla usa los datos de la principal por la red
-// (como un celular): por eso acá no se expone la API local.
-const modoConectada = process.argv.includes('--mis-amores-modo=conectada');
 contextBridge.exposeInMainWorld('escritorio', escritorio);
-if (!modoConectada) contextBridge.exposeInMainWorld('api', api);
+contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
 export type Escritorio = typeof escritorio;

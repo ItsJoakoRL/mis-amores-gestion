@@ -91,3 +91,10 @@ export function invalidarTokensDeUsuario(usuarioId: string): void {
   }
   guardarSinEsperar(coleccion().deleteMany({ 'sesion.id': usuarioId }));
 }
+
+// Al sumarse a la red de otra PC, las cuentas de antes dejan de existir: no
+// puede quedar ninguna sesión abierta con una cuenta que ya no está.
+export function invalidarTodasLasSesiones(): void {
+  sesionesPorHash.clear();
+  guardarSinEsperar(coleccion().deleteMany({}));
+}

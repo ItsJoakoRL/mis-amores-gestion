@@ -21,7 +21,9 @@ async function main() {
 
   fs.mkdirSync(CARPETA_SALIDA, { recursive: true });
 
-  const colecciones = await db.listCollections().toArray();
+  // El diario de sincronización (_sync_*) es propio de cada PC: no se exporta
+  // (la PC de destino arma el suyo sola al arrancar).
+  const colecciones = (await db.listCollections().toArray()).filter((c) => !c.name.startsWith('_sync_'));
   let totalDocs = 0;
 
   for (const { name } of colecciones) {
