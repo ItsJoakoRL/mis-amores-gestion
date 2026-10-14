@@ -1,0 +1,32 @@
+# Mis Amores en Render (ver SERVIDOR_RENDER.md). Este archivo viaja dentro de la
+# rama "servidor-nube" (lo copia scripts/publicar-nube.js).
+services:
+  - type: web
+    name: mis-amores
+    runtime: node
+    plan: free
+    # La misma región que la base de Atlas (AWS N. Virginia): entre sí se hablan
+    # en milisegundos, y la primera carga de datos tarda minutos en vez de horas.
+    region: virginia
+    branch: servidor-nube
+    # La app ya viene compilada: sólo se instalan las librerías para correrla.
+    buildCommand: npm ci --omit=dev
+    startCommand: node dist-electron/electron/servidor.js
+    healthCheckPath: /api/sistema/info
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # Los "días" del negocio se cortan en hora de Argentina.
+      - key: TZ
+        value: America/Argentina/Buenos_Aires
+      - key: MONGODB_DB_NAME
+        value: mis_amores_gestion
+      # El Atlas gratuito a veces tarda en contestar la primera vez.
+      - key: MIS_AMORES_MONGO_ESPERA_MS
+        value: 20000
+      # Estos dos se piden al crear el servicio (son secretos).
+      - key: MONGODB_URI
+        sync: false
+      - key: MIS_AMORES_CLAVE_RED
+        sync: false

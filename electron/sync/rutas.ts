@@ -3,24 +3,31 @@
 //
 //   GET  /api/sync/hola      quién soy y qué PCs conozco
 //   GET  /api/sync/cambios   los cambios desde una secuencia (espera si no hay)
-//   GET  /api/sync/resumen   una "foto" para comprobar que coincidimos
+//   POST /api/sync/empujar   una PC le manda sus cambios a esta (la que está en
+//                            internet y no puede llamarla a ella)
 //   POST /api/sync/unirse    otra PC se suma a esta red (con cuenta de admin)
 //
 // Todo menos "unirse" va firmado con la clave de la red (ver seguridad.ts): sólo
 // las PCs que se sumaron con una cuenta de administradora la tienen, y la
 // clave misma nunca viaja por la red.
-import type { Express, Request, Response } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import { BSON } from 'mongodb';
-import type { Diario } from './diario';
-import { idDeRed, type HolaSync, type Motor, type ParConfig } from './motor';
+import type { Aplicador } from './aplicar';
+import type { Diario, ItemCambio } from './diario';
+import { idDeRed, type HolaSync, type Motor, type ParConfig, type RespuestaEmpuje } from './motor';
 import { pruebaDeRespuesta, verificarPedido } from './seguridad';
 
 const MAX_ESPERA_MS = 25_000;
 const MAX_LIMITE = 1000;
+// Lo más que se acepta en un "empujar" (las PCs mandan de a 300).
+const MAX_ITEMS_EMPUJE = 1000;
+const MAX_CUERPO_EMPUJE = '40mb';
+const ITEMS_PARA_CARGA_GRANDE = 50;
 
 export interface DepsRutasSync {
   diario: Diario;
   motor: Motor;
+  aplicador: Aplicador;
   claveRed: () => string;
   yo: () => { idPc: string; nombrePc: string; version: string };
   pares: () => ParConfig[];
@@ -110,6 +117,45 @@ export function registrarRutasSync(app: Express, deps: DepsRutasSync): void {
     '/api/sync/resumen',
     ruta(true, () => deps.motor.resumen())
   );
+
+  // Otra PC (que no puede ser llamada desde acá) nos manda lo que cambió en
+  // ella. Lleva su propia verificación porque la firma cubre el contenido
+  // (hay que verla sobre el texto tal cual llegó, antes de interpretarlo).
+  app.post('/api/sync/empujar', express.text({ type: () => true, limit: MAX_CUERPO_EMPUJE }), async (req, res) => {
+    const cuerpo = typeof req.body === 'string' ? req.body : '';
+    const nonce = verificarPedido(deps.claveRed(), req.headers, req.method, req.originalUrl, cuerpo);
+    if (!nonce) {
+      enviar(
+        res,
+        { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta, o tiene la fecha y la hora mal puestas).' },
+        401
+      );
+      return;
+    }
+    res.set('X-Red-Prueba', pruebaDeRespuesta(deps.claveRed(), nonce));
+    try {
+      const datos = BSON.EJSON.parse(cuerpo) as { idPc?: unknown; items?: unknown };
+      if (!Array.isArray(datos.items)) throw new Error('El pedido no trae cambios.');
+      if (datos.items.length > MAX_ITEMS_EMPUJE) throw new Error('Demasiados cambios juntos.');
+      const de = typeof datos.idPc === 'string' && datos.idPc ? datos.idPc : 'otra-pc';
+      // Una carga grande (la primera vez, o después de que el servidor perdió su
+      // base) recalcula el stock una sola vez al final del lote, no por cambio:
+      // contra una base lejana, lo otro tardaría muchísimo.
+      const r = await deps.aplicador.aplicar(datos.items as ItemCambio[], de, {
+        alFinal: datos.items.length >= ITEMS_PARA_CARGA_GRANDE,
+      });
+      const salida: RespuestaEmpuje = {
+        epoca: deps.diario.epoca,
+        aplicados: r.aplicados,
+        sinCambio: r.sinCambio,
+        errores: r.errores,
+      };
+      if (de !== deps.yo().idPc) deps.alVerPar(de);
+      enviar(res, { ok: true, data: salida });
+    } catch (err) {
+      enviar(res, { ok: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+    }
+  });
 
   app.post(
     '/api/sync/unirse',

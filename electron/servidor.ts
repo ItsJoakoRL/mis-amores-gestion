@@ -12,6 +12,12 @@ import Module from 'module';
 
 process.env.MIS_AMORES_MODO_SERVIDOR = '1';
 
+// Los "días" del negocio (ventas del día, reportes) se cortan a medianoche de
+// la hora de este proceso (ver fechaLocal.ts): un servidor de internet suele
+// estar en UTC, y las ventas de la noche caerían en el día siguiente. Tiene que
+// quedar fijado antes de que se cree cualquier fecha.
+if (!process.env.TZ) process.env.TZ = 'America/Argentina/Buenos_Aires';
+
 type Cargador = (this: unknown, pedido: string, ...resto: unknown[]) => unknown;
 const internos = Module as unknown as { _load: Cargador };
 const cargarOriginal = internos._load;

@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",
@@ -17,7 +17,11 @@
     "probar:azar": "node scripts/probar-azar.js",
     "probar:servidor": "node scripts/probar-servidor.js",
     "servidor": "node dist-electron/electron/servidor.js",
-    "armar:servidor": "npm run build && node scripts/armar-paquete-servidor.js"
+    "probar:nube": "node scripts/probar-nube.js",
+    "probar:nube-pantalla": "node scripts/probar-nube-pantalla.js",
+    "armar:servidor": "npm run build && node scripts/armar-paquete-servidor.js",
+    "preparar:nube": "node scripts/preparar-nube.js",
+    "publicar:nube": "npm run build && node scripts/publicar-nube.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

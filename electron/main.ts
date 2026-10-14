@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { initDatabase, closeDatabase, getDbCruda, instalarDiario, asegurarIndices } from './db/database';
 import { respaldarSiCorresponde, respaldoExtra } from './backup';
 import { registrarHandlers } from './ipc/handlers';
@@ -21,7 +22,8 @@ import { carpetaImagenes } from './imagenes';
 import { limpiarRecordatoriosHechos } from './repositories/recordatorios';
 import { Diario } from './sync/diario';
 import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
-import { Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
+import { ErrorDeSync, Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
+import { esModoNube, normalizarUrlNube } from './nube';
 import { Reloj } from './sync/reloj';
 import { Channels } from '../shared/channels';
 import type {
@@ -32,6 +34,7 @@ import type {
   InfoPc,
   InfoRed,
   PcEncontrada,
+  ResultadoConectarNube,
   ResultadoSumarPc,
   ResumenJuntar,
   SumarPcInput,
@@ -866,6 +869,75 @@ async function sumarPcALaRed(p: SumarPcInput): Promise<ResultadoSumarPc> {
   }
 }
 
+// Las contraseñas más obvias: en internet son lo primero que prueba cualquiera.
+const CONTRASENAS_OBVIAS = [
+  'admin123',
+  'admin',
+  '1234',
+  '12345',
+  '123456',
+  '12345678',
+  'password',
+  'contraseña',
+  'misamores',
+  'qwerty',
+];
+
+// Cuentas activas que todavía usan una de esas contraseñas.
+async function cuentasConContrasenaObvia(): Promise<string[]> {
+  const docs = await getDbCruda()
+    .collection<{ usuario?: string; passwordHash?: string; activo?: boolean }>('usuarios')
+    .find({ activo: true })
+    .toArray();
+  const malas: string[] = [];
+  for (const d of docs) {
+    if (!d.passwordHash || !d.usuario) continue;
+    for (const clave of CONTRASENAS_OBVIAS) {
+      // La versión asíncrona: no congela la ventana mientras compara.
+      if (await bcrypt.compare(clave, d.passwordHash)) {
+        malas.push(d.usuario);
+        break;
+      }
+    }
+  }
+  return malas;
+}
+
+// Conecta esta PC con el servidor de internet (ver SERVIDOR_RENDER.md). No
+// reemplaza ningún dato de acá: sólo lo suma a la lista de PCs de la red. Desde
+// ahí esta PC le manda lo suyo (él no puede llamarla) y recibe lo que se cargue
+// desde los celulares.
+async function conectarServidorNube(texto: string): Promise<ResultadoConectarNube> {
+  requiereAdmin();
+  if (!motor) throw new Error('La sincronización todavía no arrancó. Probá de nuevo en unos segundos.');
+  const direccion = normalizarUrlNube(texto);
+  const debiles = await cuentasConContrasenaObvia();
+  if (debiles.length > 0) {
+    throw new Error(
+      `Antes de conectar con internet, cambiá la contraseña de: ${debiles.join(', ')}. ` +
+        'Con una contraseña fácil (como la de fábrica), cualquiera en internet podría probarla y entrar a los datos del negocio.'
+    );
+  }
+  let hola: HolaSync;
+  try {
+    // Un servicio gratuito que estaba dormido tarda hasta un minuto en despertar.
+    hola = await motor.hola(direccion, 90_000);
+  } catch (err) {
+    if (err instanceof ErrorDeSync && err.tipo === 'clave') {
+      throw new Error(
+        'El servidor contestó, pero no tiene la misma clave de red que esta PC (o la fecha y la hora de alguno están mal puestas). ' +
+          'Revisá que MIS_AMORES_CLAVE_RED en Render sea la de esta PC.'
+      );
+    }
+    const detalle = err instanceof Error ? err.message : 'sin respuesta';
+    throw new Error(`No se pudo conectar con ${direccion}: ${detalle}`);
+  }
+  if (hola.idPc === config.idPc) throw new Error('Esa dirección es de esta misma PC.');
+  motor.agregarPar({ idPc: hola.idPc, nombre: 'Servidor de internet', direccion });
+  logCrash('red', `esta PC se conectó al servidor de internet (${direccion})`);
+  return { direccion };
+}
+
 // Esta PC deja de sincronizar con las demás: se queda con sus datos, como
 // una red de una sola PC (con una clave nueva, así las otras no la buscan).
 async function salirDeLaRed(): Promise<boolean> {
@@ -1039,6 +1111,7 @@ async function prepararSincronizacion(): Promise<boolean> {
     carpetaImagenes: carpetaImagenes(),
     buscar: buscarPcsConHola,
     registrar: logCrash,
+    soloAtiende: esModoNube(),
   });
 
   if (!(await primeraSincronizacion())) return false;
@@ -1148,6 +1221,9 @@ function registrarIpcEscritorio() {
       return true;
     })
   );
+  ipcMain.handle(Channels.escritorioConectarNube, (_e, direccion: string) =>
+    wrapEscritorio(() => conectarServidorNube(String(direccion ?? '')))
+  );
   ipcMain.handle(Channels.escritorioBorrarAvisos, () =>
     wrapEscritorio(async () => {
       await diario?.borrarAvisos();
@@ -1235,8 +1311,10 @@ async function arrancar(): Promise<boolean> {
   // al arrancar, y de nuevo cada 6hs por si la app queda prendida días
   // seguidos en la bandeja sin reiniciarse. Si falla, sólo queda anotado en
   // el log de errores — nunca debe frenar el arranque de la app.
-  respaldarSiCorresponde().catch((err) => logCrash('respaldo', err));
-  setInterval(() => respaldarSiCorresponde().catch((err) => logCrash('respaldo', err)), 6 * 60 * 60 * 1000);
+  if (!esModoNube()) {
+    respaldarSiCorresponde().catch((err) => logCrash('respaldo', err));
+    setInterval(() => respaldarSiCorresponde().catch((err) => logCrash('respaldo', err)), 6 * 60 * 60 * 1000);
+  }
 
   try {
     const sync =
@@ -1244,10 +1322,15 @@ async function arrancar(): Promise<boolean> {
         ? {
             diario,
             motor,
+            aplicador: aplicador!,
             claveRed: () => config.claveRed ?? '',
             yo: () => ({ idPc: config.idPc, nombrePc: os.hostname(), version: app.getVersion() }),
-            pares: () => config.pares,
-            alUnirse: (par: ParConfig) => motor?.agregarPar(par),
+            // El servidor de internet no sabe (ni le sirve saber) dónde están las
+            // PCs del negocio: son ellas las que lo llaman.
+            pares: () => (esModoNube() ? [] : config.pares),
+            alUnirse: (par: ParConfig) => {
+              if (!esModoNube()) motor?.agregarPar(par);
+            },
             alVerPar: (idPc: string) => motor?.alVerPar(idPc),
           }
         : null;

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  Globe,
   Laptop,
   Link2,
   Loader2,
@@ -195,6 +196,8 @@ export default function ConfiguracionPage() {
             </button>
           </div>
 
+          <ServidorDeInternet red={red} onCambio={cargar} />
+
           {red.pcs.length > 0 && (
             <div className="px-1">
               <button
@@ -218,6 +221,92 @@ export default function ConfiguracionPage() {
             cargar();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// El servidor que se deja en internet (ver SERVIDOR_RENDER.md) para que los
+// celulares anden con todas las PCs apagadas. A diferencia de otra PC, él no
+// puede llamar a esta (está detrás del router): esta PC es la que le manda sus
+// cambios y recibe los del celular.
+function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () => void }) {
+  const conectado = red.pcs.find((p) => /^https?:\/\//i.test(p.direccion)) ?? null;
+  const [direccion, setDireccion] = useState('');
+  const [conectando, setConectando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function conectar(e: FormEvent) {
+    e.preventDefault();
+    if (!direccion.trim()) return;
+    setConectando(true);
+    setError(null);
+    try {
+      await window.escritorio!.conectarNube(direccion);
+      setDireccion('');
+      onCambio();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo conectar con el servidor');
+    } finally {
+      setConectando(false);
+    }
+  }
+
+  async function dejar() {
+    if (!conectado) return;
+    if (
+      !confirm(
+        'Esta PC va a dejar de usar el servidor de internet: los celulares dejan de ver lo que se cargue acá cuando ' +
+          'todas las PCs estén apagadas. ¿Seguro?'
+      )
+    )
+      return;
+    await window.escritorio?.olvidarPc(conectado.idPc).catch(() => {});
+    onCambio();
+  }
+
+  return (
+    <div className="card p-5">
+      <h2 className="flex items-center gap-2 font-semibold text-slate-800">
+        <Globe className="h-4 w-4 text-brand-500" />
+        Servidor en internet (para el celular)
+      </h2>
+      <p className="mt-2 text-sm text-slate-500">
+        Con un servidor en internet, el celular puede cargar y consultar todo aunque todas las PCs estén apagadas. Esta PC le
+        manda lo suyo y recibe lo que se cargue desde el celular. Los pasos para armarlo están en la guía
+        SERVIDOR_RENDER.md.
+      </p>
+
+      {conectado ? (
+        <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
+          <p className="flex items-center gap-2 font-medium text-slate-800">
+            {conectado.enLinea ? (
+              <Wifi className="h-4 w-4 text-emerald-500" />
+            ) : (
+              <WifiOff className="h-4 w-4 text-slate-300" />
+            )}
+            {conectado.enLinea ? 'Conectado' : 'Sin conexión por ahora (si estaba dormido, tarda hasta un minuto en despertar)'}
+          </p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-400">{conectado.direccion}</p>
+          <button onClick={dejar} className="mt-2 text-xs text-slate-400 underline hover:text-slate-600">
+            Dejar de usar este servidor
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={conectar} className="mt-3 space-y-2">
+          <input
+            className="input"
+            placeholder="Dirección del servidor (ej. https://mis-amores.onrender.com)"
+            value={direccion}
+            onChange={(e) => setDireccion(e.target.value)}
+            autoComplete="off"
+          />
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          <button className="btn-primary" type="submit" disabled={conectando || !direccion.trim()}>
+            {conectando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+            {conectando ? 'Conectando (puede tardar un minuto)...' : 'Conectar con el servidor'}
+          </button>
+        </form>
       )}
     </div>
   );

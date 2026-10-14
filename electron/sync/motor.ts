@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { BSON } from 'mongodb';
 import type { Aplicador } from './aplicar';
+import { esDireccionRemota, urlBase } from '../nube';
 import { COL_META, COL_PARES, type Diario, type ItemCambio } from './diario';
 import { COLECCIONES_REPLICADAS } from './modelo';
 import { firmarPedido, respuestaEsDeLaRed } from './seguridad';
@@ -39,6 +40,14 @@ export interface RespuestaCambios {
   items: ItemCambio[];
   hasta: number;
   maxSeq: number;
+}
+
+/** Lo que contesta una PC cuando otra le empuja cambios (ver rutas.ts). */
+export interface RespuestaEmpuje {
+  epoca: string;
+  aplicados: number;
+  sinCambio: number;
+  errores: number;
 }
 
 /** Todo lo que tiene otra PC, bajado y todavía sin aplicar. */
@@ -85,6 +94,7 @@ export function idDeRed(claveRed: string): string {
 }
 
 const LIMITE_POR_PEDIDO = 500;
+const LIMITE_POR_EMPUJE = 200;
 const ESPERA_LARGA_MS = 20_000;
 const ESPERA_MAX_FALLOS_MS = 30_000;
 const CADA_BUSQUEDA_MS = 60_000;
@@ -103,12 +113,18 @@ export interface OpcionesMotor {
   /** Busca en la red las PCs con Mis Amores (con su dirección y su "hola"). */
   buscar: () => Promise<Array<{ direccion: string; hola: HolaSync }>>;
   registrar: (etiqueta: string, detalle: unknown) => void;
+  /** El servidor de internet: no llama a nadie (no puede llegar a las PCs del
+   * negocio, que están detrás de su router); sólo atiende a las que lo llaman y
+   * le empujan sus cambios. */
+  soloAtiende?: boolean;
 }
 
 interface Bucle {
   par: ParConfig;
   parar: boolean;
   controlador: AbortController | null;
+  /** El pedido de "empujar" en curso (sólo con PCs remotas, ver `empujar`). */
+  controladorEmpuje: AbortController | null;
   /** Corta la espera entre reintentos (la otra PC acaba de volver). */
   despertar: (() => void) | null;
   despertado: boolean;
@@ -137,6 +153,8 @@ export class Motor {
   iniciar(): void {
     if (this.activo) return;
     this.activo = true;
+    // El servidor de internet sólo atiende: no busca ni llama a nadie.
+    if (this.o.soloAtiende) return;
     for (const par of this.o.pares()) this.arrancarBucle(par);
     this.temporizadorBusqueda = setInterval(() => void this.buscarNuevas(), CADA_BUSQUEDA_MS);
     this.temporizadorRevision = setInterval(() => void this.revisarCoincidencia(), CADA_REVISION_MS);
@@ -150,6 +168,7 @@ export class Motor {
     for (const b of this.bucles.values()) {
       b.parar = true;
       b.controlador?.abort();
+      b.controladorEmpuje?.abort();
     }
     this.bucles.clear();
   }
@@ -163,6 +182,7 @@ export class Motor {
     if (viejo && viejo.par.direccion !== par.direccion) {
       viejo.parar = true;
       viejo.controlador?.abort();
+      viejo.controladorEmpuje?.abort();
       this.bucles.delete(par.idPc);
     }
     if (this.activo) this.arrancarBucle(par);
@@ -175,6 +195,7 @@ export class Motor {
     if (bucle) {
       bucle.parar = true;
       bucle.controlador?.abort();
+      bucle.controladorEmpuje?.abort();
       bucle.despertar?.();
       this.bucles.delete(idPc);
     }
@@ -188,6 +209,7 @@ export class Motor {
     for (const b of this.bucles.values()) {
       b.parar = true;
       b.controlador?.abort();
+      b.controladorEmpuje?.abort();
     }
     this.bucles.clear();
     this.estados.clear();
@@ -220,19 +242,24 @@ export class Motor {
   // =================================================================
 
   async hola(direccion: string, esperaMs = 4000): Promise<HolaSync> {
-    return this.pedirJson<HolaSync>(`http://${direccion}/api/sync/hola`, esperaMs);
+    return this.pedirJson<HolaSync>(`${urlBase(direccion)}/api/sync/hola`, esperaMs);
   }
 
-  private async pedirJson<T>(url: string, esperaMs: number, senal?: AbortSignal): Promise<T> {
+  /** `cuerpo`: si se pasa, el pedido es un POST con ese texto (firmado junto con él). */
+  private async pedirJson<T>(url: string, esperaMs: number, senal?: AbortSignal, cuerpo?: string): Promise<T> {
     // El pedido va firmado con la clave (que no se manda); la respuesta tiene
     // que traer la prueba de que quien contesta también la tiene.
     const clave = this.o.claveRed();
     const u = new URL(url);
-    const firmado = firmarPedido(clave, 'GET', u.pathname + u.search);
+    const metodo = cuerpo === undefined ? 'GET' : 'POST';
+    const firmado = firmarPedido(clave, metodo, u.pathname + u.search, cuerpo);
     let respuesta: Response;
     try {
       respuesta = await fetch(url, {
-        headers: firmado.cabeceras,
+        method: metodo,
+        headers:
+          cuerpo === undefined ? firmado.cabeceras : { ...firmado.cabeceras, 'Content-Type': 'text/plain; charset=utf-8' },
+        body: cuerpo,
         signal: senal ? AbortSignal.any([senal, AbortSignal.timeout(esperaMs)]) : AbortSignal.timeout(esperaMs),
       });
     } catch (err) {
@@ -244,6 +271,11 @@ export class Motor {
     try {
       json = BSON.EJSON.parse(texto) as typeof json;
     } catch {
+      // Un servicio de internet que está despertando (o reiniciándose) contesta
+      // con una página de error: no es una versión vieja, hay que esperar.
+      if (respuesta.status >= 500) {
+        throw new ErrorDeSync('El servidor no contestó bien (puede estar despertando). Se vuelve a intentar.', 'red');
+      }
       throw new ErrorDeSync('Esa PC tiene una versión de Mis Amores que todavía no sabe sincronizar. Actualizala.', 'version');
     }
     if (!json.ok) {
@@ -265,7 +297,7 @@ export class Motor {
     // clave) puede devolver el pedido sin esperar a encontrarnos por la red.
     const yo = this.o.yo();
     const url =
-      `http://${par.direccion}/api/sync/cambios?desde=${desde}&limite=${LIMITE_POR_PEDIDO}` +
+      `${urlBase(par.direccion)}/api/sync/cambios?desde=${desde}&limite=${LIMITE_POR_PEDIDO}` +
       `&esperar=${esperarMs}` +
       `&yo=${encodeURIComponent(yo.idPc)}&puerto=${this.o.puerto}&nombre=${encodeURIComponent(yo.nombrePc)}`;
     return this.pedirJson<RespuestaCambios>(url, esperarMs + 20_000, senal);
@@ -286,15 +318,102 @@ export class Motor {
       .updateOne({ _id: idPc }, { $set: { seq, epoca } }, { upsert: true });
   }
 
+  // El cursor de lo que ESTA PC ya le empujó a una PC remota (ver `empujar`):
+  // hasta qué secuencia del diario propio, y contra qué época de la otra.
+  private async leerCursorEmpuje(idPc: string): Promise<{ push: number; pushEpoca: string | null; epoca: string | null }> {
+    const doc = await this.o.diario.db
+      .collection<{ _id: string; push?: number; pushEpoca?: string | null; epoca?: string | null }>(COL_PARES)
+      .findOne({ _id: idPc });
+    return { push: doc?.push ?? 0, pushEpoca: doc?.pushEpoca ?? null, epoca: doc?.epoca ?? null };
+  }
+
+  private async guardarCursorEmpuje(idPc: string, push: number, pushEpoca: string | null): Promise<void> {
+    await this.o.diario.db
+      .collection<{ _id: string; push: number; pushEpoca: string | null }>(COL_PARES)
+      .updateOne({ _id: idPc }, { $set: { push, pushEpoca } }, { upsert: true });
+  }
+
   // =================================================================
   // El bucle de cada PC
   // =================================================================
 
   private arrancarBucle(par: ParConfig): void {
+    if (this.o.soloAtiende) return;
     if (this.bucles.has(par.idPc) || par.idPc === this.o.yo().idPc) return;
-    const bucle: Bucle = { par, parar: false, controlador: null, despertar: null, despertado: false };
+    const bucle: Bucle = { par, parar: false, controlador: null, controladorEmpuje: null, despertar: null, despertado: false };
     this.bucles.set(par.idPc, bucle);
     void this.correr(bucle);
+    // Una PC de internet no puede llamarnos a nosotras (estamos detrás del
+    // router): lo nuestro se lo empujamos.
+    if (esDireccionRemota(par.direccion)) void this.empujar(bucle);
+  }
+
+  // =================================================================
+  // Empujar: llevarle nuestros cambios a una PC de internet
+  // =================================================================
+
+  /** El servidor de internet no puede pedirnos cambios (no llega hasta esta
+   * PC), así que se los mandamos: lo que haya en nuestro diario después de la
+   * última secuencia que ya recibió. Aplicarlo es idempotente: lo que ya tenía
+   * (por ejemplo, lo que él mismo nos mandó antes) lo ignora. */
+  private async empujar(bucle: Bucle): Promise<void> {
+    let fallos = 0;
+    while (!bucle.parar && this.activo) {
+      try {
+        const idPar = bucle.par.idPc;
+        let cursor = await this.leerCursorEmpuje(idPar);
+        // El servidor empezó de cero (otra época): hay que mandarle todo de nuevo.
+        if (cursor.epoca && cursor.pushEpoca && cursor.epoca !== cursor.pushEpoca) {
+          await this.guardarCursorEmpuje(idPar, 0, cursor.epoca);
+          cursor = { ...cursor, push: 0, pushEpoca: cursor.epoca };
+        }
+
+        if (this.o.diario.seqActual() <= cursor.push) {
+          await this.o.diario.esperarCambios(cursor.push, ESPERA_LARGA_MS);
+          continue;
+        }
+
+        const { items, hasta } = await this.o.diario.cambiosDesde(cursor.push, LIMITE_POR_EMPUJE);
+        let epocaPar = cursor.pushEpoca ?? cursor.epoca;
+        if (items.length > 0) {
+          bucle.controladorEmpuje = new AbortController();
+          const cuerpo = BSON.EJSON.stringify({ idPc: this.o.yo().idPc, items } as unknown as Record<string, unknown>, {
+            relaxed: false,
+          });
+          const r = await this.pedirJson<RespuestaEmpuje>(
+            `${urlBase(bucle.par.direccion)}/api/sync/empujar`,
+            90_000,
+            bucle.controladorEmpuje.signal,
+            cuerpo
+          );
+          bucle.controladorEmpuje = null;
+          if (bucle.parar) break;
+          if (r.errores > 0) this.o.registrar('sync', `${r.errores} cambio(s) no se pudieron aplicar en ${bucle.par.nombre}`);
+          // Si el servidor cambió de época justo ahora, lo que se mandó cayó en
+          // una base nueva: se vuelve a mandar todo desde el principio.
+          if (cursor.pushEpoca && r.epoca !== cursor.pushEpoca) {
+            await this.guardarCursorEmpuje(idPar, 0, r.epoca);
+            continue;
+          }
+          epocaPar = r.epoca;
+        }
+        await this.guardarCursorEmpuje(idPar, Math.max(hasta, cursor.push), epocaPar);
+        fallos = 0;
+      } catch (err) {
+        bucle.controladorEmpuje = null;
+        if (bucle.parar || !this.activo) break;
+        fallos += 1;
+        const mensaje = err instanceof Error ? err.message : 'No se pudo enviar';
+        if (fallos === 1 || fallos % 20 === 0) this.o.registrar('sync', `${bucle.par.nombre} (enviar): ${mensaje}`);
+        await new Promise<void>((r) => setTimeout(r, Math.min(1000 * 2 ** Math.min(fallos, 5), ESPERA_MAX_FALLOS_MS)));
+      }
+    }
+  }
+
+  /** Vuelve a mandarle todo a esa PC de internet (después de una revisión que
+   * no coincidía). */
+  private async reiniciarEmpuje(idPc: string): Promise<void> {
+    await this.o.diario.db.collection(COL_PARES).updateOne({ _id: idPc as never }, { $set: { push: 0 } }, { upsert: true });
   }
 
   private anotar(par: ParConfig, cambios: Partial<EstadoPar>): void {
@@ -362,7 +481,8 @@ export class Motor {
         this.anotar(bucle.par, { enLinea: false, error: mensaje });
         if (fallos === 1 || fallos % 20 === 0) this.o.registrar('sync', `${bucle.par.nombre}: ${mensaje}`);
         // Si cambió de dirección (el router le dio otra IP), se la vuelve a buscar.
-        if (fallos % 3 === 0) await this.reencontrar(bucle).catch(() => {});
+        // (Una PC de internet no se "encuentra" en la red del local.)
+        if (fallos % 3 === 0 && !esDireccionRemota(bucle.par.direccion)) await this.reencontrar(bucle).catch(() => {});
         await this.dormir(Math.min(1000 * 2 ** Math.min(fallos, 5), ESPERA_MAX_FALLOS_MS), bucle);
         if (bucle.despertado) {
           bucle.despertado = false;
@@ -413,7 +533,7 @@ export class Motor {
   // =================================================================
 
   async buscarNuevas(): Promise<void> {
-    if (!this.activo) return;
+    if (!this.activo || this.o.soloAtiende) return;
     try {
       const yo = this.o.yo().idPc;
       const conocidas = new Set(this.o.pares().map((p) => p.idPc));
@@ -616,7 +736,7 @@ export class Motor {
         const pendiente = this.sinResolver.get(par.idPc);
         if (!forzar && pendiente && Date.now() < pendiente.proxima) continue;
         try {
-          const url = `http://${par.direccion}/api/sync/resumen`;
+          const url = `${urlBase(par.direccion)}/api/sync/resumen`;
           const suyo = await this.pedirJson<ResumenRed>(url, 15_000);
           revisadas += 1;
           if (this.iguales(await this.resumen(), suyo)) {
@@ -633,6 +753,9 @@ export class Motor {
           }
           this.o.registrar('sync', `Revisión: lo de ${par.nombre} no coincide, se vuelve a traer todo`);
           await this.traerTodo(par);
+          // Si es el servidor de internet, también se le vuelve a mandar todo lo
+          // nuestro (puede ser lo que le falte a él).
+          if (esDireccionRemota(par.direccion)) await this.reiniciarEmpuje(par.idPc);
           // ¿Quedó resuelto? Si no (algo que no se puede aplicar), no se vuelve a
           // bajar todo cada pocos minutos: se espera cada vez más.
           const despues = await this.pedirJson<ResumenRed>(url, 15_000);
@@ -682,7 +805,7 @@ export class Motor {
         continue;
       }
       try {
-        const r = await fetch(`http://${pedido.par.direccion}/imagenes/${encodeURIComponent(nombre)}`, {
+        const r = await fetch(`${urlBase(pedido.par.direccion)}/imagenes/${encodeURIComponent(nombre)}`, {
           signal: AbortSignal.timeout(30_000),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);

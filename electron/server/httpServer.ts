@@ -27,6 +27,8 @@ import { escucharCambios } from '../cambiosEnVivo';
 import { armarManifiesto, claveDeCopia, claveEsValida, coleccionComoTexto } from '../replica';
 import { completarStockBase } from '../sync/aplicar';
 import { registrarRutasSync, type DepsRutasSync } from '../sync/rutas';
+import { esModoNube } from '../nube';
+import { anotarFallo, intentoBloqueado, limpiarFallos } from './limiteIntentos';
 import { crearToken, obtenerSesionPorToken, eliminarToken } from './tokenSessions';
 import { NOMBRE_HOST } from './mdns';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
@@ -90,7 +92,11 @@ import {
 // una le gane el puerto a la otra y la conexión del celular falle con
 // "EADDRINUSE". (En desarrollo se puede elegir otro con MIS_AMORES_PUERTO,
 // para probar dos "PCs" en la misma máquina.)
-export const PUERTO = Number(process.env.MIS_AMORES_PUERTO) || (process.env.NODE_ENV === 'development' ? 4001 : 4000);
+// En un servicio de internet (Render, etc.) el puerto lo da la variable PORT.
+export const PUERTO =
+  Number(process.env.MIS_AMORES_PUERTO) ||
+  (process.env.MIS_AMORES_MODO_SERVIDOR === '1' ? Number(process.env.PORT) : 0) ||
+  (process.env.NODE_ENV === 'development' ? 4001 : 4000);
 
 // Para el nombre de la carpeta del respaldo previo a juntar datos, en hora local.
 function marcaDeTiempo(): string {
@@ -166,6 +172,10 @@ export async function iniciarServidorWeb(
   sync: Omit<DepsRutasSync, 'requiereAdmin'> | null
 ): Promise<InfoServidorWeb> {
   const app = express();
+  // En internet (ver nube.ts) la app está detrás del balanceador del servicio:
+  // la dirección de quien pide viene en X-Forwarded-For.
+  const enNube = esModoNube();
+  if (enNube) app.set('trust proxy', 1);
   app.use(cors());
 
   // Envuelve cada ruta con el mismo formato { ok, data } / { ok:false, error }
@@ -194,6 +204,13 @@ export async function iniciarServidorWeb(
   // ya tenía datos propios. Va antes del express.json() general porque los
   // datos pesan mucho más que el límite normal de un pedido.
   let juntandoAhora = false;
+  // Pesa cientos de MB y se interpreta antes de mirar la sesión: en internet no
+  // se ofrece (las PCs suben sus datos por la sincronización).
+  if (enNube) {
+    app.post('/api/sistema/juntar-datos', (_req, res) => {
+      res.json({ ok: false, error: 'Esto no está disponible en el servidor de internet.' });
+    });
+  }
   app.post(
     '/api/sistema/juntar-datos',
     express.json({ limit: '300mb' }),
@@ -229,6 +246,9 @@ export async function iniciarServidorWeb(
   // Una PC que todavía no se actualizó se "conecta" a ésta y guarda una copia
   // de sus datos: se le sigue dando hasta que se actualice.
   async function autorizarCopia(req: Request): Promise<void> {
+    // La copia de la versión anterior es sólo para PCs de la red del local: en
+    // internet no se ofrece (entregaría colecciones enteras a quien tenga la clave).
+    if (enNube) throw new Error('Esto no está disponible en el servidor de internet.');
     if (await claveEsValida(req.headers['x-clave-copia'])) return;
     requiereAdmin(req);
   }
@@ -252,6 +272,7 @@ export async function iniciarServidorWeb(
   app.get(
     '/api/copia/clave',
     ruta(async (req) => {
+      if (enNube) throw new Error('Esto no está disponible en el servidor de internet.');
       requiereAdmin(req);
       return { clave: await claveDeCopia() };
     })
@@ -273,8 +294,18 @@ export async function iniciarServidorWeb(
     '/api/auth/login',
     ruta(async (req) => {
       const { usuario, password } = req.body as { usuario: string; password: string };
+      // En internet cualquiera puede probar contraseñas: hay un límite de
+      // intentos fallidos (ver limiteIntentos.ts).
+      const ip = req.ip ?? '';
+      if (enNube && intentoBloqueado(ip, String(usuario ?? ''))) {
+        throw new Error('Demasiados intentos. Esperá un rato (hasta una hora) y probá de nuevo.');
+      }
       const user = await verificarCredenciales(usuario, password);
-      if (!user) throw new Error('Usuario o contraseña incorrectos');
+      if (!user) {
+        if (enNube) anotarFallo(ip, String(usuario ?? ''));
+        throw new Error('Usuario o contraseña incorrectos');
+      }
+      if (enNube) limpiarFallos(String(usuario ?? ''));
       const token = crearToken(user);
       return { ...user, token };
     })
@@ -292,7 +323,13 @@ export async function iniciarServidorWeb(
   );
   app.get(
     '/api/auth/cuentas',
-    ruta(() => listCuentasPublicas())
+    ruta(() => {
+      // La lista de cuentas para "tocar y entrar" es cómoda en el local, pero
+      // en internet le regalaría los nombres de usuario a cualquiera: ahí se
+      // escribe el usuario (la pantalla de entrada ya sabe hacerlo).
+      if (enNube) throw new Error('Escribí tu usuario y tu contraseña.');
+      return listCuentasPublicas();
+    })
   );
 
   // --- Artículos ---

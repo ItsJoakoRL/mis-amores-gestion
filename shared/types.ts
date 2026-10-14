@@ -270,6 +270,12 @@ export interface ResultadoSumarPc {
   nombrePc: string;
 }
 
+/** Lo que devuelve conectar esta PC con el servidor de internet. */
+export interface ResultadoConectarNube {
+  /** La dirección con la que quedó anotado ('https://...'). */
+  direccion: string;
+}
+
 export interface ApiResult<T> {
   ok: boolean;
   data?: T;

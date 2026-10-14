@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { MongoClient, type Collection, type Db, type Document } from 'mongodb';
 import { notificarEscritura } from '../cambiosEnVivo';
+import { esModoNube } from '../nube';
 import type { Diario } from '../sync/diario';
 import { esReplicada } from '../sync/modelo';
 
@@ -99,7 +100,8 @@ const COMANDOS_DE_ESCRITURA = new Set(['insert', 'update', 'delete', 'findAndMod
 
 export async function initDatabase(): Promise<Db> {
   client = new MongoClient(MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,
+    // Un Atlas gratuito a veces tarda en contestar la primera vez.
+    serverSelectionTimeoutMS: Number(process.env.MIS_AMORES_MONGO_ESPERA_MS) || 5000,
     monitorCommands: true,
   });
 
@@ -132,7 +134,9 @@ export async function initDatabase(): Promise<Db> {
   dbProtegida = protegerBase(db);
 
   await crearIndices(db);
-  await seedIfEmpty(db);
+  // En el servidor de internet NO se crea el usuario "admin" de fábrica (con
+  // una contraseña conocida): los usuarios llegan desde las PCs del negocio.
+  if (!esModoNube()) await seedIfEmpty(db);
   await migrarCodigosBarraNulos(db);
 
   return dbProtegida;

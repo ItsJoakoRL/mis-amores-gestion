@@ -28,8 +28,17 @@ export interface PedidoFirmado {
   nonce: string;
 }
 
-/** Las cabeceras que hay que mandar para pedir `metodo` `ruta` (ruta + query). */
-export function firmarPedido(clave: string, metodo: string, ruta: string): PedidoFirmado {
+// Un pedido sin contenido (un GET) se firma como siempre; uno con contenido
+// agrega la huella del contenido al final.
+function textoAFirmar(ts: string, nonce: string, metodo: string, ruta: string, cuerpo?: string): string {
+  const base = `${ts}.${nonce}.${metodo.toUpperCase()}.${ruta}`;
+  if (cuerpo === undefined) return base;
+  return `${base}.${crypto.createHash('sha256').update(cuerpo).digest('hex')}`;
+}
+
+/** Las cabeceras que hay que mandar para pedir `metodo` `ruta` (ruta + query).
+ * `cuerpo`: el texto que se manda, si es un POST (queda cubierto por la firma). */
+export function firmarPedido(clave: string, metodo: string, ruta: string, cuerpo?: string): PedidoFirmado {
   const ts = String(Date.now());
   const nonce = crypto.randomBytes(16).toString('hex');
   return {
@@ -37,7 +46,7 @@ export function firmarPedido(clave: string, metodo: string, ruta: string): Pedid
     cabeceras: {
       'X-Red-Ts': ts,
       'X-Red-Nonce': nonce,
-      'X-Red-Firma': firma(clave, `${ts}.${nonce}.${metodo.toUpperCase()}.${ruta}`),
+      'X-Red-Firma': firma(clave, textoAFirmar(ts, nonce, metodo, ruta, cuerpo)),
     },
   };
 }
@@ -54,12 +63,15 @@ export function respuestaEsDeLaRed(clave: string, nonce: string, prueba: string 
 // Los pedidos ya vistos (para que uno capturado no se pueda repetir).
 const vistos = new Map<string, number>();
 
-/** ¿Este pedido viene de una PC que tiene la clave? Devuelve el nonce si sí. */
+/** ¿Este pedido viene de una PC que tiene la clave? Devuelve el nonce si sí.
+ * `cuerpo`: el texto del pedido, si lo lleva (un POST): la firma también lo
+ * cubre, así nadie puede cambiarle el contenido por el camino. */
 export function verificarPedido(
   clave: string,
   cabeceras: Record<string, string | string[] | undefined>,
   metodo: string,
-  ruta: string
+  ruta: string,
+  cuerpo?: string
 ): string | null {
   const un = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const ts = un(cabeceras['x-red-ts']);
@@ -69,7 +81,7 @@ export function verificarPedido(
   if (!/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{16,64}$/.test(nonce)) return null;
   const ahora = Date.now();
   if (Math.abs(ahora - Number(ts)) > VENTANA_MS) return null;
-  if (!igualesSeguros(recibida, firma(clave, `${ts}.${nonce}.${metodo.toUpperCase()}.${ruta}`))) return null;
+  if (!igualesSeguros(recibida, firma(clave, textoAFirmar(ts, nonce, metodo, ruta, cuerpo)))) return null;
   if (vistos.has(nonce)) return null;
   vistos.set(nonce, ahora);
   if (vistos.size > MAX_NONCES) {

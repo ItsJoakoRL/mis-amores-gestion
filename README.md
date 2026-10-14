@@ -44,6 +44,8 @@ Para sumar una PC: **Configuración → Sumar esta PC a otra**, con la cuenta de
 
 Para que los celulares anden aunque **todas las PCs estén apagadas**, la misma app puede correr como **servidor sin ventana** (`npm run servidor`, `electron/servidor.ts`) en una máquina prendida siempre —por ejemplo la gratuita de Oracle Cloud— y entrar por Tailscale. Es una PC más de la red: guarda todos los datos y se sincroniza con las demás. Guía paso a paso en [SERVIDOR.md](SERVIDOR.md); se prueba con `npm run probar:servidor`.
 
+Si no se puede usar una tarjeta (Oracle la pide para verificar la cuenta), hay otra opción **gratis y sin tarjeta**: el **modo nube** en Render + MongoDB Atlas. Ahí el servidor no puede llamar a las PCs (están detrás del router): ellas lo llaman y le **empujan** sus cambios (`POST /api/sync/empujar`, firmado con la clave de la red incluyendo el contenido). No guarda nada en disco, no crea el usuario `admin` de fábrica y limita los intentos de entrada. Guía paso a paso en [SERVIDOR_RENDER.md](SERVIDOR_RENDER.md); se prueba con `npm run probar:nube`.
+
 ### Cómo funciona (electron/sync)
 
 - **Diario de cambios** (`diario.ts`): cada escritura en una colección replicada (`modelo.ts`) queda anotada en `_sync_meta` con qué campos cambiaron y cuándo, con un número de secuencia local. `database.ts` engancha el diario a las escrituras.
@@ -66,6 +68,9 @@ npm run build               # (una vez, o cuando cambia el código)
 npm run probar:sync         # escenarios: vivo, apagones, duplicados, migración desde 0.5.0, fotos...
 npm run probar:union        # "Sumar esta PC" manejando la pantalla real
 npm run probar:azar -- 42   # cientos de operaciones al azar con apagones (semilla opcional)
+npm run probar:servidor     # servidor sin ventana (Oracle)
+npm run probar:nube         # servidor en internet que no puede llamar a las PCs (Render)
+npm run probar:nube-pantalla  # "Conectar con el servidor de internet" desde la pantalla real
 ```
 
 ## Estructura

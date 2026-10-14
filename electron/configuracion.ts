@@ -8,6 +8,7 @@ import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { claveRedNube, esModoNube, idPcNube } from './nube';
 
 export interface ParGuardado {
   idPc: string;
@@ -45,8 +46,25 @@ function esTexto(valor: unknown): valor is string {
   return typeof valor === 'string' && valor.length > 0;
 }
 
+/** En la nube (ver nube.ts) el disco no sobrevive a un reinicio: la identidad
+ * sale siempre de las variables de entorno y no se guarda ningún archivo. */
+function configuracionNube(pares: ParGuardado[] = []): ConfiguracionPc {
+  return {
+    idPc: idPcNube(),
+    claveRed: claveRedNube(),
+    pares,
+    inicial: 'listo',
+    direccionAnterior: null,
+    nombreAnterior: null,
+  };
+}
+
 export function leerConfiguracion(): ConfiguracionPc {
   if (enMemoria) return enMemoria;
+  if (esModoNube()) {
+    enMemoria = configuracionNube();
+    return enMemoria;
+  }
   let leida: Record<string, unknown> = {};
   let existia = true;
   try {
@@ -102,6 +120,10 @@ export function leerConfiguracion(): ConfiguracionPc {
 }
 
 export function guardarConfiguracion(config: ConfiguracionPc): void {
+  if (esModoNube()) {
+    enMemoria = configuracionNube(config.pares);
+    return;
+  }
   enMemoria = config;
   try {
     const destino = archivo();
