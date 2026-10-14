@@ -4,6 +4,7 @@ import { UserPlus, KeyRound, Pencil, Trash2 } from 'lucide-react';
 import { etiquetaRol, type Genero, type Rol, type Usuario } from '@shared/types';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
+import CampoContrasena from '../../components/CampoContrasena';
 
 export default function UsuariosPage() {
   const { sesion, refrescarSesion } = useAuth();
@@ -264,9 +265,7 @@ function ResetPasswordModal({
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
           <div>
             <label className="label">Contraseña nueva</label>
-            <input
-              type="password"
-              className="input"
+            <CampoContrasena
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={4}
@@ -332,9 +331,7 @@ function NuevoUsuarioModal({ onCerrar, onCreado }: { onCerrar: () => void; onCre
           </div>
           <div>
             <label className="label">Contraseña</label>
-            <input
-              type="password"
-              className="input"
+            <CampoContrasena
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={4}

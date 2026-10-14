@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { etiquetaRol, type CuentaPublica } from '@shared/types';
 import { useAuth } from './AuthContext';
+import CampoContrasena from '../../components/CampoContrasena';
 
 const RASGOS = [
   { icon: ShoppingCart, texto: 'Ventas y stock siempre al día' },
@@ -237,10 +238,9 @@ export default function LoginScreen() {
                   Contraseña
                 </label>
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <CampoContrasena
                     id="password"
-                    type="password"
                     className="input pl-9"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

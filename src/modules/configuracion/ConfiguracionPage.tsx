@@ -20,6 +20,7 @@ import {
 import type { EstadoRed, InfoRed, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
+import CampoContrasena from '../../components/CampoContrasena';
 
 // "hace 3 min", "hace 2 h", "ayer 14:30"...
 function hace(iso: string | null): string {
@@ -619,9 +620,7 @@ function SumarPcModal({
                     autoComplete="off"
                     required
                   />
-                  <input
-                    className="input"
-                    type="password"
+                  <CampoContrasena
                     placeholder="Contraseña"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
