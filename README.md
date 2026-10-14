@@ -40,6 +40,10 @@ Desde la versión 0.6.0 no hay una PC "principal". **Cada PC guarda todos los da
 
 Para sumar una PC: **Configuración → Sumar esta PC a otra**, con la cuenta de administradora de la otra PC (lo que la PC nueva ya tuviera cargado se junta con lo de la otra sin duplicar).
 
+### Servidor en internet (opcional)
+
+Para que los celulares anden aunque **todas las PCs estén apagadas**, la misma app puede correr como **servidor sin ventana** (`npm run servidor`, `electron/servidor.ts`) en una máquina prendida siempre —por ejemplo la gratuita de Oracle Cloud— y entrar por Tailscale. Es una PC más de la red: guarda todos los datos y se sincroniza con las demás. Guía paso a paso en [SERVIDOR.md](SERVIDOR.md); se prueba con `npm run probar:servidor`.
+
 ### Cómo funciona (electron/sync)
 
 - **Diario de cambios** (`diario.ts`): cada escritura en una colección replicada (`modelo.ts`) queda anotada en `_sync_meta` con qué campos cambiaron y cuándo, con un número de secuencia local. `database.ts` engancha el diario a las escrituras.

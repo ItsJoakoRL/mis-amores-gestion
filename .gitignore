@@ -17,4 +17,6 @@ data/*.db-journal
 # Datos reales del negocio y config local
 backup-mis-amores/
 .claude/
+# Tiene la clave de la red del negocio (ver SERVIDOR.md)
+servidor-config/
 scripts/catalogo-viejo-raw.txt

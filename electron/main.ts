@@ -44,6 +44,9 @@ const logCrash = (etiqueta: string, err: unknown) => {
   try {
     const linea = `[${new Date().toISOString()}] ${etiqueta}: ${err instanceof Error ? err.stack || err.message : String(err)}\n`;
     fs.appendFileSync(path.join(os.tmpdir(), 'mis-amores-crash.log'), linea);
+    // Como servidor no hay ventana: también va a la salida del servicio
+    // (se lee con "journalctl -u mis-amores").
+    if (process.env.MIS_AMORES_MODO_SERVIDOR === '1') process.stderr.write(linea);
   } catch {
     /* si ni esto funciona, no hay mucho más que hacer */
   }
@@ -70,6 +73,10 @@ let config = leerConfiguracion();
 // Para las pruebas automáticas: arranca todo (base, servidor, sincronización)
 // sin abrir ventana ni ícono en la bandeja.
 const sinVentana = process.env.MIS_AMORES_SIN_VENTANA === '1';
+
+// Corriendo como servidor de internet (ver servidor.ts): no hay Electron, ni
+// ventana, ni bandeja, ni actualizaciones automáticas.
+const modoServidor = process.env.MIS_AMORES_MODO_SERVIDOR === '1';
 
 // Como la app se minimiza a la bandeja en vez de cerrarse de verdad, si
 // alguien la abre de nuevo (doble click en el ícono) sin darse cuenta de que
@@ -1252,8 +1259,10 @@ async function arrancar(): Promise<boolean> {
     // llame; queda guardada acá aparte, sólo para usarla al cerrar la app.
     infoServidorWeb = infoParaRenderer;
     detenerServidorWeb = detener;
+    // El aviso "misamores.local" es para el WiFi del local: en un servidor de
+    // internet no sirve de nada.
     const primeraIp = obtenerIpsLan()[0];
-    if (primeraIp) detenerMdns = iniciarMdns(primeraIp);
+    if (primeraIp && !modoServidor) detenerMdns = iniciarMdns(primeraIp);
   } catch (err) {
     // Si el puerto está ocupado o falla por lo que sea, la app de escritorio
     // sigue funcionando igual — sólo no va a estar disponible desde el
@@ -1282,6 +1291,17 @@ app.whenReady().then(async () => {
 
   registrarIpcEscritorio();
   if (!(await arrancar())) return;
+
+  if (modoServidor) {
+    // Sin ventana que muestre el cartel "falta traer los datos": si la primera
+    // vez no apareció la PC de donde traerlos, se termina y el servicio
+    // (systemd) lo vuelve a intentar en unos segundos.
+    if (estadoArranque !== 'listo') {
+      logCrash('servidor', 'Todavía no se pudieron traer los datos de la red: se vuelve a intentar en un rato.');
+      app.exit(3);
+    }
+    return;
+  }
 
   crearBandeja();
   createWindow();

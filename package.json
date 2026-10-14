@@ -14,7 +14,10 @@
     "actualizaciones:servir": "node scripts/servidor-actualizaciones.js",
     "probar:sync": "node scripts/probar-sync.js",
     "probar:union": "node scripts/probar-union.js",
-    "probar:azar": "node scripts/probar-azar.js"
+    "probar:azar": "node scripts/probar-azar.js",
+    "probar:servidor": "node scripts/probar-servidor.js",
+    "servidor": "node dist-electron/electron/servidor.js",
+    "armar:servidor": "npm run build && node scripts/armar-paquete-servidor.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
