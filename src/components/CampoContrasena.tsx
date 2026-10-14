@@ -21,7 +21,8 @@ export default function CampoContrasena({ className = 'input', ...props }: Props
         title={visible ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}
         className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
       >
-        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {/* El ícono muestra cómo está ahora: ojo tachado = oculta, ojo abierto = se ve. */}
+        {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
       </button>
     </div>
   );
