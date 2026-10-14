@@ -11,6 +11,12 @@ import { esReplicada } from '../sync/modelo';
 export const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? 'mis_amores_gestion';
 
+// Una dirección de MongoDB lleva usuario y contraseña ("mongodb+srv://usuario:clave@..."):
+// en los mensajes de error y en los logs del servidor no tiene que aparecer la clave.
+function ocultarClaveDeUri(texto: string): string {
+  return texto.replace(/(mongodb(?:\+srv)?:\/\/[^:\s/@]+:)[^@\s]+@/gi, '$1***@');
+}
+
 let client: MongoClient | null = null;
 let db: Db | null = null;
 // La misma base, pero con cada escritura pasando por el diario de cambios (ver
@@ -125,8 +131,8 @@ export async function initDatabase(): Promise<Db> {
     await client.connect();
   } catch (err) {
     throw new Error(
-      `No se pudo conectar a MongoDB en ${MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? ` +
-        `(${err instanceof Error ? err.message : String(err)})`
+      `No se pudo conectar a MongoDB en ${ocultarClaveDeUri(MONGODB_URI)}. ¿Está corriendo el servicio de MongoDB? ` +
+        `(${ocultarClaveDeUri(err instanceof Error ? err.message : String(err))})`
     );
   }
 
