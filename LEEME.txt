@@ -1,0 +1,3 @@
+Mis Amores - servidor para Render (versión 0.8.0).
+Esta rama la genera "npm run publicar:nube": es la app ya compilada, no el código fuente.
+No se edita a mano: cada publicación la reemplaza con la versión nueva.

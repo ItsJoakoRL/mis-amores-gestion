@@ -1,0 +1,59 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.versionDeLosDatos = versionDeLosDatos;
+exports.escucharCambios = escucharCambios;
+exports.notificarEscritura = notificarEscritura;
+// Aviso en vivo de que alguien cambió datos. Todo lo que se carga (desde esta
+// PC, desde un celular, o lo que llega de otra PC al sincronizar) pasa por la
+// base de esta PC, así que alcanza con enterarse de cada escritura acá:
+// database.ts avisa por cada comando de escritura que termina bien. De ahí sale
+// el aviso a las pantallas abiertas (la de esta PC por IPC; las de los
+// celulares por /api/eventos) para que se vuelvan a cargar solas.
+//
+// También lleva una "versión de los datos" que cambia con cada escritura (la
+// usan las PCs que todavía no se actualizaron; ver replica.ts).
+const events_1 = require("events");
+// Sólo cuentan las colecciones con datos del negocio: guardar una sesión o un
+// ajuste interno no es un cambio que alguien tenga que ver.
+const COLECCIONES_DE_DATOS = new Set([
+    'articulos',
+    'ventas',
+    'clientes',
+    'pagos_cuenta',
+    'ajustes_cuenta',
+    'movimientos_stock',
+    'historial_precios',
+    'familias',
+    'marcas',
+    'proveedores',
+    'usuarios',
+    'recordatorios',
+]);
+const emisor = new events_1.EventEmitter();
+emisor.setMaxListeners(0);
+// Cambia con cada escritura; arranca con la hora en que se abrió la app.
+let version = `${Date.now()}-0`;
+let contador = 0;
+function versionDeLosDatos() {
+    return version;
+}
+// Devuelve la función para dejar de escuchar.
+function escucharCambios(alCambiar) {
+    emisor.on('cambio', alCambiar);
+    return () => emisor.off('cambio', alCambiar);
+}
+let pendiente = null;
+function notificarEscritura(coleccion) {
+    if (!COLECCIONES_DE_DATOS.has(coleccion))
+        return;
+    contador += 1;
+    version = `${Date.now()}-${contador}`;
+    // Varias escrituras seguidas (una venta toca stock, movimientos, etc.) se
+    // juntan en un solo aviso.
+    if (pendiente)
+        return;
+    pendiente = setTimeout(() => {
+        pendiente = null;
+        emisor.emit('cambio');
+    }, 400);
+}
