@@ -21,6 +21,11 @@ const modelo_1 = require("../sync/modelo");
 // entorno antes de abrir la app; si no están definidas, usa un Mongo local.
 exports.MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 exports.MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? 'mis_amores_gestion';
+// Una dirección de MongoDB lleva usuario y contraseña ("mongodb+srv://usuario:clave@..."):
+// en los mensajes de error y en los logs del servidor no tiene que aparecer la clave.
+function ocultarClaveDeUri(texto) {
+    return texto.replace(/(mongodb(?:\+srv)?:\/\/[^:\s/@]+:)[^@\s]+@/gi, '$1***@');
+}
 let client = null;
 let db = null;
 // La misma base, pero con cada escritura pasando por el diario de cambios (ver
@@ -128,8 +133,8 @@ async function initDatabase() {
         await client.connect();
     }
     catch (err) {
-        throw new Error(`No se pudo conectar a MongoDB en ${exports.MONGODB_URI}. ¿Está corriendo el servicio de MongoDB? ` +
-            `(${err instanceof Error ? err.message : String(err)})`);
+        throw new Error(`No se pudo conectar a MongoDB en ${ocultarClaveDeUri(exports.MONGODB_URI)}. ¿Está corriendo el servicio de MongoDB? ` +
+            `(${ocultarClaveDeUri(err instanceof Error ? err.message : String(err))})`);
     }
     db = client.db(exports.MONGODB_DB_NAME);
     dbProtegida = protegerBase(db);
