@@ -100,8 +100,8 @@ Compila la app (uno o dos minutos), arma la carpeta y la sube a la rama
 cambios del proyecto. Si querés ver qué arma antes de subir:
 `npm run publicar:nube -- --sin-subir` (la deja en `release\nube`).
 
-La rama `servidor-nube` **no es el código**: es sólo la app compilada. Se
-reemplaza entera cada vez que publicás.
+La rama `servidor-nube` **no es el código**: es sólo la app compilada. Cada vez
+que publicás se le agrega un cambio con la versión nueva.
 
 ## Parte D. Crear el servidor en Render
 
