@@ -32,6 +32,10 @@ function hace(iso: string | null): string {
   return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+// El servidor de internet se anota como una "PC" más de la red, pero con una
+// dirección completa (https://...): se muestra aparte, en su propia tarjeta.
+const esRemota = (pc: PcDeLaRed) => /^https?:\/\//i.test(pc.direccion);
+
 // Cómo trabaja esta PC junto con las otras PCs del negocio. En el negocio todas
 // las PCs son iguales: cada una guarda todos los datos y se mantiene al día con
 // las demás. Sólo tiene sentido en las PCs — en el celular esta pantalla no aparece.
@@ -105,9 +109,11 @@ export default function ConfiguracionPage() {
   }
 
   const direccionCelular = infoRed && 'urls' in infoRed ? infoRed.urls[0] : null;
+  const servidorInternet = red?.pcs.find(esRemota) ?? null;
 
   return (
-    <div className="mx-auto max-w-3xl animate-slide-up p-8">
+    // Abajo queda lugar de sobra: el botón flotante de ayuda no tapa lo último.
+    <div className="mx-auto max-w-3xl animate-slide-up p-8 pb-28">
       <div className="mb-6">
         <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
           Configuración
@@ -154,8 +160,14 @@ export default function ConfiguracionPage() {
                 </div>
                 {direccionCelular && (
                   <div className="sm:col-span-2">
-                    <dt className="inline text-slate-400">Dirección para los celulares: </dt>
-                    <dd className="inline font-mono text-slate-700">{direccionCelular}</dd>
+                    <dt className="inline text-slate-400">Dirección para los celulares (en el local): </dt>
+                    <dd className="inline break-all font-mono text-slate-700">{direccionCelular}</dd>
+                  </div>
+                )}
+                {servidorInternet && (
+                  <div className="sm:col-span-2">
+                    <dt className="inline text-slate-400">Dirección para los celulares (desde cualquier lado): </dt>
+                    <dd className="inline break-all font-mono text-slate-700">{servidorInternet.direccion}</dd>
                   </div>
                 )}
               </dl>
@@ -198,7 +210,7 @@ export default function ConfiguracionPage() {
 
           <ServidorDeInternet red={red} onCambio={cargar} />
 
-          {red.pcs.length > 0 && (
+          {red.pcs.some((pc) => !esRemota(pc)) && (
             <div className="px-1">
               <button
                 onClick={salir}
@@ -231,7 +243,7 @@ export default function ConfiguracionPage() {
 // puede llamar a esta (está detrás del router): esta PC es la que le manda sus
 // cambios y recibe los del celular.
 function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () => void }) {
-  const conectado = red.pcs.find((p) => /^https?:\/\//i.test(p.direccion)) ?? null;
+  const conectado = red.pcs.find(esRemota) ?? null;
   const [direccion, setDireccion] = useState('');
   const [conectando, setConectando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,6 +337,8 @@ function ListaDePcs({
 }) {
   const porcentaje =
     red.progreso && red.progreso.total > 0 ? Math.min(100, Math.round((red.progreso.hecho / red.progreso.total) * 100)) : null;
+  // El servidor de internet tiene su propia tarjeta más abajo: acá, sólo las PCs del local.
+  const pcsDelLocal = red.pcs.filter((pc) => !esRemota(pc));
   return (
     <div data-tour="conf-pcs" className="card p-5">
       <div className="flex items-center justify-between gap-3">
@@ -354,25 +368,27 @@ function ListaDePcs({
         </div>
       )}
 
-      {red.pcs.length === 0 ? (
+      {pcsDelLocal.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">
           Todavía no hay otra PC en la red. Cuando sumes la otra PC del negocio va a aparecer acá, con su estado.
         </p>
       ) : (
-        <>
-          <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {red.pcs.map((pc) => (
-              <FilaPc key={pc.idPc} pc={pc} />
-            ))}
-          </ul>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button className="btn-secondary" onClick={onRevisar} disabled={revisando}>
-              {revisando ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              {revisando ? 'Revisando...' : 'Revisar que todo coincida'}
-            </button>
-            {resultadoRevision && <span className="text-sm text-slate-500">{resultadoRevision}</span>}
-          </div>
-        </>
+        <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {pcsDelLocal.map((pc) => (
+            <FilaPc key={pc.idPc} pc={pc} />
+          ))}
+        </ul>
+      )}
+
+      {/* Compara con todas las que están en línea, incluido el servidor de internet. */}
+      {red.pcs.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className="btn-secondary" onClick={onRevisar} disabled={revisando}>
+            {revisando ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            {revisando ? 'Revisando...' : 'Revisar que todo coincida'}
+          </button>
+          {resultadoRevision && <span className="text-sm text-slate-500">{resultadoRevision}</span>}
+        </div>
       )}
     </div>
   );
