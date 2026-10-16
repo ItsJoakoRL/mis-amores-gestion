@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { EstadoRed } from '@shared/types';
+import { compararVersiones } from '@shared/versiones';
 
 // Un renglón discreto en la barra lateral con cómo anda la sincronización con
 // las otras PCs del negocio: para que se note enseguida si una no está
@@ -47,6 +48,23 @@ export default function IndicadorRed() {
       >
         <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-400" />
         <span>Sin conexión con {nombres}. Se pone al día sola cuando vuelva.</span>
+      </p>
+    );
+  }
+  // Una PC puede estar en línea y sin cambios pendientes y aun así tener una
+  // versión vieja del programa: no se dice que está "al día".
+  const viejas = red.pcs.filter(
+    (p) => p.enLinea && !/^https?:\/\//i.test(p.direccion) && !!p.version && compararVersiones(p.version, red.versionApp) < 0
+  );
+  if (viejas.length > 0) {
+    const nombres = viejas.map((p) => p.nombrePc || 'otra PC').join(', ');
+    return (
+      <p
+        className="mb-2 flex items-start gap-2 px-1 text-xs text-amber-700"
+        title="Hay que abrir Mis Amores en esa PC y buscar actualizaciones."
+      >
+        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+        <span>{nombres}: tiene la app desactualizada.</span>
       </p>
     );
   }

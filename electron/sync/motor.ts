@@ -68,6 +68,8 @@ export interface EstadoPar {
   direccion: string;
   enLinea: boolean;
   ultimaVez: string | null;
+  /** La versión de Mis Amores de esa PC (se consulta de a ratos). */
+  version: string | null;
   pendientes: number;
   error: string | null;
 }
@@ -226,6 +228,7 @@ export class Motor {
           direccion: p.direccion,
           enLinea: false,
           ultimaVez: null,
+          version: null,
           pendientes: 0,
           error: null,
         }
@@ -418,10 +421,29 @@ export class Motor {
       direccion: par.direccion,
       enLinea: false,
       ultimaVez: null,
+      version: null,
       pendientes: 0,
       error: null,
     };
     this.estados.set(par.idPc, { ...actual, nombre: par.nombre, direccion: par.direccion, ...cambios });
+  }
+
+  // Cuándo se le preguntó por última vez la versión a cada PC.
+  private readonly versionConsultada = new Map<string, number>();
+
+  /** Le pregunta a esa PC qué versión de Mis Amores tiene (así se ve en
+   * Configuración cuando una quedó desactualizada). Sólo de a ratos. */
+  private async consultarVersion(par: ParConfig): Promise<void> {
+    const ultima = this.versionConsultada.get(par.idPc) ?? 0;
+    const sabida = this.estados.get(par.idPc)?.version;
+    if (Date.now() - ultima < (sabida ? 10 * 60_000 : 60_000)) return;
+    this.versionConsultada.set(par.idPc, Date.now());
+    try {
+      const h = await this.hola(par.direccion, 10_000);
+      this.anotar(par, { version: typeof h.version === 'string' ? h.version : null });
+    } catch {
+      // Se vuelve a intentar en un rato.
+    }
   }
 
   private async correr(bucle: Bucle): Promise<void> {
@@ -467,6 +489,7 @@ export class Motor {
           pendientes: Math.max(0, r.maxSeq - r.hasta),
           error: null,
         });
+        void this.consultarVersion(bucle.par);
         void this.bajarFotosPendientes();
       } catch (err) {
         if (bucle.parar || !this.activo) break;

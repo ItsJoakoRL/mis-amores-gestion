@@ -191,6 +191,8 @@ export interface PcDeLaRed {
   enLinea: boolean;
   /** Última vez que se habló con ella (ISO). */
   ultimaVez: string | null;
+  /** La versión de Mis Amores que tiene (null: todavía no se sabe). */
+  version: string | null;
   /** Cambios que esa PC tiene y esta todavía no aplicó. */
   pendientes: number;
   error: string | null;

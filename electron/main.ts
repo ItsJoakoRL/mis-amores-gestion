@@ -972,13 +972,14 @@ async function estadoRed(): Promise<EstadoRed> {
     idPc: config.idPc,
     nombrePc: os.hostname(),
     versionApp: app.getVersion(),
-    pcs: (m?.pares ?? config.pares.map((p) => ({ ...p, enLinea: false, ultimaVez: null, pendientes: 0, error: null }))).map(
+    pcs: (m?.pares ?? config.pares.map((p) => ({ ...p, enLinea: false, ultimaVez: null, version: null, pendientes: 0, error: null }))).map(
       (p) => ({
         idPc: p.idPc,
         nombrePc: 'nombre' in p ? p.nombre : '',
         direccion: p.direccion,
         enLinea: p.enLinea,
         ultimaVez: p.ultimaVez,
+        version: p.version,
         pendientes: p.pendientes,
         error: p.error,
       })

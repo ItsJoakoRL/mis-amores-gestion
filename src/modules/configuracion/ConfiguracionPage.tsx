@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { EstadoRed, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
 import { URL_SERVIDOR_INTERNET } from '@shared/servidor';
+import { compararVersiones } from '@shared/versiones';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 import CampoContrasena from '../../components/CampoContrasena';
@@ -231,9 +232,37 @@ export default function ConfiguracionPage() {
 // celulares anden con todas las PCs apagadas. A diferencia de otra PC, él no
 // puede llamar a esta (está detrás del router): esta PC es la que le manda sus
 // cambios y recibe los del celular.
+// Cómo está la relación de esta PC con el servidor, en una palabra y un color.
+type EstadoServidor = 'conectado' | 'sincronizando' | 'conectando' | 'sin-respuesta' | 'clave' | 'desconectado';
+
+function estadoDelServidor(conectado: PcDeLaRed | null): EstadoServidor {
+  if (!conectado) return 'desconectado';
+  if (conectado.enLinea) return conectado.pendientes > 0 ? 'sincronizando' : 'conectado';
+  if (/clave/i.test(conectado.error ?? '')) return 'clave';
+  // Recién agregado: todavía no hubo tiempo de hablar con él.
+  if (!conectado.error && !conectado.ultimaVez) return 'conectando';
+  return 'sin-respuesta';
+}
+
+const ETIQUETA_ESTADO: Record<EstadoServidor, { texto: string; clases: string; punto: string }> = {
+  conectado: { texto: 'Conectado', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
+  sincronizando: { texto: 'Conectado, sincronizando', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
+  conectando: { texto: 'Conectando...', clases: 'bg-sky-50 text-sky-700', punto: 'bg-sky-500' },
+  'sin-respuesta': { texto: 'Sin respuesta', clases: 'bg-amber-50 text-amber-700', punto: 'bg-amber-500' },
+  clave: { texto: 'Desconectado: otra clave de red', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
+  desconectado: { texto: 'Desconectado', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
+};
+
+// El servidor que se deja en internet (ver SERVIDOR_RENDER.md) para que los
+// celulares anden con todas las PCs apagadas. A diferencia de otra PC, él no
+// puede llamar a esta (está detrás del router): esta PC es la que le manda sus
+// cambios y recibe los del celular.
 function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () => void }) {
   const conectado = red.pcs.find(esRemota) ?? null;
-  const [direccion, setDireccion] = useState('');
+  const estado = estadoDelServidor(conectado);
+  const etiqueta = ETIQUETA_ESTADO[estado];
+  // La dirección de siempre ya viene puesta: sólo hay que tocar "Conectar".
+  const [direccion, setDireccion] = useState(URL_SERVIDOR_INTERNET);
   const [conectando, setConectando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -244,7 +273,6 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
     setError(null);
     try {
       await window.escritorio!.conectarNube(direccion);
-      setDireccion('');
       onCambio();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo conectar con el servidor');
@@ -268,17 +296,26 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
 
   return (
     <div className="card p-5">
-      <h2 className="flex items-center gap-2 font-semibold text-slate-800">
-        <Globe className="h-4 w-4 text-brand-500" />
-        Servidor en internet (para el celular)
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 font-semibold text-slate-800">
+          <Globe className="h-4 w-4 text-brand-500" />
+          Servidor en internet (para el celular)
+        </h2>
+        <span
+          data-estado-servidor={estado}
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${etiqueta.clases}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${etiqueta.punto} ${estado === 'sincronizando' || estado === 'conectando' ? 'animate-pulse' : ''}`} />
+          {etiqueta.texto}
+        </span>
+      </div>
       <p className="mt-2 text-sm text-slate-500">
         Con un servidor en internet, el celular puede cargar y consultar todo aunque todas las PCs estén apagadas. Esta PC le
         manda lo suyo y recibe lo que se cargue desde el celular. Los pasos para armarlo están en la guía
         SERVIDOR_RENDER.md.
       </p>
 
-      {conectado ? (
+      {conectado && (
         <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
           <p className="flex items-center gap-2 font-medium text-slate-800">
             {conectado.enLinea ? (
@@ -286,15 +323,30 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
             ) : (
               <WifiOff className="h-4 w-4 text-slate-300" />
             )}
-            {conectado.enLinea ? 'Conectado' : 'Sin conexión por ahora (si estaba dormido, tarda hasta un minuto en despertar)'}
+            {estado === 'conectado' && 'Esta PC y el servidor están al día.'}
+            {estado === 'sincronizando' && `Pasando cambios con el servidor (${conectado.pendientes} por recibir).`}
+            {estado === 'conectando' && 'Hablando con el servidor por primera vez (si estaba dormido, tarda hasta un minuto).'}
+            {estado === 'sin-respuesta' && 'El servidor no contesta por ahora. Si estaba dormido, tarda hasta un minuto en despertar.'}
+            {estado === 'clave' &&
+              'El servidor tiene otra clave de red que esta PC. Hay que ponerle a Render la clave de esta red (MIS_AMORES_CLAVE_RED).'}
           </p>
           <p className="mt-1 break-all font-mono text-xs text-slate-400">{conectado.direccion}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Última vez que habló con él: {hace(conectado.ultimaVez)}
+            {conectado.version ? ` · versión del servidor: ${conectado.version}` : ''}
+          </p>
+          {!conectado.enLinea && conectado.error && estado !== 'clave' && (
+            <p className="mt-1 text-xs text-amber-700">{conectado.error}</p>
+          )}
           <button onClick={dejar} className="mt-2 text-xs text-slate-400 underline hover:text-slate-600">
             Dejar de usar este servidor
           </button>
         </div>
-      ) : (
+      )}
+
+      {!conectado && (
         <form onSubmit={conectar} className="mt-3 space-y-2">
+          <p className="text-sm text-slate-600">Esta PC no está conectada con el servidor. Tocá el botón para conectarla.</p>
           <input
             className="input"
             placeholder="Dirección del servidor (ej. https://mis-amores.onrender.com)"
@@ -364,7 +416,7 @@ function ListaDePcs({
       ) : (
         <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
           {pcsDelLocal.map((pc) => (
-            <FilaPc key={pc.idPc} pc={pc} />
+            <FilaPc key={pc.idPc} pc={pc} versionPropia={red.versionApp} />
           ))}
         </ul>
       )}
@@ -383,7 +435,11 @@ function ListaDePcs({
   );
 }
 
-function FilaPc({ pc }: { pc: PcDeLaRed }) {
+function FilaPc({ pc, versionPropia }: { pc: PcDeLaRed; versionPropia: string }) {
+  // Que esté "en línea" y sin cambios pendientes no quiere decir que esté al día
+  // con el programa: si tiene una versión vieja, hay que actualizarla.
+  const desactualizada = !!pc.version && compararVersiones(pc.version, versionPropia) < 0;
+  const masNueva = !!pc.version && compararVersiones(pc.version, versionPropia) > 0;
   async function olvidar() {
     if (
       !confirm(
@@ -404,21 +460,38 @@ function FilaPc({ pc }: { pc: PcDeLaRed }) {
       <span className="min-w-0 flex-1">
         <span className="block font-medium text-slate-800">{pc.nombrePc || 'PC del negocio'}</span>
         <span className="block font-mono text-xs text-slate-400">{pc.direccion}</span>
+        {pc.version && <span className="block text-xs text-slate-400">Versión {pc.version}</span>}
+        {desactualizada && (
+          <span className="mt-0.5 block text-xs font-medium text-amber-700">
+            Tiene una versión más vieja que esta ({versionPropia}): abrí Mis Amores en esa PC y buscá actualizaciones.
+          </span>
+        )}
+        {masNueva && (
+          <span className="mt-0.5 block text-xs font-medium text-sky-700">
+            Tiene una versión más nueva que esta PC ({versionPropia}): buscá actualizaciones acá.
+          </span>
+        )}
         {!pc.enLinea && pc.error && <span className="block text-xs text-slate-400">{pc.error}</span>}
       </span>
       <span
         className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
           pc.enLinea
-            ? pc.pendientes > 0
-              ? 'bg-brand-50 text-brand-700'
-              : 'bg-emerald-50 text-emerald-700'
+            ? desactualizada || masNueva
+              ? 'bg-amber-50 text-amber-700'
+              : pc.pendientes > 0
+                ? 'bg-brand-50 text-brand-700'
+                : 'bg-emerald-50 text-emerald-700'
             : 'bg-slate-100 text-slate-500'
         }`}
       >
         {pc.enLinea
-          ? pc.pendientes > 0
-            ? `Recibiendo (${pc.pendientes})`
-            : 'En línea, al día'
+          ? desactualizada
+            ? 'En línea · desactualizada'
+            : masNueva
+              ? 'En línea · esta PC está atrasada'
+              : pc.pendientes > 0
+                ? `Recibiendo (${pc.pendientes})`
+                : 'En línea, al día'
           : pc.ultimaVez
             ? `Sin conexión · vista ${hace(pc.ultimaVez)}`
             : 'Sin conexión'}
