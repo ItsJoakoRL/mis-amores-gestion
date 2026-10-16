@@ -21,6 +21,7 @@ const nube_1 = require("../nube");
 const diario_1 = require("./diario");
 const modelo_1 = require("./modelo");
 const seguridad_1 = require("./seguridad");
+const pedidoFirmado_1 = require("./pedidoFirmado");
 class ErrorDeSync extends Error {
     constructor(mensaje, tipo = 'otro') {
         super(mensaje);
@@ -52,6 +53,10 @@ class Motor {
         // Con qué PCs la revisión no logró dejar todo igual: cuándo volver a probar.
         this.sinResolver = new Map();
         this.fotosPendientes = new Map();
+        // =================================================================
+        // Encontrar PCs nuevas de la misma red
+        // =================================================================
+        this.buscandoNuevas = false;
     }
     // =================================================================
     // Vida del motor
@@ -151,24 +156,19 @@ class Motor {
         // El pedido va firmado con la clave (que no se manda); la respuesta tiene
         // que traer la prueba de que quien contesta también la tiene.
         const clave = this.o.claveRed();
-        const u = new URL(url);
-        const metodo = cuerpo === undefined ? 'GET' : 'POST';
-        const firmado = (0, seguridad_1.firmarPedido)(clave, metodo, u.pathname + u.search, cuerpo);
+        // Si el reloj de esta PC (o el de la otra) está corrido, el pedido se
+        // repite solo con la hora corregida (ver pedidoFirmado.ts).
         let respuesta;
+        let texto;
+        let nonce;
         try {
-            respuesta = await fetch(url, {
-                method: metodo,
-                headers: cuerpo === undefined ? firmado.cabeceras : { ...firmado.cabeceras, 'Content-Type': 'text/plain; charset=utf-8' },
-                body: cuerpo,
-                signal: senal ? AbortSignal.any([senal, AbortSignal.timeout(esperaMs)]) : AbortSignal.timeout(esperaMs),
-            });
+            ({ respuesta, texto, nonce } = await (0, pedidoFirmado_1.pedirFirmado)({ clave, url, cuerpo, esperaMs, senal }));
         }
         catch (err) {
             if (senal?.aborted)
                 throw err;
             throw new ErrorDeSync('No se pudo conectar con esa PC.', 'red');
         }
-        const texto = await respuesta.text();
         let json;
         try {
             json = mongodb_1.BSON.EJSON.parse(texto);
@@ -184,7 +184,7 @@ class Motor {
         if (!json.ok) {
             throw new ErrorDeSync(json.error ?? 'La otra PC devolvió un error', respuesta.status === 401 ? 'clave' : 'otro');
         }
-        if (!(0, seguridad_1.respuestaEsDeLaRed)(clave, firmado.nonce, respuesta.headers.get('x-red-prueba'))) {
+        if (!(0, seguridad_1.respuestaEsDeLaRed)(clave, nonce, respuesta.headers.get('x-red-prueba'))) {
             throw new ErrorDeSync('Esa dirección contestó, pero no es una PC de esta red.', 'clave');
         }
         return json.data;
@@ -416,12 +416,10 @@ class Motor {
             this.o.guardarPares(lista);
         }
     }
-    // =================================================================
-    // Encontrar PCs nuevas de la misma red
-    // =================================================================
     async buscarNuevas() {
-        if (!this.activo || this.o.soloAtiende)
+        if (!this.activo || this.o.soloAtiende || this.buscandoNuevas)
             return;
+        this.buscandoNuevas = true;
         try {
             const yo = this.o.yo().idPc;
             const conocidas = new Set(this.o.pares().map((p) => p.idPc));
@@ -438,7 +436,9 @@ class Motor {
                     if (p.idPc === yo || conocidas.has(p.idPc))
                         continue;
                     try {
-                        const h = await this.hola(p.direccion, 3000);
+                        // Un servidor de internet gratuito que está dormido tarda hasta un
+                        // minuto en despertar: con 3 segundos nunca se lo alcanzaba.
+                        const h = await this.hola(p.direccion, (0, nube_1.esDireccionRemota)(p.direccion) ? 90000 : 3000);
                         if (h.idPc === p.idPc) {
                             this.agregarPar({ idPc: h.idPc, nombre: h.nombrePc, direccion: p.direccion });
                             conocidas.add(h.idPc);
@@ -452,6 +452,9 @@ class Motor {
         }
         catch (err) {
             this.o.registrar('sync-buscar', err);
+        }
+        finally {
+            this.buscandoNuevas = false;
         }
     }
     // =================================================================

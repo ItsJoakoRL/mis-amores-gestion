@@ -26,6 +26,15 @@ const MAX_LIMITE = 1000;
 const MAX_ITEMS_EMPUJE = 1000;
 const MAX_CUERPO_EMPUJE = '40mb';
 const ITEMS_PARA_CARGA_GRANDE = 50;
+const MENSAJE_CLAVE = 'Esta PC no pertenece a la red (la clave no coincide).';
+const MENSAJE_HORA = 'La fecha y la hora de la PC que pide no coinciden con las de esta (difieren más de un día): hay que ponerlas bien en esa PC.';
+/** El rechazo de un pedido sin firma válida. Va con la hora de esta PC (X-Red-Hora)
+ * para que la otra pueda corregir su reloj y repetir el pedido (ver pedidoFirmado.ts). */
+function rechazar(req, res, clave, cuerpo) {
+    const motivo = (0, seguridad_1.motivoDeRechazo)(clave, req.headers, req.method, req.originalUrl, cuerpo);
+    res.set('X-Red-Hora', String(Date.now()));
+    enviar(res, { ok: false, error: motivo === 'hora' ? MENSAJE_HORA : MENSAJE_CLAVE }, 401);
+}
 function enviar(res, cuerpo, estado = 200) {
     res.status(estado).type('application/json').send(mongodb_1.BSON.EJSON.stringify(cuerpo, { relaxed: false }));
 }
@@ -36,7 +45,7 @@ function registrarRutasSync(app, deps) {
             if (requiereClave) {
                 const nonce = (0, seguridad_1.verificarPedido)(deps.claveRed(), req.headers, req.method, req.originalUrl);
                 if (!nonce) {
-                    enviar(res, { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta, o tiene la fecha y la hora mal puestas).' }, 401);
+                    rechazar(req, res, deps.claveRed());
                     return;
                 }
                 // La prueba de que quien contesta tiene la clave (ver seguridad.ts).
@@ -93,7 +102,7 @@ function registrarRutasSync(app, deps) {
         const cuerpo = typeof req.body === 'string' ? req.body : '';
         const nonce = (0, seguridad_1.verificarPedido)(deps.claveRed(), req.headers, req.method, req.originalUrl, cuerpo);
         if (!nonce) {
-            enviar(res, { ok: false, error: 'Esta PC no pertenece a la red (clave incorrecta, o tiene la fecha y la hora mal puestas).' }, 401);
+            rechazar(req, res, deps.claveRed(), cuerpo);
             return;
         }
         res.set('X-Red-Prueba', (0, seguridad_1.pruebaDeRespuesta)(deps.claveRed(), nonce));

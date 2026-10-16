@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.firmarPedido = firmarPedido;
 exports.pruebaDeRespuesta = pruebaDeRespuesta;
 exports.respuestaEsDeLaRed = respuestaEsDeLaRed;
+exports.motivoDeRechazo = motivoDeRechazo;
 exports.verificarPedido = verificarPedido;
 // Cómo se reconocen entre sí las PCs de la red.
 //
@@ -37,9 +38,11 @@ function textoAFirmar(ts, nonce, metodo, ruta, cuerpo) {
     return `${base}.${crypto_1.default.createHash('sha256').update(cuerpo).digest('hex')}`;
 }
 /** Las cabeceras que hay que mandar para pedir `metodo` `ruta` (ruta + query).
- * `cuerpo`: el texto que se manda, si es un POST (queda cubierto por la firma). */
-function firmarPedido(clave, metodo, ruta, cuerpo) {
-    const ts = String(Date.now());
+ * `cuerpo`: el texto que se manda, si es un POST (queda cubierto por la firma).
+ * `ahora`: la hora a firmar (la de esta PC, corregida por la diferencia de reloj
+ * con la otra; ver pedidoFirmado.ts). */
+function firmarPedido(clave, metodo, ruta, cuerpo, ahora = Date.now()) {
+    const ts = String(Math.round(ahora));
     const nonce = crypto_1.default.randomBytes(16).toString('hex');
     return {
         nonce,
@@ -56,6 +59,22 @@ function pruebaDeRespuesta(clave, nonce) {
 }
 function respuestaEsDeLaRed(clave, nonce, prueba) {
     return !!prueba && igualesSeguros(prueba, pruebaDeRespuesta(clave, nonce));
+}
+/** Cuando un pedido se rechaza: ¿es porque la clave no coincide, o porque la
+ * hora de la otra PC está muy corrida? (La firma es válida con esa hora: o sea,
+ * tiene la clave bien, sólo que el reloj no coincide.) */
+function motivoDeRechazo(clave, cabeceras, metodo, ruta, cuerpo) {
+    const un = (v) => (Array.isArray(v) ? v[0] : v);
+    const ts = un(cabeceras['x-red-ts']);
+    const nonce = un(cabeceras['x-red-nonce']);
+    const recibida = un(cabeceras['x-red-firma']);
+    if (!clave || !ts || !nonce || !recibida)
+        return 'clave';
+    if (!/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{16,64}$/.test(nonce))
+        return 'clave';
+    if (!igualesSeguros(recibida, firma(clave, textoAFirmar(ts, nonce, metodo, ruta, cuerpo))))
+        return 'clave';
+    return Math.abs(Date.now() - Number(ts)) > VENTANA_MS ? 'hora' : 'clave';
 }
 // Los pedidos ya vistos (para que uno capturado no se pueda repetir).
 const vistos = new Map();
