@@ -24,6 +24,7 @@ import { Diario } from './sync/diario';
 import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
 import { ErrorDeSync, Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
 import { esModoNube, normalizarUrlNube } from './nube';
+import { escanearRedLocal } from './escaneoRed';
 import { Reloj } from './sync/reloj';
 import { Channels } from '../shared/channels';
 import type {
@@ -617,8 +618,15 @@ function consultarMdns(esperaMs: number): Promise<string[]> {
 
 // Las direcciones donde puede haber otra PC con Mis Amores.
 async function direccionesCandidatas(): Promise<Set<string>> {
-  const ips = await consultarMdns(2500);
-  const direcciones = new Set(ips.map((ip) => `${ip}:4000`));
+  // Dos caminos a la vez: el aviso "misamores.local" (rápido, pero muchos routers
+  // y redes de escuela no lo dejan pasar) y preguntarle directo a cada dirección
+  // de la red de la casa (ver escaneoRed.ts). Un servidor de internet no barre
+  // nada: no tiene "la red de al lado".
+  const [ips, barridas] = await Promise.all([
+    consultarMdns(2500),
+    modoServidor ? Promise.resolve<string[]>([]) : escanearRedLocal(obtenerIpsLan(), PUERTO).catch(() => [] as string[]),
+  ]);
+  const direcciones = new Set([...ips.map((ip) => `${ip}:4000`), ...barridas]);
   // En desarrollo, las PCs de prueba escuchan en otros puertos.
   if (!app.isPackaged) {
     const extra = (process.env.MIS_AMORES_PUERTOS_BUSQUEDA ?? '')
