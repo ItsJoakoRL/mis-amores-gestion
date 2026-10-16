@@ -14,7 +14,8 @@ import type { Aplicador } from './aplicar';
 import { esDireccionRemota, urlBase } from '../nube';
 import { COL_META, COL_PARES, type Diario, type ItemCambio } from './diario';
 import { COLECCIONES_REPLICADAS } from './modelo';
-import { firmarPedido, respuestaEsDeLaRed } from './seguridad';
+import { respuestaEsDeLaRed } from './seguridad';
+import { pedirFirmado } from './pedidoFirmado';
 
 export interface ParConfig {
   idPc: string;
@@ -250,23 +251,17 @@ export class Motor {
     // El pedido va firmado con la clave (que no se manda); la respuesta tiene
     // que traer la prueba de que quien contesta también la tiene.
     const clave = this.o.claveRed();
-    const u = new URL(url);
-    const metodo = cuerpo === undefined ? 'GET' : 'POST';
-    const firmado = firmarPedido(clave, metodo, u.pathname + u.search, cuerpo);
+    // Si el reloj de esta PC (o el de la otra) está corrido, el pedido se
+    // repite solo con la hora corregida (ver pedidoFirmado.ts).
     let respuesta: Response;
+    let texto: string;
+    let nonce: string;
     try {
-      respuesta = await fetch(url, {
-        method: metodo,
-        headers:
-          cuerpo === undefined ? firmado.cabeceras : { ...firmado.cabeceras, 'Content-Type': 'text/plain; charset=utf-8' },
-        body: cuerpo,
-        signal: senal ? AbortSignal.any([senal, AbortSignal.timeout(esperaMs)]) : AbortSignal.timeout(esperaMs),
-      });
+      ({ respuesta, texto, nonce } = await pedirFirmado({ clave, url, cuerpo, esperaMs, senal }));
     } catch (err) {
       if (senal?.aborted) throw err;
       throw new ErrorDeSync('No se pudo conectar con esa PC.', 'red');
     }
-    const texto = await respuesta.text();
     let json: { ok: boolean; data?: T; error?: string };
     try {
       json = BSON.EJSON.parse(texto) as typeof json;
@@ -281,7 +276,7 @@ export class Motor {
     if (!json.ok) {
       throw new ErrorDeSync(json.error ?? 'La otra PC devolvió un error', respuesta.status === 401 ? 'clave' : 'otro');
     }
-    if (!respuestaEsDeLaRed(clave, firmado.nonce, respuesta.headers.get('x-red-prueba'))) {
+    if (!respuestaEsDeLaRed(clave, nonce, respuesta.headers.get('x-red-prueba'))) {
       throw new ErrorDeSync('Esa dirección contestó, pero no es una PC de esta red.', 'clave');
     }
     return json.data as T;
@@ -532,8 +527,11 @@ export class Motor {
   // Encontrar PCs nuevas de la misma red
   // =================================================================
 
+  private buscandoNuevas = false;
+
   async buscarNuevas(): Promise<void> {
-    if (!this.activo || this.o.soloAtiende) return;
+    if (!this.activo || this.o.soloAtiende || this.buscandoNuevas) return;
+    this.buscandoNuevas = true;
     try {
       const yo = this.o.yo().idPc;
       const conocidas = new Set(this.o.pares().map((p) => p.idPc));
@@ -548,7 +546,9 @@ export class Motor {
         for (const p of hola.pares ?? []) {
           if (p.idPc === yo || conocidas.has(p.idPc)) continue;
           try {
-            const h = await this.hola(p.direccion, 3000);
+            // Un servidor de internet gratuito que está dormido tarda hasta un
+            // minuto en despertar: con 3 segundos nunca se lo alcanzaba.
+            const h = await this.hola(p.direccion, esDireccionRemota(p.direccion) ? 90_000 : 3000);
             if (h.idPc === p.idPc) {
               this.agregarPar({ idPc: h.idPc, nombre: h.nombrePc, direccion: p.direccion });
               conocidas.add(h.idPc);
@@ -560,6 +560,8 @@ export class Motor {
       }
     } catch (err) {
       this.o.registrar('sync-buscar', err);
+    } finally {
+      this.buscandoNuevas = false;
     }
   }
 

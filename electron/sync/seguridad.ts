@@ -37,9 +37,17 @@ function textoAFirmar(ts: string, nonce: string, metodo: string, ruta: string, c
 }
 
 /** Las cabeceras que hay que mandar para pedir `metodo` `ruta` (ruta + query).
- * `cuerpo`: el texto que se manda, si es un POST (queda cubierto por la firma). */
-export function firmarPedido(clave: string, metodo: string, ruta: string, cuerpo?: string): PedidoFirmado {
-  const ts = String(Date.now());
+ * `cuerpo`: el texto que se manda, si es un POST (queda cubierto por la firma).
+ * `ahora`: la hora a firmar (la de esta PC, corregida por la diferencia de reloj
+ * con la otra; ver pedidoFirmado.ts). */
+export function firmarPedido(
+  clave: string,
+  metodo: string,
+  ruta: string,
+  cuerpo?: string,
+  ahora: number = Date.now()
+): PedidoFirmado {
+  const ts = String(Math.round(ahora));
   const nonce = crypto.randomBytes(16).toString('hex');
   return {
     nonce,
@@ -58,6 +66,26 @@ export function pruebaDeRespuesta(clave: string, nonce: string): string {
 
 export function respuestaEsDeLaRed(clave: string, nonce: string, prueba: string | null): boolean {
   return !!prueba && igualesSeguros(prueba, pruebaDeRespuesta(clave, nonce));
+}
+
+/** Cuando un pedido se rechaza: ¿es porque la clave no coincide, o porque la
+ * hora de la otra PC está muy corrida? (La firma es válida con esa hora: o sea,
+ * tiene la clave bien, sólo que el reloj no coincide.) */
+export function motivoDeRechazo(
+  clave: string,
+  cabeceras: Record<string, string | string[] | undefined>,
+  metodo: string,
+  ruta: string,
+  cuerpo?: string
+): 'hora' | 'clave' {
+  const un = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const ts = un(cabeceras['x-red-ts']);
+  const nonce = un(cabeceras['x-red-nonce']);
+  const recibida = un(cabeceras['x-red-firma']);
+  if (!clave || !ts || !nonce || !recibida) return 'clave';
+  if (!/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{16,64}$/.test(nonce)) return 'clave';
+  if (!igualesSeguros(recibida, firma(clave, textoAFirmar(ts, nonce, metodo, ruta, cuerpo)))) return 'clave';
+  return Math.abs(Date.now() - Number(ts)) > VENTANA_MS ? 'hora' : 'clave';
 }
 
 // Los pedidos ya vistos (para que uno capturado no se pueda repetir).
