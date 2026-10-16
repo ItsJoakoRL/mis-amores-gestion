@@ -11,3 +11,16 @@ export function compararVersiones(a: string, b: string): number {
   }
   return 0;
 }
+
+/** Cada cuánto (en milisegundos) preguntarle a otra PC qué versión de la app tiene.
+ *
+ * - `forzar`: acaba de volver a conectarse (por ejemplo, se reinició para
+ *   actualizarse): se pregunta ya, porque lo que se sabía puede estar viejo.
+ * - Si no se sabe, o es distinta de la propia, seguido (puede estar por
+ *   actualizarse y no conviene seguir diciendo que está desactualizada).
+ * - Si es la misma, de vez en cuando. */
+export function esperaParaPreguntarVersion(sabida: string | null, propia: string, forzar: boolean): number {
+  if (forzar) return 0;
+  if (!sabida) return 60_000;
+  return sabida === propia ? 5 * 60_000 : 30_000;
+}
