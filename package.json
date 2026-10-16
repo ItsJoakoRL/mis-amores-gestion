@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.8.9",
+  "version": "0.8.10",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",

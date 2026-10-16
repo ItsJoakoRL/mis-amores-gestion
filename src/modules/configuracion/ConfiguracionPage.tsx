@@ -17,7 +17,8 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import type { EstadoRed, InfoRed, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
+import type { EstadoRed, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
+import { URL_SERVIDOR_INTERNET } from '@shared/servidor';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 import CampoContrasena from '../../components/CampoContrasena';
@@ -42,7 +43,6 @@ const esRemota = (pc: PcDeLaRed) => /^https?:\/\//i.test(pc.direccion);
 // las demás. Sólo tiene sentido en las PCs — en el celular esta pantalla no aparece.
 export default function ConfiguracionPage() {
   const [red, setRed] = useState<EstadoRed | null>(null);
-  const [infoRed, setInfoRed] = useState<InfoRed>(null);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSumar, setMostrarSumar] = useState(false);
   const [revisando, setRevisando] = useState(false);
@@ -66,10 +66,6 @@ export default function ConfiguracionPage() {
     const t = setInterval(cargar, 3000);
     return () => clearInterval(t);
   }, [cargar, puenteNuevo]);
-
-  useEffect(() => {
-    if (window.api.esElectron) window.api.sistema.infoRed().then(setInfoRed).catch(() => {});
-  }, []);
 
   async function revisar() {
     setRevisando(true);
@@ -109,7 +105,6 @@ export default function ConfiguracionPage() {
     }
   }
 
-  const direccionCelular = infoRed && 'urls' in infoRed ? infoRed.urls[0] : null;
   const servidorInternet = red?.pcs.find(esRemota) ?? null;
 
   return (
@@ -159,18 +154,10 @@ export default function ConfiguracionPage() {
                   <dt className="inline text-slate-400">Versión: </dt>
                   <dd className="inline font-medium text-slate-700">{red.versionApp}</dd>
                 </div>
-                {direccionCelular && (
-                  <div className="sm:col-span-2">
-                    <dt className="inline text-slate-400">Dirección para los celulares (en el local): </dt>
-                    <dd className="inline break-all font-mono text-slate-700">{direccionCelular}</dd>
-                  </div>
-                )}
-                {servidorInternet && (
-                  <div className="sm:col-span-2">
-                    <dt className="inline text-slate-400">Dirección para los celulares (desde cualquier lado): </dt>
-                    <dd className="inline break-all font-mono text-slate-700">{servidorInternet.direccion}</dd>
-                  </div>
-                )}
+                <div className="sm:col-span-2">
+                  <dt className="inline text-slate-400">Dirección para los celulares: </dt>
+                  <dd className="inline break-all font-mono text-slate-700">{URL_SERVIDOR_INTERNET}</dd>
+                </div>
               </dl>
             </div>
           </div>
