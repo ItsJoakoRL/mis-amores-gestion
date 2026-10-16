@@ -34,6 +34,7 @@ import type {
   EstadoRed,
   PcEncontrada,
   ResultadoConectarNube,
+  EstadoServidorWeb,
   SumarPcInput,
   ResultadoSumarPc,
 } from '../shared/types';
@@ -199,6 +200,7 @@ const escritorio = {
   borrarAvisos: () => invoke<boolean>(Channels.escritorioBorrarAvisos),
   olvidarPc: (idPc: string) => invoke<boolean>(Channels.escritorioOlvidarPc, idPc),
   conectarNube: (direccion: string) => invoke<ResultadoConectarNube>(Channels.escritorioConectarNube, direccion),
+  probarServidor: (direccion: string) => invoke<EstadoServidorWeb>(Channels.escritorioProbarServidor, direccion),
   reintentar: () => invoke<boolean>(Channels.escritorioReintentar),
 };
 

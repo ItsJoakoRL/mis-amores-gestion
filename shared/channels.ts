@@ -84,6 +84,7 @@ export const Channels = {
   escritorioBorrarAvisos: 'escritorio:borrarAvisos',
   escritorioOlvidarPc: 'escritorio:olvidarPc',
   escritorioConectarNube: 'escritorio:conectarNube',
+  escritorioProbarServidor: 'escritorio:probarServidor',
   escritorioReintentar: 'escritorio:reintentar',
 
   // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.

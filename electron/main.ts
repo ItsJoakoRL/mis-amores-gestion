@@ -36,6 +36,7 @@ import type {
   InfoRed,
   PcEncontrada,
   ResultadoConectarNube,
+  EstadoServidorWeb,
   ResultadoSumarPc,
   ResumenJuntar,
   SumarPcInput,
@@ -946,6 +947,30 @@ async function conectarServidorNube(texto: string): Promise<ResultadoConectarNub
   return { direccion };
 }
 
+// ¿Anda el servidor de internet? Es una pregunta aparte de si ESTA PC está
+// conectada con él para sincronizar: la página puede andar perfecto y aun así
+// esta PC no poder hablar con ella (por ejemplo, si tiene otra clave de red).
+async function probarServidorWeb(texto: string): Promise<EstadoServidorWeb> {
+  const direccion = normalizarUrlNube(texto);
+  try {
+    const info = await pedirJson<InfoPc>(`${direccion}/api/sistema/info`, { esperaMs: 25_000 });
+    const mia = miIdRed();
+    return {
+      funciona: true,
+      version: typeof info.version === 'string' ? info.version : null,
+      mismaRed: mia && info.idRed ? info.idRed === mia : null,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      funciona: false,
+      version: null,
+      mismaRed: null,
+      error: err instanceof Error ? err.message : 'No contesta',
+    };
+  }
+}
+
 // Esta PC deja de sincronizar con las demás: se queda con sus datos, como
 // una red de una sola PC (con una clave nueva, así las otras no la buscan).
 async function salirDeLaRed(): Promise<boolean> {
@@ -1232,6 +1257,9 @@ function registrarIpcEscritorio() {
   );
   ipcMain.handle(Channels.escritorioConectarNube, (_e, direccion: string) =>
     wrapEscritorio(() => conectarServidorNube(String(direccion ?? '')))
+  );
+  ipcMain.handle(Channels.escritorioProbarServidor, (_e, direccion: string) =>
+    wrapEscritorio(() => probarServidorWeb(String(direccion ?? '')))
   );
   ipcMain.handle(Channels.escritorioBorrarAvisos, () =>
     wrapEscritorio(async () => {

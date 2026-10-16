@@ -17,7 +17,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import type { EstadoRed, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
+import type { EstadoRed, EstadoServidorWeb, PcDeLaRed, PcEncontrada, ResultadoSumarPc, ResumenJuntar } from '@shared/types';
 import { URL_SERVIDOR_INTERNET } from '@shared/servidor';
 import { compararVersiones } from '@shared/versiones';
 import { useAuth } from '../auth/AuthContext';
@@ -245,12 +245,12 @@ function estadoDelServidor(conectado: PcDeLaRed | null): EstadoServidor {
 }
 
 const ETIQUETA_ESTADO: Record<EstadoServidor, { texto: string; clases: string; punto: string }> = {
-  conectado: { texto: 'Conectado', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
-  sincronizando: { texto: 'Conectado, sincronizando', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
-  conectando: { texto: 'Conectando...', clases: 'bg-sky-50 text-sky-700', punto: 'bg-sky-500' },
-  'sin-respuesta': { texto: 'Sin respuesta', clases: 'bg-amber-50 text-amber-700', punto: 'bg-amber-500' },
-  clave: { texto: 'Desconectado: otra clave de red', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
-  desconectado: { texto: 'Desconectado', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
+  conectado: { texto: 'Esta PC: conectada', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
+  sincronizando: { texto: 'Esta PC: conectada, sincronizando', clases: 'bg-emerald-50 text-emerald-700', punto: 'bg-emerald-500' },
+  conectando: { texto: 'Esta PC: conectando...', clases: 'bg-sky-50 text-sky-700', punto: 'bg-sky-500' },
+  'sin-respuesta': { texto: 'Esta PC: sin respuesta', clases: 'bg-amber-50 text-amber-700', punto: 'bg-amber-500' },
+  clave: { texto: 'Esta PC: desconectada (otra clave de red)', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
+  desconectado: { texto: 'Esta PC: desconectada', clases: 'bg-red-50 text-red-700', punto: 'bg-red-500' },
 };
 
 // El servidor que se deja en internet (ver SERVIDOR_RENDER.md) para que los
@@ -265,6 +265,28 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
   const [direccion, setDireccion] = useState(URL_SERVIDOR_INTERNET);
   const [conectando, setConectando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Si el servidor anda (la página del celular), aparte de si esta PC está
+  // conectada con él: las dos cosas pueden no coincidir.
+  const [web, setWeb] = useState<EstadoServidorWeb | 'consultando'>('consultando');
+
+  const aProbar = conectado?.direccion ?? URL_SERVIDOR_INTERNET;
+  useEffect(() => {
+    let vigente = true;
+    const preguntar = () => {
+      window.escritorio
+        ?.probarServidor(aProbar)
+        .then((r) => {
+          if (vigente) setWeb(r);
+        })
+        .catch(() => {});
+    };
+    preguntar();
+    const t = setInterval(preguntar, 30_000);
+    return () => {
+      vigente = false;
+      clearInterval(t);
+    };
+  }, [aProbar]);
 
   async function conectar(e: FormEvent) {
     e.preventDefault();
@@ -314,6 +336,55 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
         manda lo suyo y recibe lo que se cargue desde el celular. Los pasos para armarlo están en la guía
         SERVIDOR_RENDER.md.
       </p>
+
+      <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+        <p className="flex flex-wrap items-center gap-x-2">
+          <span className="text-slate-500">La página del celular (el servidor):</span>
+          {web === 'consultando' ? (
+            <span className="text-slate-400">comprobando...</span>
+          ) : web.funciona ? (
+            <span className="font-medium text-emerald-700">
+              ● Funciona{web.version ? ` (versión ${web.version})` : ''}
+            </span>
+          ) : (
+            <span className="font-medium text-amber-700">
+              ● No contesta (si estaba dormido, tarda hasta un minuto en despertar)
+            </span>
+          )}
+        </p>
+        <p className="flex flex-wrap items-center gap-x-2">
+          <span className="text-slate-500">Esta PC con el servidor:</span>
+          <span
+            className={`font-medium ${
+              estado === 'conectado' || estado === 'sincronizando'
+                ? 'text-emerald-700'
+                : estado === 'conectando' || estado === 'sin-respuesta'
+                  ? 'text-amber-700'
+                  : 'text-red-700'
+            }`}
+          >
+            ●{' '}
+            {estado === 'conectado' || estado === 'sincronizando'
+              ? 'Conectada'
+              : estado === 'conectando'
+                ? 'Conectando...'
+                : estado === 'sin-respuesta'
+                  ? 'Sin respuesta por ahora'
+                  : 'Desconectada'}
+          </span>
+        </p>
+        {web !== 'consultando' && web.funciona && web.mismaRed === false && (
+          <p className="text-xs text-red-700">
+            La página anda, pero está en <b>otra red</b> (tiene otra clave que las PCs). Por eso esta PC no puede
+            sincronizar con ella: hay que ponerle a Render la clave de esta red (<b>MIS_AMORES_CLAVE_RED</b>).
+          </p>
+        )}
+        {web !== 'consultando' && web.funciona && web.mismaRed !== false && estado === 'desconectado' && (
+          <p className="text-xs text-slate-500">
+            La página anda y está en la misma red que esta PC: tocá <b>Conectar</b> para que esta PC le mande lo suyo.
+          </p>
+        )}
+      </div>
 
       {conectado && (
         <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">

@@ -272,6 +272,17 @@ export interface ResultadoSumarPc {
   nombrePc: string;
 }
 
+/** Cómo está el servidor de internet visto desde afuera (aparte de si esta PC
+ * está conectada con él para sincronizar). */
+export interface EstadoServidorWeb {
+  /** La página del servidor contesta. */
+  funciona: boolean;
+  version: string | null;
+  /** Está en la misma red (misma clave) que esta PC; null si no se pudo saber. */
+  mismaRed: boolean | null;
+  error: string | null;
+}
+
 /** Lo que devuelve conectar esta PC con el servidor de internet. */
 export interface ResultadoConectarNube {
   /** La dirección con la que quedó anotado ('https://...'). */

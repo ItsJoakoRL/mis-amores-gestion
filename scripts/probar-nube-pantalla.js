@@ -249,9 +249,14 @@ async function principal() {
   await esperar(1500);
   const texto = await hasta(async () => {
     const t = await pantalla.evaluar('document.body.innerText');
-    return t.includes('Servidor en internet (para el celular)') && t.includes('Conectado') ? t : null;
-  }, 'que Configuración muestre la tarjeta del servidor', 30000);
+    const estado = await pantalla.evaluar(
+      "document.querySelector('[data-estado-servidor]')?.getAttribute('data-estado-servidor') ?? null"
+    );
+    const conectada = estado === 'conectado' || estado === 'sincronizando';
+    return t.includes('Servidor en internet (para el celular)') && conectada && t.includes('Funciona') ? t : null;
+  }, 'que Configuración muestre la tarjeta del servidor conectada y funcionando', 30000);
   ok(texto.includes(`http://127.0.0.1:${srv.puerto}`), 'la tarjeta muestra la dirección y que está conectado');
+  ok(/La página del celular \(el servidor\)/.test(texto) && /Esta PC con el servidor/.test(texto), 'y separa si el servidor anda de si esta PC está conectada');
   ok(/Dejar de usar este servidor/.test(texto), 'ofrece dejar de usarlo');
 
   log('\n[5] Dejar de usar el servidor');
