@@ -229,6 +229,7 @@ export default function ConfiguracionPage() {
       {mostrarSumar && (
         <SumarPcModal
           sugerencia={red?.pendienteDeSumarse ?? null}
+          conServidorInternet={servidorInternet !== null}
           onCerrar={() => {
             setMostrarSumar(false);
             cargar();
@@ -471,12 +472,29 @@ function Avisos({ avisos, onBorrar }: { avisos: EstadoRed['avisos']; onBorrar: (
 
 type Paso = 'elegir' | 'revisar' | 'listo';
 
+// Sumarse a la red de otra PC cambia la clave de la red de ésta. Si está
+// conectada al servidor de internet (que tiene la clave vieja), deja de hablar
+// con él. Casi siempre lo que se quiere es lo contrario: que la OTRA PC se sume
+// a ésta.
+function AvisoServidorInternet() {
+  return (
+    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+      <b>Ojo: esta PC está conectada al servidor de internet (el del celular).</b> Si la sumás a la red de otra PC,
+      va a dejar de hablar con ese servidor hasta que le cambies la clave en Render. Si lo que querés es juntar las
+      PCs, hacelo <b>desde la otra PC</b>: que ella se sume a ésta.
+    </p>
+  );
+}
+
 function SumarPcModal({
   onCerrar,
   sugerencia,
+  conServidorInternet,
 }: {
   onCerrar: () => void;
   sugerencia: { direccion: string; nombre: string | null } | null;
+  /** Esta PC está conectada al servidor de internet. */
+  conServidorInternet: boolean;
 }) {
   const { sesion } = useAuth();
   const [paso, setPaso] = useState<Paso>('elegir');
@@ -549,6 +567,7 @@ function SumarPcModal({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {paso === 'elegir' && (
             <form id="form-sumar" onSubmit={revisar} className="space-y-5">
+              {conServidorInternet && <AvisoServidorInternet />}
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 Hacé esto en la PC que <b>se suma</b>. La otra PC tiene que estar prendida, con Mis Amores abierto y
                 actualizado, en el mismo WiFi.
@@ -641,6 +660,7 @@ function SumarPcModal({
 
           {paso === 'revisar' && resultado && (
             <div className="space-y-4">
+              {conServidorInternet && <AvisoServidorInternet />}
               {resultado.resumen ? (
                 <>
                   <p className="text-sm text-slate-600">
