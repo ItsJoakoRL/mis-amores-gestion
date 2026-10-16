@@ -83,12 +83,19 @@ function eliminarToken(token) {
 // desactivan, le cambian el rol o lo borran — para que cualquier sesión de
 // celular que ya tuviera abierta deje de funcionar de una, en vez de seguir
 // con los datos viejos.
-function invalidarTokensDeUsuario(usuarioId) {
+//
+// "conservarToken": la sesión desde la que se hizo el cambio (ej. alguien que
+// se cambia su propia contraseña) sigue abierta; las demás se cierran.
+function invalidarTokensDeUsuario(usuarioId, conservarToken) {
+    const conservar = conservarToken ? hashDe(conservarToken) : null;
     for (const [hash, guardada] of sesionesPorHash) {
-        if (guardada.sesion.id === usuarioId)
+        if (guardada.sesion.id === usuarioId && hash !== conservar)
             sesionesPorHash.delete(hash);
     }
-    guardarSinEsperar(coleccion().deleteMany({ 'sesion.id': usuarioId }));
+    const filtro = { 'sesion.id': usuarioId };
+    if (conservar)
+        filtro._id = { $ne: conservar };
+    guardarSinEsperar(coleccion().deleteMany(filtro));
 }
 // Al sumarse a la red de otra PC, las cuentas de antes dejan de existir: no
 // puede quedar ninguna sesión abierta con una cuenta que ya no está.

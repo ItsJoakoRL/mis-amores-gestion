@@ -202,6 +202,14 @@ sync) {
         return { clave: await (0, replica_1.claveDeCopia)() };
     }));
     // --- Sincronización entre PCs (ver sync/rutas.ts) ---
+    if (enNube) {
+        // Sumar una PC a la red le devuelve la clave de la red a quien entre con una
+        // cuenta de administradora: por internet no se ofrece (va primero para
+        // ganarle a la ruta de sync/rutas.ts).
+        app.post('/api/sync/unirse', (_req, res) => {
+            res.json({ ok: false, error: 'Esto no está disponible en el servidor de internet.' });
+        });
+    }
     if (sync) {
         (0, rutas_1.registrarRutasSync)(app, { ...sync, requiereAdmin: (req) => void requiereAdmin(req) });
     }
@@ -259,9 +267,11 @@ sync) {
         requiereSesion(req);
         return (0, asistente_1.sugerirRubro)(req.body.descripcion);
     }));
-    app.get('/api/articulos/:id/historial-precios', ruta((req) => {
-        requiereSesion(req);
-        return (0, articulos_1.historialPrecios)(req.params.id);
+    app.get('/api/articulos/:id/historial-precios', ruta(async (req) => {
+        const sesion = requiereSesion(req);
+        const historial = await (0, articulos_1.historialPrecios)(req.params.id);
+        // Los cambios del precio de costo son sólo para la administradora.
+        return sesion.rol === 'admin' ? historial : historial.filter((c) => c.tipo !== 'costo');
     }));
     app.get('/api/articulos/:id/movimientos-stock', ruta((req) => {
         requiereSesion(req);
@@ -340,9 +350,11 @@ sync) {
         return (0, catalogos_1.crearProveedor)(req.body);
     }));
     // --- Dashboard ---
-    app.get('/api/dashboard/stats', ruta((req) => {
-        requiereSesion(req);
-        return (0, dashboard_1.getDashboardStats)();
+    app.get('/api/dashboard/stats', ruta(async (req) => {
+        const sesion = requiereSesion(req);
+        const stats = await (0, dashboard_1.getDashboardStats)();
+        // El valor del inventario a costo es sólo para la administradora.
+        return sesion.rol === 'admin' ? stats : { ...stats, valorInventarioCosto: 0 };
     }));
     // --- Reportes ---
     app.get('/api/reportes/ventas', ruta((req) => {
@@ -476,9 +488,17 @@ sync) {
         return true;
     }));
     app.post('/api/usuarios/:id/reset-password', ruta(async (req) => {
-        requiereAdmin(req);
+        const sesion = requiereAdmin(req);
+        const id = req.params.id;
         const password = req.body.password;
-        await (0, usuarios_1.resetPassword)(req.params.id, password);
+        // Si se cambia la suya, esta sesión sigue abierta (las otras se cierran).
+        await (0, usuarios_1.resetPassword)(id, password, sesion.id === id ? tokenDesdeHeader(req) : null);
+        return true;
+    }));
+    app.post('/api/usuarios/mi-password', ruta(async (req) => {
+        const sesion = requiereSesion(req);
+        const { actual, nueva } = (req.body ?? {});
+        await (0, usuarios_1.cambiarPasswordPropia)(sesion.id, String(actual ?? ''), String(nueva ?? ''), tokenDesdeHeader(req));
         return true;
     }));
     app.delete('/api/usuarios/:id', ruta(async (req) => {
@@ -506,13 +526,23 @@ sync) {
     // Aviso en vivo: la pantalla (en un celular) se vuelve a cargar sola cuando
     // alguien, desde cualquier PC o celular, cambia algo. No lleva datos, sólo
     // el aviso de que hay algo nuevo para pedir.
+    // En internet no pide sesión (un EventSource no puede mandar el token), así
+    // que se pone un tope: nadie puede dejar abiertas miles de conexiones.
+    let conexionesEventos = 0;
+    const MAX_EVENTOS_NUBE = 100;
     app.get('/api/eventos', (req, res) => {
+        if (enNube && conexionesEventos >= MAX_EVENTOS_NUBE) {
+            res.status(503).end();
+            return;
+        }
+        conexionesEventos += 1;
         res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.flushHeaders();
         res.write('retry: 3000\n\n');
         const latido = setInterval(() => res.write(': latido\n\n'), 25000);
         const parar = (0, cambiosEnVivo_1.escucharCambios)(() => res.write('event: cambio\ndata: 1\n\n'));
         req.on('close', () => {
+            conexionesEventos -= 1;
             clearInterval(latido);
             parar();
         });

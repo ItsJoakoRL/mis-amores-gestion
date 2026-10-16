@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.listClientes = listClientes;
 exports.crearCliente = crearCliente;
+exports.existeClienteActivo = existeClienteActivo;
 exports.setClienteActivo = setClienteActivo;
 exports.registrarPago = registrarPago;
 exports.eliminarPago = eliminarPago;
@@ -141,6 +142,13 @@ async function crearCliente(input, deudaInicial, usuarioId, fechaInicial) {
         throw err;
     }
 }
+/** ¿Existe este cliente y está en la lista? Una venta fiada o un pago a nombre
+ * de alguien que no está dejaría una deuda que no aparece en ninguna pantalla. */
+async function existeClienteActivo(id) {
+    if (typeof id !== 'string' || !mongodb_1.ObjectId.isValid(id))
+        return false;
+    return (await coleccion().countDocuments({ _id: new mongodb_1.ObjectId(id), activo: true }, { limit: 1 })) > 0;
+}
 async function setClienteActivo(id, activo) {
     await coleccion().updateOne({ _id: new mongodb_1.ObjectId(id) }, { $set: { activo } });
 }
@@ -152,6 +160,8 @@ async function registrarPago(clienteId, monto, usuarioId, nota, metodoPago) {
     }
     if (!METODOS_PAGO_CUENTA.includes(metodoPago))
         throw new Error('La forma de pago no es válida');
+    if (!(await existeClienteActivo(clienteId)))
+        throw new Error('Ese cliente ya no está en la lista');
     await (0, database_1.getDb)()
         .collection('pagos_cuenta')
         .insertOne({

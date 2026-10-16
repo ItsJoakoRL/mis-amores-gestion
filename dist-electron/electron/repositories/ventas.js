@@ -14,6 +14,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const mongodb_1 = require("mongodb");
 const database_1 = require("../db/database");
 const articulos_1 = require("./articulos");
+const clientes_1 = require("./clientes");
 const fechaLocal_1 = require("../fechaLocal");
 const formato_1 = require("../../shared/formato");
 const METODOS_PAGO = ['efectivo', 'tarjeta', 'transferencia', 'fiado'];
@@ -54,6 +55,9 @@ async function crearVenta(input, usuarioId) {
     }
     if (input.metodoPago === 'fiado' && !input.clienteId) {
         throw new Error('Para una venta fiada hay que elegir a qué cliente se le anota');
+    }
+    if (input.metodoPago === 'fiado' && !(await (0, clientes_1.existeClienteActivo)(input.clienteId))) {
+        throw new Error('Ese cliente ya no está en la lista: elegí otro');
     }
     const articulo = await (0, articulos_1.getArticulo)(input.articuloId);
     if (!articulo) {

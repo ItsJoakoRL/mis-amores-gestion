@@ -95,9 +95,11 @@ function registrarHandlers() {
         (0, session_1.requiereSesion)();
         return (0, asistente_1.sugerirRubro)(descripcion);
     }));
-    electron_1.ipcMain.handle(channels_1.Channels.articulosHistorialPrecios, (_e, articuloId) => wrap(() => {
-        (0, session_1.requiereSesion)();
-        return (0, articulos_1.historialPrecios)(articuloId);
+    electron_1.ipcMain.handle(channels_1.Channels.articulosHistorialPrecios, (_e, articuloId) => wrap(async () => {
+        const sesion = (0, session_1.requiereSesion)();
+        const historial = await (0, articulos_1.historialPrecios)(articuloId);
+        // Los cambios del precio de costo son sólo para la administradora.
+        return sesion.rol === 'admin' ? historial : historial.filter((c) => c.tipo !== 'costo');
     }));
     electron_1.ipcMain.handle(channels_1.Channels.articulosMovimientosStock, (_e, articuloId) => wrap(() => {
         (0, session_1.requiereSesion)();
@@ -129,9 +131,11 @@ function registrarHandlers() {
         return (0, catalogos_1.crearProveedor)(data);
     }));
     // --- Dashboard ---
-    electron_1.ipcMain.handle(channels_1.Channels.dashboardStats, () => wrap(() => {
-        (0, session_1.requiereSesion)();
-        return (0, dashboard_1.getDashboardStats)();
+    electron_1.ipcMain.handle(channels_1.Channels.dashboardStats, () => wrap(async () => {
+        const sesion = (0, session_1.requiereSesion)();
+        const stats = await (0, dashboard_1.getDashboardStats)();
+        // El valor del inventario a costo es sólo para la administradora.
+        return sesion.rol === 'admin' ? stats : { ...stats, valorInventarioCosto: 0 };
     }));
     // --- Reportes ---
     electron_1.ipcMain.handle(channels_1.Channels.reportesVentas, (_e, desde, hasta) => wrap(() => {
@@ -174,6 +178,11 @@ function registrarHandlers() {
     electron_1.ipcMain.handle(channels_1.Channels.usuariosResetPassword, (_e, id, password) => wrap(async () => {
         (0, session_1.requiereAdmin)();
         await (0, usuarios_1.resetPassword)(id, password);
+        return true;
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.usuariosCambiarMiPassword, (_e, actual, nueva) => wrap(async () => {
+        const sesion = (0, session_1.requiereSesion)();
+        await (0, usuarios_1.cambiarPasswordPropia)(sesion.id, actual, nueva);
         return true;
     }));
     electron_1.ipcMain.handle(channels_1.Channels.usuariosEliminar, (_e, id) => wrap(async () => {

@@ -88,6 +88,7 @@ const api = {
         actualizar: (id, nombre, usuario, rol, genero) => invoke(channels_1.Channels.usuariosUpdate, id, nombre, usuario, rol, genero),
         setActivo: (id, activo) => invoke(channels_1.Channels.usuariosSetActivo, id, activo),
         resetPassword: (id, password) => invoke(channels_1.Channels.usuariosResetPassword, id, password),
+        cambiarMiPassword: (actual, nueva) => invoke(channels_1.Channels.usuariosCambiarMiPassword, actual, nueva),
         eliminar: (id) => invoke(channels_1.Channels.usuariosEliminar, id),
     },
     imagenes: {
