@@ -386,6 +386,9 @@ async function todo() {
     body: items,
   });
   ok(sinClave.status === 401, 'sin la firma de la red no entra nada');
+  // Sumar una PC a la red entrega la clave de la red: en internet no se ofrece.
+  const unirse = await apiCruda(srv, 'POST', '/api/sync/unirse', { idPc: 'otra', nombrePc: 'otra', puerto: 4000 });
+  ok(/no está disponible/i.test(unirse.error || ''), 'sumar una PC a la red no está disponible en internet');
   const primero = await apiCruda(srv, 'POST', '/api/auth/login', { usuario: 'intruso', password: 'prueba0' });
   ok(primero.error === 'Usuario o contraseña incorrectos', 'los primeros intentos dicen "incorrectos"');
   let corte = '';

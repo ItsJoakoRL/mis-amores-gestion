@@ -9,6 +9,7 @@ import {
   type ArticulosFiltro,
   type ArticuloInput,
   type ClienteInput,
+  type CuentaPublica,
   type Genero,
   type Proveedor,
   type Rol,
@@ -16,6 +17,45 @@ import {
 } from '@shared/types';
 
 const TOKEN_KEY = 'misAmores.token';
+
+// En internet la lista de cuentas no se ofrece (se la regalaría a cualquiera que
+// abra la dirección). En su lugar, cada aparato se acuerda de las cuentas que
+// ya usaron en él: la primera vez se escribe el usuario, y de ahí en más
+// aparecen para tocar y entrar, como en la PC. Sólo quedan en este navegador.
+const CUENTAS_KEY = 'misAmores.cuentas';
+
+export function cuentasRecordadas(): CuentaPublica[] {
+  try {
+    const crudo = localStorage.getItem(CUENTAS_KEY);
+    const lista = crudo ? (JSON.parse(crudo) as unknown) : [];
+    if (!Array.isArray(lista)) return [];
+    return lista.filter(
+      (c): c is CuentaPublica =>
+        !!c && typeof c.id === 'string' && typeof c.nombre === 'string' && typeof c.usuario === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+function guardarCuentas(lista: CuentaPublica[]) {
+  try {
+    localStorage.setItem(CUENTAS_KEY, JSON.stringify(lista.slice(0, 8)));
+  } catch {
+    // Si el navegador no deja guardar, sólo no se recuerda.
+  }
+}
+
+function recordarCuenta(cuenta: CuentaPublica) {
+  // La última que entró queda primera.
+  guardarCuentas([cuenta, ...cuentasRecordadas().filter((c) => c.usuario !== cuenta.usuario)]);
+}
+
+export function olvidarCuenta(usuario: string): CuentaPublica[] {
+  const restantes = cuentasRecordadas().filter((c) => c.usuario !== usuario);
+  guardarCuentas(restantes);
+  return restantes;
+}
 
 // Cuando la PC avisa que la sesión ya no vale (la cerraron desde otro lado,
 // o le cambiaron el rol a esa persona), AuthContext escucha este evento y
@@ -55,13 +95,17 @@ async function req<T>(method: string, ruta: string, body?: unknown): Promise<T> 
     });
   } catch {
     // Antes salía "Failed to fetch", que no le dice nada a nadie.
-    throw new Error('No hay conexión con la PC. Revisá el WiFi y que esa PC esté prendida con Mis Amores abierto.');
+    throw new Error(
+      'No hay conexión con el servidor. Revisá que tengas internet o WiFi (y, si usás la dirección del local, que la PC esté prendida con Mis Amores abierto).'
+    );
   }
   let json: { ok: boolean; data?: T; error?: string };
   try {
     json = (await res.json()) as { ok: boolean; data?: T; error?: string };
   } catch {
-    throw new Error('La PC respondió algo inesperado. Probá de nuevo en un ratito.');
+    throw new Error(
+      'El servidor no respondió bien. Si hace rato que nadie lo usa, puede tardar hasta un minuto en despertar: probá de nuevo en un ratito.'
+    );
   }
   if (!json.ok) {
     if (json.error === MENSAJE_SIN_SESION && token) {
@@ -92,6 +136,10 @@ export function crearWebApiClient(): Api {
         });
         setToken(data.token);
         const { token: _token, ...sesion } = data;
+        const s = sesion as unknown as CuentaPublica;
+        if (s && typeof s.id === 'string' && typeof s.usuario === 'string') {
+          recordarCuenta({ id: s.id, nombre: s.nombre, usuario: s.usuario, rol: s.rol, genero: s.genero });
+        }
         return sesion as never;
       },
       logout: async () => {
@@ -199,6 +247,7 @@ export function crearWebApiClient(): Api {
         req('PUT', `/api/usuarios/${id}`, { nombre, usuario, rol, genero }),
       setActivo: (id, activo) => req('POST', `/api/usuarios/${id}/activo`, { activo }),
       resetPassword: (id, password) => req('POST', `/api/usuarios/${id}/reset-password`, { password }),
+      cambiarMiPassword: (actual, nueva) => req('POST', '/api/usuarios/mi-password', { actual, nueva }),
       eliminar: (id) => req('DELETE', `/api/usuarios/${id}`),
     },
     imagenes: {
@@ -213,9 +262,27 @@ export function crearWebApiClient(): Api {
       // El servidor de la PC avisa por /api/eventos cuando alguien cambia algo.
       onDatosCambio: (callback: () => void) => {
         if (typeof EventSource === 'undefined') return () => {};
-        const fuente = new EventSource('/api/eventos');
-        fuente.addEventListener('cambio', () => callback());
-        return () => fuente.close();
+        let fuente: EventSource | null = null;
+        let reintento: ReturnType<typeof setTimeout> | null = null;
+        let cerrado = false;
+        const conectar = () => {
+          if (cerrado) return;
+          fuente = new EventSource('/api/eventos');
+          fuente.addEventListener('cambio', () => callback());
+          // Si el servidor rechazó la conexión (está dormido, o tiene el tope de
+          // conexiones) el navegador la da por cerrada y no vuelve a intentar sola.
+          fuente.onerror = () => {
+            if (cerrado || !fuente || fuente.readyState !== EventSource.CLOSED) return;
+            fuente.close();
+            reintento = setTimeout(conectar, 10_000);
+          };
+        };
+        conectar();
+        return () => {
+          cerrado = true;
+          if (reintento) clearTimeout(reintento);
+          fuente?.close();
+        };
       },
     },
     esElectron: false,

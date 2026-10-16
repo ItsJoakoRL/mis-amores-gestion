@@ -157,6 +157,13 @@ export async function crearCliente(
   }
 }
 
+/** ¿Existe este cliente y está en la lista? Una venta fiada o un pago a nombre
+ * de alguien que no está dejaría una deuda que no aparece en ninguna pantalla. */
+export async function existeClienteActivo(id: unknown): Promise<boolean> {
+  if (typeof id !== 'string' || !ObjectId.isValid(id)) return false;
+  return (await coleccion().countDocuments({ _id: new ObjectId(id), activo: true }, { limit: 1 })) > 0;
+}
+
 export async function setClienteActivo(id: string, activo: boolean): Promise<void> {
   await coleccion().updateOne({ _id: new ObjectId(id) }, { $set: { activo } });
 }
@@ -174,6 +181,7 @@ export async function registrarPago(
     throw new Error('El monto del pago tiene que ser mayor a cero');
   }
   if (!METODOS_PAGO_CUENTA.includes(metodoPago)) throw new Error('La forma de pago no es válida');
+  if (!(await existeClienteActivo(clienteId))) throw new Error('Ese cliente ya no está en la lista');
   await getDb()
     .collection('pagos_cuenta')
     .insertOne({

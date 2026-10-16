@@ -140,6 +140,8 @@ const api = {
     setActivo: (id: string, activo: boolean) => invoke<boolean>(Channels.usuariosSetActivo, id, activo),
     resetPassword: (id: string, password: string) =>
       invoke<boolean>(Channels.usuariosResetPassword, id, password),
+    cambiarMiPassword: (actual: string, nueva: string) =>
+      invoke<boolean>(Channels.usuariosCambiarMiPassword, actual, nueva),
     eliminar: (id: string) => invoke<boolean>(Channels.usuariosEliminar, id),
   },
   imagenes: {

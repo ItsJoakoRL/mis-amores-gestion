@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { getArticulo, ajustarStock } from './articulos';
+import { existeClienteActivo } from './clientes';
 import { DIA_LOCAL_EXPR, limitesDiaLocal, limitesDiaLocalYMD, limitesMesLocal, ymdLocal } from '../fechaLocal';
 import { redondearCantidad } from '../../shared/formato';
 import type { MetodoPago, ResumenDiaVentas, Venta, VentaInput } from '../../shared/types';
@@ -69,6 +70,9 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
   }
   if (input.metodoPago === 'fiado' && !input.clienteId) {
     throw new Error('Para una venta fiada hay que elegir a qué cliente se le anota');
+  }
+  if (input.metodoPago === 'fiado' && !(await existeClienteActivo(input.clienteId))) {
+    throw new Error('Ese cliente ya no está en la lista: elegí otro');
   }
   const articulo = await getArticulo(input.articuloId);
   if (!articulo) {

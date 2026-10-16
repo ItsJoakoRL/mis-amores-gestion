@@ -20,6 +20,16 @@ import BotonAyuda from '../../components/BotonAyuda';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
 
 
+// En el celular cada casilla del calendario mide ~50px: "$ 17.600" no entra.
+// Ahí se muestra abreviado ("17,6k"); en pantallas grandes, completo.
+function montoCorto(n: number): string {
+  const sinDecimal = (x: number) => (Math.round(x * 10) / 10).toString().replace('.', ',');
+  // Los umbrales están corridos para que el redondeo no dé "1000k" ni "1000".
+  if (n >= 999_950) return `${sinDecimal(n / 1_000_000)}M`;
+  if (n >= 999.5) return `${sinDecimal(n / 1000)}k`;
+  return String(Math.round(n));
+}
+
 export default function VentasPage() {
   const [mesActual, setMesActual] = useState(() => startOfMonth(new Date()));
   const [resumenPorDia, setResumenPorDia] = useState<Map<string, ResumenDiaVentas>>(new Map());
@@ -58,7 +68,7 @@ export default function VentasPage() {
   }, [mesActual]);
 
   return (
-    <div className="mx-auto max-w-6xl animate-slide-up p-8">
+    <div className="mx-auto max-w-6xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
@@ -130,7 +140,7 @@ export default function VentasPage() {
                 data-tour={esHoy ? 'cal-hoy' : undefined}
                 onClick={() => resumen && setDiaSeleccionado(ymd)}
                 disabled={!resumen}
-                className={`flex min-h-[76px] flex-col items-start gap-1 border-b border-r border-slate-100 p-2 text-left transition-colors last:border-r-0 ${
+                className={`flex min-h-[64px] flex-col items-start gap-1 border-b border-r border-slate-100 p-1 text-left transition-colors last:border-r-0 sm:min-h-[76px] sm:p-2 ${
                   enMes ? 'bg-white' : 'bg-slate-50/50'
                 } ${resumen ? 'cursor-pointer hover:bg-brand-50' : 'cursor-default'}`}
               >
@@ -142,16 +152,18 @@ export default function VentasPage() {
                   {format(dia, 'd')}
                 </span>
                 {resumen && resumen.totalCobrado > 0 && (
-                  <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                    {formatearMoneda(resumen.totalCobrado)}
+                  <span className="rounded-md bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700 sm:px-1.5 sm:text-[11px]">
+                    <span className="sm:hidden">{montoCorto(resumen.totalCobrado)}</span>
+                    <span className="hidden sm:inline">{formatearMoneda(resumen.totalCobrado)}</span>
                   </span>
                 )}
                 {resumen && resumen.totalFiado > 0 && (
-                  <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                    +{formatearMoneda(resumen.totalFiado)} fiado
+                  <span className="rounded-md bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 sm:px-1.5">
+                    <span className="sm:hidden">+{montoCorto(resumen.totalFiado)}</span>
+                    <span className="hidden sm:inline">+{formatearMoneda(resumen.totalFiado)} fiado</span>
                   </span>
                 )}
-                {resumen && <span className="text-[10px] text-slate-400">{resumen.cantidadVentas} venta(s)</span>}
+                {resumen && <span className="hidden text-[10px] text-slate-400 sm:block">{resumen.cantidadVentas} venta(s)</span>}
               </button>
             );
           })}
@@ -180,12 +192,15 @@ function DiaDetalleModal({
 }) {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
+    setErrorCarga(null);
     window.api.ventas
       .listPorDia(fecha)
       .then(setVentas)
+      .catch((err) => setErrorCarga(err instanceof Error ? err.message : 'No se pudieron cargar las ventas'))
       .finally(() => setCargando(false));
   }, [fecha]);
 
@@ -215,7 +230,7 @@ function DiaDetalleModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">{fechaLegible}</h2>
@@ -232,10 +247,41 @@ function DiaDetalleModal({
         <div className="flex-1 overflow-y-auto">
           {cargando ? (
             <p className="px-6 py-8 text-center text-slate-400">Cargando...</p>
+          ) : errorCarga ? (
+            <p className="px-6 py-8 text-center text-red-600">{errorCarga}</p>
           ) : ventas.length === 0 ? (
             <p className="px-6 py-8 text-center text-slate-400">No hay ventas registradas este día.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Celular: una línea por venta (la tabla de 7 columnas no entra). */}
+            <ul className="divide-y divide-slate-100 sm:hidden">
+              {ventas.map((v) => (
+                <li key={v.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-800">{v.articuloDescripcion}</p>
+                    <p className="text-xs text-slate-400">
+                      {format(new Date(v.fecha), 'HH:mm')} · x{formatearCantidad(v.cantidad)} ·{' '}
+                      <span className="capitalize">{v.metodoPago}</span>
+                      {v.metodoPago === 'fiado' && v.clienteNombre && (
+                        <span className="text-amber-600"> ({v.clienteNombre})</span>
+                      )}
+                      {v.usuarioNombre ? ` · ${v.usuarioNombre}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="font-semibold text-slate-800">{formatearMoneda(v.total)}</span>
+                    <button
+                      onClick={() => handleEliminar(v)}
+                      className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      title="Anular venta"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto sm:block">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
                 <tr>
@@ -276,6 +322,7 @@ function DiaDetalleModal({
               </tbody>
             </table>
             </div>
+            </>
           )}
         </div>
       </div>

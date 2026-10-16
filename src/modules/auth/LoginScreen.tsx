@@ -15,9 +15,11 @@ import {
   Milk,
   Package,
   Beer,
+  X,
 } from 'lucide-react';
 import { etiquetaRol, type CuentaPublica } from '@shared/types';
 import { useAuth } from './AuthContext';
+import { cuentasRecordadas, olvidarCuenta } from '../../webApiClient';
 import CampoContrasena from '../../components/CampoContrasena';
 
 const RASGOS = [
@@ -43,6 +45,8 @@ const PRODUCTOS_FONDO = [
 export default function LoginScreen() {
   const { login } = useAuth();
   const [cuentas, setCuentas] = useState<CuentaPublica[] | null>(null);
+  // Las cuentas que salen del aparato (en internet no hay lista pública).
+  const [deEsteAparato, setDeEsteAparato] = useState(false);
   const [cuentaElegida, setCuentaElegida] = useState<CuentaPublica | null>(null);
   const [modoManual, setModoManual] = useState(false);
   const [usuario, setUsuario] = useState('');
@@ -54,10 +58,18 @@ export default function LoginScreen() {
     window.api.auth
       .cuentas()
       .then((lista) => setCuentas(lista))
-      // Si por lo que sea no se pudo traer la lista (primera vez, red rara,
-      // etc.), no dejamos a nadie afuera: mostramos directo el formulario de
-      // siempre.
-      .catch(() => setModoManual(true));
+      // Si no hay lista (en internet no se ofrece, o la red falló) se usan las
+      // cuentas que ya entraron desde este aparato; y si tampoco hay, no
+      // dejamos a nadie afuera: se muestra directo el formulario de siempre.
+      .catch(() => {
+        const recordadas = cuentasRecordadas();
+        if (recordadas.length > 0) {
+          setCuentas(recordadas);
+          setDeEsteAparato(true);
+        } else {
+          setModoManual(true);
+        }
+      });
   }, []);
 
   async function handleSubmit(e: FormEvent) {
@@ -172,27 +184,50 @@ export default function LoginScreen() {
           {mostrarSelector && (
             <div className="card animate-scale-in space-y-1.5 p-3 shadow-xl">
               {cuentas!.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setCuentaElegida(c)}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
-                    {c.nombre[0]?.toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-800">{c.nombre}</p>
-                    <p className="text-xs text-slate-400">{etiquetaRol(c.rol, c.genero)}</p>
-                  </div>
-                </button>
+                <div key={c.id} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCuentaElegida(c)}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 ${
+                      deEsteAparato ? 'pr-11' : ''
+                    }`}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
+                      {c.nombre[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-800">{c.nombre}</p>
+                      <p className="text-xs text-slate-400">{etiquetaRol(c.rol, c.genero)}</p>
+                    </div>
+                  </button>
+                  {deEsteAparato && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const restantes = olvidarCuenta(c.usuario);
+                        if (restantes.length === 0) {
+                          setCuentas(null);
+                          setDeEsteAparato(false);
+                          setModoManual(true);
+                        } else {
+                          setCuentas(restantes);
+                        }
+                      }}
+                      title="Sacar esta cuenta de este aparato"
+                      aria-label={`Sacar a ${c.nombre} de este aparato`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-300 hover:bg-slate-100 hover:text-slate-500"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               ))}
               <button
                 type="button"
                 onClick={() => setModoManual(true)}
                 className="mt-1 w-full rounded-lg px-3 py-2 text-center text-xs text-slate-400 hover:underline"
               >
-                Ingresar con usuario y contraseña
+                {deEsteAparato ? 'Entrar con otro usuario' : 'Ingresar con usuario y contraseña'}
               </button>
             </div>
           )}
@@ -226,6 +261,11 @@ export default function LoginScreen() {
                       className="input pl-9"
                       value={usuario}
                       onChange={(e) => setUsuario(e.target.value)}
+                      // Sin mayúscula automática ni "corrección": el usuario se escribe tal cual.
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="username"
                       autoFocus
                       required
                     />
@@ -244,6 +284,7 @@ export default function LoginScreen() {
                     className="input pl-9"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
                     autoFocus={!!cuentaElegida}
                     required
                   />

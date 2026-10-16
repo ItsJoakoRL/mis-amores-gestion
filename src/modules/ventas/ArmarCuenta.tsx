@@ -5,6 +5,7 @@ import type { Articulo, Cliente, MetodoPago } from '@shared/types';
 import { formatearCantidad, formatearMoneda, limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import CartelExito from '../../components/CartelExito';
+import { esTactil } from '../../utils/dispositivo';
 
 const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
   { valor: 'efectivo', etiqueta: 'Efectivo' },
@@ -122,12 +123,17 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   // vieja ya terminada.
   useEffect(() => {
     if (!sesion) return;
-    if (carrito.length === 0) {
-      localStorage.removeItem(claveGuardado(sesion.id));
-      return;
+    try {
+      if (carrito.length === 0) {
+        localStorage.removeItem(claveGuardado(sesion.id));
+        return;
+      }
+      const datos: CuentaGuardada = { carrito, metodoPago, clienteId };
+      localStorage.setItem(claveGuardado(sesion.id), JSON.stringify(datos));
+    } catch {
+      // Sin lugar donde guardarla (modo privado, o el celular lo bloquea): la
+      // cuenta sigue andando, sólo que no se recupera si se cierra la página.
     }
-    const datos: CuentaGuardada = { carrito, metodoPago, clienteId };
-    localStorage.setItem(claveGuardado(sesion.id), JSON.stringify(datos));
   }, [sesion, carrito, metodoPago, clienteId]);
 
   function vaciarCuenta() {
@@ -139,7 +145,10 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
 
   useEffect(() => {
     if (hayFiado && clientes.length === 0) {
-      window.api.clientes.list().then(setClientes);
+      window.api.clientes
+        .list()
+        .then(setClientes)
+        .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo cargar la lista de clientes'));
     }
   }, [hayFiado, clientes.length]);
 
@@ -301,7 +310,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
       setClienteId(null);
       setMetodoPago('efectivo');
       onVentaRegistrada();
-      busquedaRef.current?.focus();
+      // En el celular enfocar el campo abriría el teclado justo después de cobrar.
+      if (!esTactil()) busquedaRef.current?.focus();
     } catch (err) {
       setError(
         (err instanceof Error ? err.message : 'No se pudo registrar la venta') +

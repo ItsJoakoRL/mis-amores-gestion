@@ -7,6 +7,17 @@ function esErrorDuplicado(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
+// Un nombre vacío (o algo que no es texto) no puede quedar guardado: después no
+// se vería en las listas.
+function nombreValido(nombre: unknown, deQue: string): string {
+  if (typeof nombre !== 'string' || !nombre.trim()) throw new Error(`Escribí el nombre ${deQue}`);
+  return nombre.trim();
+}
+
+function textoOpcional(valor: unknown): string | null {
+  return typeof valor === 'string' && valor.trim() ? valor.trim() : null;
+}
+
 // --- Familias ---
 
 interface FamiliaDoc {
@@ -20,7 +31,7 @@ export async function listFamilias(): Promise<Familia[]> {
 }
 
 export async function crearFamilia(nombre: string): Promise<Familia> {
-  const nombreLimpio = nombre.trim();
+  const nombreLimpio = nombreValido(nombre, 'del rubro');
   try {
     const result = await getDb().collection<FamiliaDoc>('familias').insertOne({ nombre: nombreLimpio } as FamiliaDoc);
     return { id: result.insertedId.toHexString(), nombre: nombreLimpio };
@@ -43,7 +54,7 @@ export async function listMarcas(): Promise<Marca[]> {
 }
 
 export async function crearMarca(nombre: string): Promise<Marca> {
-  const nombreLimpio = nombre.trim();
+  const nombreLimpio = nombreValido(nombre, 'de la marca');
   try {
     const result = await getDb().collection<MarcaDoc>('marcas').insertOne({ nombre: nombreLimpio } as MarcaDoc);
     return { id: result.insertedId.toHexString(), nombre: nombreLimpio };
@@ -75,8 +86,15 @@ export async function listProveedores(): Promise<Proveedor[]> {
 }
 
 export async function crearProveedor(data: Omit<Proveedor, 'id'>): Promise<Proveedor> {
+  // Sólo los campos conocidos, ya limpios: antes se guardaba el pedido tal cual.
+  const limpio = {
+    nombre: nombreValido(data?.nombre, 'del proveedor'),
+    contacto: textoOpcional(data?.contacto),
+    telefono: textoOpcional(data?.telefono),
+    email: textoOpcional(data?.email),
+  };
   const result = await getDb()
     .collection<ProveedorDoc>('proveedores')
-    .insertOne({ ...data } as ProveedorDoc);
-  return { id: result.insertedId.toHexString(), ...data };
+    .insertOne({ ...limpio } as ProveedorDoc);
+  return { id: result.insertedId.toHexString(), ...limpio };
 }

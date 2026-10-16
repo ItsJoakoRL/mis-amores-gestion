@@ -103,14 +103,23 @@ export default function RecordatoriosPage() {
   // esto"), el formulario arranca ya con eso elegido.
   const [precargado, setPrecargado] = useState<{ clave: number; inicial: RecordatorioInput; nombre: string | null } | null>(null);
 
+  // Si se cambia de pestaña rápido, pueden volver respuestas fuera de orden: sólo
+  // vale la del último pedido (si no, "Hechos" podía mostrar la lista de "Pendientes").
+  const ultimoPedido = useRef(0);
+
   const cargar = useCallback(() => {
+    const pedido = ++ultimoPedido.current;
     window.api.recordatorios
       .list(estado)
       .then((lista) => {
+        if (pedido !== ultimoPedido.current) return;
         setItems(lista);
         setError(null);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'No se pudieron cargar los recordatorios'));
+      .catch((err) => {
+        if (pedido !== ultimoPedido.current) return;
+        setError(err instanceof Error ? err.message : 'No se pudieron cargar los recordatorios');
+      });
     window.api.recordatorios
       .resumen()
       .then((r) => setCuantosPendientes(r.pendientes))
@@ -213,7 +222,7 @@ export default function RecordatoriosPage() {
   const esAdmin = sesion?.rol === 'admin';
 
   return (
-    <div className="mx-auto max-w-3xl animate-slide-up p-8">
+    <div className="mx-auto max-w-3xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="mb-6">
         <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
           Recordatorios

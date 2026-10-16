@@ -27,10 +27,13 @@ import CartelExito from '../../components/CartelExito';
 import BotonAyuda from '../../components/BotonAyuda';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
 import { urlImagen } from '../../urlImagen';
+import { esTactil } from '../../utils/dispositivo';
+import { useEsPantallaChica } from '../../hooks/useEsPantallaChica';
 
 
 export default function ArticulosPage() {
   const { esAdmin } = useAuth();
+  const pantallaChica = useEsPantallaChica();
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [familias, setFamilias] = useState<Familia[]>([]);
   const [busqueda, setBusqueda] = useState('');
@@ -107,6 +110,11 @@ export default function ArticulosPage() {
   // como si fuera un teclado ultra rápido. Este input queda enfocado por
   // default para que escanear funcione sin tener que clickear en nada antes.
   const scanRef = useRef<HTMLInputElement>(null);
+  // En el celular enfocar el campo abre el teclado de la pantalla y tapa media
+  // lista: ahí sólo se enfoca cuando la persona toca el campo.
+  const enfocarScan = () => {
+    if (!esTactil()) scanRef.current?.focus();
+  };
   const [scanValue, setScanValue] = useState('');
   const [buscandoScan, setBuscandoScan] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -148,20 +156,41 @@ export default function ArticulosPage() {
     [busqueda, familiaId, soloStockBajo, mostrandoPapelera]
   );
 
+  // Si se escribe rápido o se cambia de filtro, pueden volver respuestas fuera de
+  // orden: la lista sólo se pisa con la respuesta del último pedido (se cuente
+  // la recarga en silencio o no). Aparte, "Cargando..." y el error los maneja el
+  // último pedido con cartel: una recarga en silencio en el medio no los apaga.
+  const ultimoPedido = useRef(0);
+  const ultimoConCartel = useRef(0);
+
   const cargar = useCallback(() => {
+    const pedido = ++ultimoPedido.current;
+    const conCartel = ++ultimoConCartel.current;
     setCargando(true);
     setLimiteVisible(TANDA);
     window.api.articulos
       .list(filtro)
-      .then(setArticulos)
-      .catch((err) => setError(err.message))
-      .finally(() => setCargando(false));
+      .then((lista) => {
+        if (pedido === ultimoPedido.current) setArticulos(lista);
+      })
+      .catch((err) => {
+        if (conCartel === ultimoConCartel.current) setError(err.message);
+      })
+      .finally(() => {
+        if (conCartel === ultimoConCartel.current) setCargando(false);
+      });
   }, [filtro]);
 
   // Al volver a esta pantalla se actualiza la lista sin el cartel de
   // "Cargando..." ni perder lo que se venía mirando (ver useRecargarAlVolver).
   const recargarEnSilencio = useCallback(() => {
-    window.api.articulos.list(filtro).then(setArticulos).catch(() => {});
+    const pedido = ++ultimoPedido.current;
+    window.api.articulos
+      .list(filtro)
+      .then((lista) => {
+        if (pedido === ultimoPedido.current) setArticulos(lista);
+      })
+      .catch(() => {});
   }, [filtro]);
   useRecargarAlVolver(recargarEnSilencio);
 
@@ -274,8 +303,94 @@ export default function ArticulosPage() {
     }
   }
 
+  const miniatura = (a: Articulo) => (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+      {a.imagenPath ? (
+        <img src={urlImagen(a.imagenPath)} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <ImageOff className="h-4 w-4 text-slate-300" />
+      )}
+    </div>
+  );
+
+  const pastillaStock = (a: Articulo) =>
+    mostrandoPapelera ? (
+      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+        {formatearCantidad(a.stock)} {a.unidad === 'peso' ? 'kg' : 'un.'}
+      </span>
+    ) : (
+      <button
+        onClick={() => setAjustandoStock(a)}
+        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+          a.stock <= 0
+            ? 'bg-red-100 text-red-700'
+            : a.stock <= a.stockMinimo
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-slate-100 text-slate-600'
+        }`}
+        title="Ajustar stock"
+      >
+        {formatearCantidad(a.stock)} {a.unidad === 'peso' ? 'kg' : 'un.'}
+      </button>
+    );
+
+  const botonesAcciones = (a: Articulo, conTour = false) =>
+    mostrandoPapelera ? (
+      <>
+        <button
+          onClick={() => handleRestaurar(a)}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+          title="Restaurar artículo"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Restaurar
+        </button>
+        <button
+          onClick={() => handleEliminarDefinitivo(a)}
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+          title="Eliminar para siempre"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </>
+    ) : (
+      <>
+        <button
+          onClick={() => navigate(`/recordatorios?articulo=${a.id}`)}
+          className="rounded-lg p-2 text-slate-400 hover:bg-orange-50 hover:text-orange-600 md:p-1.5"
+          title="Anotar un recordatorio sobre este producto"
+        >
+          <BellRing className="h-4 w-4" />
+        </button>
+        <button
+          data-tour={conTour ? 'art-stock' : undefined}
+          onClick={() => setAjustandoStock(a)}
+          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 md:p-1.5"
+          title="Ajustar stock"
+        >
+          <PackagePlus className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setEditando(a)}
+          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 md:p-1.5"
+          title="Editar"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
+        {esAdmin && (
+          <button
+            onClick={() => handleEliminar(a)}
+            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 md:p-1.5"
+            title="Eliminar"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </>
+    );
+
   return (
-    <div className="mx-auto max-w-6xl animate-slide-up p-8">
+    <div className="mx-auto max-w-6xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
@@ -361,7 +476,7 @@ export default function ArticulosPage() {
             value={scanValue}
             onChange={(e) => setScanValue(e.target.value)}
             onKeyDown={handleScan}
-            autoFocus
+            autoFocus={!esTactil()}
           />
           {scanError && <span className="text-xs font-medium text-red-600">{scanError}</span>}
         </div>
@@ -406,161 +521,130 @@ export default function ArticulosPage() {
       {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-            <tr>
-              {mostrandoPapelera && modoSeleccion && (
-                <th className="w-10 px-4 py-3">
+        {/* Celular: una tarjeta por artículo (una tabla de 5 columnas no entra). */}
+        {pantallaChica && (
+        <div className="divide-y divide-slate-100">
+          {mostrandoPapelera && modoSeleccion && articulos.length > 0 && (
+            <label className="flex items-center gap-3 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={seleccionados.size === articulos.length}
+                onChange={toggleSeleccionarTodos}
+              />
+              Seleccionar todos
+            </label>
+          )}
+          {cargando && <p className="px-4 py-10 text-center text-slate-400">Cargando...</p>}
+          {!cargando && articulos.length === 0 && (
+            <p className="px-4 py-10 text-center text-slate-400">
+              {mostrandoPapelera ? 'La papelera está vacía.' : 'No se encontraron artículos.'}
+            </p>
+          )}
+          {!cargando &&
+            articulos.slice(0, limiteVisible).map((a) => (
+              <div key={a.id} className="flex items-start gap-3 p-4">
+                {mostrandoPapelera && modoSeleccion && (
                   <input
                     type="checkbox"
-                    checked={articulos.length > 0 && seleccionados.size === articulos.length}
-                    onChange={toggleSeleccionarTodos}
+                    className="mt-2.5 shrink-0"
+                    checked={seleccionados.has(a.id)}
+                    onChange={() => toggleSeleccionado(a.id)}
                   />
-                </th>
-              )}
-              <th className="px-4 py-3 font-medium">Artículo</th>
-              <th className="px-4 py-3 font-medium">Rubro</th>
-              <th className="px-4 py-3 font-medium">Stock</th>
-              <th className="px-4 py-3 font-medium">Precio venta</th>
-              <th className="px-4 py-3 font-medium">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {cargando && (
+                )}
+                {miniatura(a)}
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-800">{a.descripcion}</p>
+                  <p className="break-words text-xs text-slate-400">
+                    {a.codigoBarras || 'Sin código'}
+                    {a.marcaNombre ? ` · ${a.marcaNombre}` : ''}
+                    {a.familiaNombre ? ` · ${a.familiaNombre}` : ''}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="font-semibold text-slate-800">{formatearMoneda(a.precioVenta)}</span>
+                    {pastillaStock(a)}
+                  </div>
+                  <div className="-ml-2 mt-1 flex flex-wrap items-center gap-0.5">{botonesAcciones(a)}</div>
+                </div>
+              </div>
+            ))}
+        </div>
+        )}
+
+        {/* PC: la tabla de siempre. */}
+        {!pantallaChica && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <td colSpan={mostrandoPapelera && modoSeleccion ? 6 : 5} className="px-4 py-10 text-center text-slate-400">
-                  Cargando...
-                </td>
+                {mostrandoPapelera && modoSeleccion && (
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={articulos.length > 0 && seleccionados.size === articulos.length}
+                      onChange={toggleSeleccionarTodos}
+                    />
+                  </th>
+                )}
+                <th className="px-4 py-3 font-medium">Artículo</th>
+                <th className="px-4 py-3 font-medium">Rubro</th>
+                <th className="px-4 py-3 font-medium">Stock</th>
+                <th className="px-4 py-3 font-medium">Precio venta</th>
+                <th className="px-4 py-3 font-medium">Acciones</th>
               </tr>
-            )}
-            {!cargando && articulos.length === 0 && (
-              <tr>
-                <td colSpan={mostrandoPapelera && modoSeleccion ? 6 : 5} className="px-4 py-10 text-center text-slate-400">
-                  {mostrandoPapelera ? 'La papelera está vacía.' : 'No se encontraron artículos.'}
-                </td>
-              </tr>
-            )}
-            {!cargando &&
-              articulos.slice(0, limiteVisible).map((a) => (
-                <tr key={a.id} className="transition-colors hover:bg-slate-50">
-                  {mostrandoPapelera && modoSeleccion && (
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={seleccionados.has(a.id)}
-                        onChange={() => toggleSeleccionado(a.id)}
-                      />
-                    </td>
-                  )}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-                        {a.imagenPath ? (
-                          <img src={urlImagen(a.imagenPath)} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <ImageOff className="h-4 w-4 text-slate-300" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-800">{a.descripcion}</p>
-                        <p className="text-xs text-slate-400">
-                          {a.codigoBarras || 'Sin código'} {a.marcaNombre ? `· ${a.marcaNombre}` : ''}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{a.familiaNombre ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    {mostrandoPapelera ? (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
-                        {formatearCantidad(a.stock)} {a.unidad === 'peso' ? 'kg' : 'un.'}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setAjustandoStock(a)}
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          a.stock <= 0
-                            ? 'bg-red-100 text-red-700'
-                            : a.stock <= a.stockMinimo
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                        title="Ajustar stock"
-                      >
-                        {formatearCantidad(a.stock)} {a.unidad === 'peso' ? 'kg' : 'un.'}
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-slate-800">{formatearMoneda(a.precioVenta)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      {mostrandoPapelera ? (
-                        <>
-                          <button
-                            onClick={() => handleRestaurar(a)}
-                            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
-                            title="Restaurar artículo"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                            Restaurar
-                          </button>
-                          <button
-                            onClick={() => handleEliminarDefinitivo(a)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                            title="Eliminar para siempre"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => navigate(`/recordatorios?articulo=${a.id}`)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-orange-50 hover:text-orange-600"
-                            title="Anotar un recordatorio sobre este producto"
-                          >
-                            <BellRing className="h-4 w-4" />
-                          </button>
-                          <button
-                            data-tour="art-stock"
-                            onClick={() => setAjustandoStock(a)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                            title="Ajustar stock"
-                          >
-                            <PackagePlus className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setEditando(a)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                            title="Editar"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          {esAdmin && (
-                            <button
-                              onClick={() => handleEliminar(a)}
-                              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                              title="Eliminar"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cargando && (
+                <tr>
+                  <td colSpan={mostrandoPapelera && modoSeleccion ? 6 : 5} className="px-4 py-10 text-center text-slate-400">
+                    Cargando...
                   </td>
                 </tr>
-              ))}
-          </tbody>
-        </table>
+              )}
+              {!cargando && articulos.length === 0 && (
+                <tr>
+                  <td colSpan={mostrandoPapelera && modoSeleccion ? 6 : 5} className="px-4 py-10 text-center text-slate-400">
+                    {mostrandoPapelera ? 'La papelera está vacía.' : 'No se encontraron artículos.'}
+                  </td>
+                </tr>
+              )}
+              {!cargando &&
+                articulos.slice(0, limiteVisible).map((a) => (
+                  <tr key={a.id} className="transition-colors hover:bg-slate-50">
+                    {mostrandoPapelera && modoSeleccion && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={seleccionados.has(a.id)}
+                          onChange={() => toggleSeleccionado(a.id)}
+                        />
+                      </td>
+                    )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {miniatura(a)}
+                        <div>
+                          <p className="font-medium text-slate-800">{a.descripcion}</p>
+                          <p className="text-xs text-slate-400">
+                            {a.codigoBarras || 'Sin código'} {a.marcaNombre ? `· ${a.marcaNombre}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{a.familiaNombre ?? '—'}</td>
+                    <td className="px-4 py-3">{pastillaStock(a)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{formatearMoneda(a.precioVenta)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">{botonesAcciones(a, true)}</div>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
+        )}
         {!cargando && articulos.length > limiteVisible && (
           <div className="flex justify-center border-t border-slate-100 p-3">
-            <button
-              className="btn-secondary"
-              onClick={() => setLimiteVisible((l) => l + TANDA)}
-            >
+            <button className="btn-secondary" onClick={() => setLimiteVisible((l) => l + TANDA)}>
               Mostrar más ({articulos.length - limiteVisible} restantes)
             </button>
           </div>
@@ -575,14 +659,14 @@ export default function ArticulosPage() {
             setEditando(null);
             setCodigoParaNuevo(undefined);
             recordatorioPendiente.current = null;
-            scanRef.current?.focus();
+            enfocarScan();
           }}
           onGuardado={() => {
             setCartelExito(editando === 'nuevo' ? 'Artículo creado correctamente' : 'Artículo actualizado correctamente');
             setEditando(null);
             setCodigoParaNuevo(undefined);
             cargar();
-            scanRef.current?.focus();
+            enfocarScan();
             preguntarSiYaEsta();
           }}
         />
@@ -596,12 +680,12 @@ export default function ArticulosPage() {
           onCerrar={() => {
             setAjustandoStock(null);
             recordatorioPendiente.current = null;
-            scanRef.current?.focus();
+            enfocarScan();
           }}
           onGuardado={() => {
             setAjustandoStock(null);
             cargar();
-            scanRef.current?.focus();
+            enfocarScan();
             preguntarSiYaEsta();
           }}
         />
@@ -612,12 +696,12 @@ export default function ArticulosPage() {
           codigo={codigoSinAsignar}
           onCerrar={() => {
             setCodigoSinAsignar(null);
-            scanRef.current?.focus();
+            enfocarScan();
           }}
           onAsignado={() => {
             setCodigoSinAsignar(null);
             cargar();
-            scanRef.current?.focus();
+            enfocarScan();
           }}
           onCrearNuevo={() => {
             setCodigoParaNuevo(codigoSinAsignar);
@@ -631,7 +715,7 @@ export default function ArticulosPage() {
         <ArmarCuentaModal
           onCerrar={() => {
             setMostrandoArmarCuenta(false);
-            scanRef.current?.focus();
+            enfocarScan();
           }}
           onVentaRegistrada={cargar}
         />

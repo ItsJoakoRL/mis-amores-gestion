@@ -12,6 +12,7 @@ import {
   actualizarUsuario,
   setUsuarioActivo,
   resetPassword,
+  cambiarPasswordPropia,
   eliminarUsuario,
 } from '../repositories/usuarios';
 import {
@@ -189,9 +190,11 @@ export function registrarHandlers() {
   );
 
   ipcMain.handle(Channels.articulosHistorialPrecios, (_e, articuloId: string) =>
-    wrap(() => {
-      requiereSesion();
-      return historialPrecios(articuloId);
+    wrap(async () => {
+      const sesion = requiereSesion();
+      const historial = await historialPrecios(articuloId);
+      // Los cambios del precio de costo son sólo para la administradora.
+      return sesion.rol === 'admin' ? historial : historial.filter((c) => c.tipo !== 'costo');
     })
   );
 
@@ -244,9 +247,11 @@ export function registrarHandlers() {
 
   // --- Dashboard ---
   ipcMain.handle(Channels.dashboardStats, () =>
-    wrap(() => {
-      requiereSesion();
-      return getDashboardStats();
+    wrap(async () => {
+      const sesion = requiereSesion();
+      const stats = await getDashboardStats();
+      // El valor del inventario a costo es sólo para la administradora.
+      return sesion.rol === 'admin' ? stats : { ...stats, valorInventarioCosto: 0 };
     })
   );
 
@@ -309,6 +314,13 @@ export function registrarHandlers() {
     wrap(async () => {
       requiereAdmin();
       await resetPassword(id, password);
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.usuariosCambiarMiPassword, (_e, actual: string, nueva: string) =>
+    wrap(async () => {
+      const sesion = requiereSesion();
+      await cambiarPasswordPropia(sesion.id, actual, nueva);
       return true;
     })
   );

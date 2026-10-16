@@ -64,7 +64,7 @@ export default function AccesoCelularModal({ onCerrar }: { onCerrar: () => void 
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+      <div className="flex max-h-[90dvh] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
           <h2 className="flex items-center gap-2 font-semibold text-slate-800">
             <Wifi className="h-5 w-5 text-brand-600" />

@@ -11,7 +11,17 @@ export default function CampoContrasena({ className = 'input', ...props }: Props
 
   return (
     <div className="relative">
-      <input {...props} type={visible ? 'text' : 'password'} className={`${className} pr-11`} />
+      <input
+        // En el celular, un campo de texto común le pone mayúscula a la primera
+        // letra y "corrige" lo que se escribe: con la contraseña a la vista eso
+        // la cambiaba sin que se note.
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        {...props}
+        type={visible ? 'text' : 'password'}
+        className={`${className} pr-11`}
+      />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}

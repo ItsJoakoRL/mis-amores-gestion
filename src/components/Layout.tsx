@@ -20,11 +20,13 @@ import {
   Milk,
   Settings,
   BellRing,
+  KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
 import IndicadorRed from './IndicadorRed';
+import CambiarMiPasswordModal from './CambiarMiPasswordModal';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
@@ -95,6 +97,7 @@ export default function Layout() {
   // escondida y se abre como un panel encima de todo con el botón de arriba.
   // En la PC (pantallas grandes) sigue fija como siempre.
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [cambiandoPassword, setCambiandoPassword] = useState(false);
   // Vive acá (no en una pantalla en particular) para que el aviso de versión
   // nueva se vea desde cualquier parte de la app, no sólo desde el Panel.
   const infoActualizacion = useActualizacion();
@@ -103,7 +106,7 @@ export default function Layout() {
   const recordatorios = useResumenRecordatorios();
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#f5f8fd]">
+    <div className="relative flex h-screen h-dvh overflow-hidden bg-[#f5f8fd]">
       {/* Un par de manchas de color bien tenues y quietas de fondo — le dan
           vida a la pantalla sin competir con el contenido, que va encima con
           z-10. pointer-events-none para que nunca interfieran con los clicks. */}
@@ -234,6 +237,16 @@ export default function Layout() {
               <p className="text-xs text-slate-400">{sesion && etiquetaRol(sesion.rol, sesion.genero)}</p>
             </div>
           </div>
+          <button
+            onClick={() => {
+              setMenuAbierto(false);
+              setCambiandoPassword(true);
+            }}
+            className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            Cambiar mi contraseña
+          </button>
           <button onClick={() => logout()} className="btn-secondary w-full">
             <LogOut className="h-4 w-4" />
             Cerrar sesión
@@ -247,6 +260,7 @@ export default function Layout() {
       </main>
 
       <AsistenteChat />
+      {cambiandoPassword && <CambiarMiPasswordModal onCerrar={() => setCambiandoPassword(false)} />}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, KeyRound, Pencil, Trash2 } from 'lucide-react';
+import { UserPlus, KeyRound, Pencil, Trash2, Info, Wand2, Copy, Check, CheckCircle2 } from 'lucide-react';
 import { etiquetaRol, type Genero, type Rol, type Usuario } from '@shared/types';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 import CampoContrasena from '../../components/CampoContrasena';
+import { copiarAlPortapapeles, generarClave } from '../../utils/claves';
 
 export default function UsuariosPage() {
   const { sesion, refrescarSesion } = useAuth();
@@ -34,8 +35,8 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl animate-slide-up p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto max-w-3xl animate-slide-up p-4 pb-24 sm:p-8">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
             Usuarios
@@ -43,27 +44,51 @@ export default function UsuariosPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">Quién puede entrar al sistema y con qué rol.</p>
         </div>
-        <button data-tour="usr-nuevo" className="btn-primary" onClick={() => setMostrarForm(true)}>
+        <button data-tour="usr-nuevo" className="btn-primary shrink-0" onClick={() => setMostrarForm(true)}>
           <UserPlus className="h-4 w-4" />
           Nuevo usuario
         </button>
       </div>
 
+      <p className="mb-5 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <span>
+          Las contraseñas se guardan cifradas, así que <strong>no se pueden ver</strong> (ni siquiera desde acá). Si
+          alguien se olvidó la suya, tocá <strong>Contraseña</strong> y ponele una nueva. Cada persona también puede
+          cambiar la suya desde el menú, en <strong>Cambiar mi contraseña</strong>.
+        </span>
+      </p>
+
       {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
       <div data-tour="usr-lista" className="card divide-y divide-slate-100">
         {usuarios.map((u) => (
-          <div key={u.id} className="flex items-center justify-between px-5 py-3">
-            <div>
-              <p className="font-medium text-slate-800">{u.nombre}</p>
-              <p className="text-xs text-slate-400">
+          <div
+            key={u.id}
+            className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+          >
+            <div className="min-w-0">
+              <p className="flex flex-wrap items-center gap-x-2 font-medium text-slate-800">
+                {u.nombre}
+                {u.id === sesion?.id && (
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-600">
+                    Sos vos
+                  </span>
+                )}
+                {!u.activo && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                    Desactivada
+                  </span>
+                )}
+              </p>
+              <p className="break-all text-xs text-slate-400">
                 @{u.usuario} · {etiquetaRol(u.rol, u.genero)}
               </p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <button
                 onClick={() => setEditando(u)}
-                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-600"
+                className="flex items-center gap-1.5 py-1 text-sm text-slate-500 hover:text-brand-600"
                 title="Editar datos"
               >
                 <Pencil className="h-4 w-4" />
@@ -71,14 +96,14 @@ export default function UsuariosPage() {
               </button>
               <button
                 onClick={() => setReseteando(u)}
-                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-600"
-                title="Cambiar contraseña"
+                className="flex items-center gap-1.5 py-1 text-sm text-slate-500 hover:text-brand-600"
+                title="Poner una contraseña nueva"
               >
                 <KeyRound className="h-4 w-4" />
                 Contraseña
               </button>
               <label
-                className="flex items-center gap-2 text-sm text-slate-500"
+                className="flex items-center gap-2 py-1 text-sm text-slate-500"
                 title={u.id === sesion?.id ? 'No podés desactivar tu propia cuenta mientras la estás usando' : undefined}
               >
                 <input
@@ -100,10 +125,11 @@ export default function UsuariosPage() {
               {u.id !== sesion?.id && (
                 <button
                   onClick={() => eliminar(u)}
-                  className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-red-600"
+                  className="flex items-center gap-1.5 py-1 text-sm text-slate-400 hover:text-red-600"
                   title="Eliminar usuario"
                 >
                   <Trash2 className="h-4 w-4" />
+                  <span className="sm:hidden">Eliminar</span>
                 </button>
               )}
             </div>
@@ -134,12 +160,56 @@ export default function UsuariosPage() {
         />
       )}
 
-      {reseteando && (
-        <ResetPasswordModal
-          usuario={reseteando}
-          onCerrar={() => setReseteando(null)}
-          onListo={() => setReseteando(null)}
-        />
+      {reseteando && <ResetPasswordModal usuario={reseteando} onCerrar={() => setReseteando(null)} />}
+    </div>
+  );
+}
+
+// Los cuadros de esta pantalla: se pueden desplazar si el teclado del celular
+// les saca lugar.
+const CAJA_MODAL =
+  'max-h-[90dvh] w-full max-w-sm animate-scale-in overflow-y-auto rounded-xl bg-white shadow-xl';
+
+// "Generar una" + cómo queda a la vista: para no tener que inventar una
+// contraseña, y poder leerla o copiarla antes de pasársela a la persona.
+function GeneradorDeClave({ valor, onGenerar }: { valor: string; onGenerar: (clave: string) => void }) {
+  const [generada, setGenerada] = useState<string | null>(null);
+  const [copiada, setCopiada] = useState(false);
+
+  async function copiar() {
+    if (!generada) return;
+    setCopiada(await copiarAlPortapapeles(generada));
+    setTimeout(() => setCopiada(false), 2000);
+  }
+
+  const mostrar = generada !== null && valor === generada;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          const nueva = generarClave();
+          setGenerada(nueva);
+          onGenerar(nueva);
+        }}
+        className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:underline"
+      >
+        <Wand2 className="h-3.5 w-3.5" />
+        Generar una contraseña
+      </button>
+      {mostrar && (
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-brand-50 px-3 py-2">
+          <code className="select-all font-mono text-base font-semibold tracking-wide text-brand-800">{generada}</code>
+          <button
+            type="button"
+            onClick={copiar}
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-white"
+          >
+            {copiada ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiada ? 'Copiada' : 'Copiar'}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -177,7 +247,7 @@ function EditarUsuarioModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+      <div className={CAJA_MODAL}>
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Editar usuario</h2>
         </div>
@@ -192,6 +262,9 @@ function EditarUsuarioModal({
               className="input"
               value={nombreUsuario}
               onChange={(e) => setNombreUsuario(e.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
             />
           </div>
@@ -229,18 +302,13 @@ function EditarUsuarioModal({
   );
 }
 
-function ResetPasswordModal({
-  usuario,
-  onCerrar,
-  onListo,
-}: {
-  usuario: Usuario;
-  onCerrar: () => void;
-  onListo: () => void;
-}) {
+function ResetPasswordModal({ usuario, onCerrar }: { usuario: Usuario; onCerrar: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  // Cuando ya se guardó: la contraseña queda a la vista para pasársela a la persona.
+  const [guardada, setGuardada] = useState<string | null>(null);
+  const [copiada, setCopiada] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -248,7 +316,7 @@ function ResetPasswordModal({
     setError(null);
     try {
       await window.api.usuarios.resetPassword(usuario.id, password);
-      onListo();
+      setGuardada(password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cambiar la contraseña');
     } finally {
@@ -256,35 +324,75 @@ function ResetPasswordModal({
     }
   }
 
+  async function copiar() {
+    if (!guardada) return;
+    setCopiada(await copiarAlPortapapeles(guardada));
+    setTimeout(() => setCopiada(false), 2000);
+  }
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+      <div className={CAJA_MODAL}>
         <div className="border-b border-slate-200 px-5 py-4">
-          <h2 className="font-semibold text-slate-800">Nueva contraseña para {usuario.nombre}</h2>
+          <h2 className="font-semibold text-slate-800">
+            {guardada ? 'Contraseña cambiada' : `Nueva contraseña para ${usuario.nombre}`}
+          </h2>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
-          <div>
-            <label className="label">Contraseña nueva</label>
-            <CampoContrasena
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={4}
-              required
-              autoFocus
-            />
-          </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary" onClick={onCerrar}>
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary" disabled={guardando}>
-              {guardando ? 'Guardando...' : 'Cambiar'}
+        {guardada ? (
+          <div className="space-y-4 px-5 py-5 text-center">
+            <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
+            <div>
+              <p className="text-sm text-slate-500">La contraseña nueva de {usuario.nombre} es:</p>
+              <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-brand-50 px-3 py-3">
+                <code className="select-all break-all text-left font-mono text-lg font-semibold tracking-wide text-brand-800">
+                  {guardada}
+                </code>
+                <button
+                  type="button"
+                  onClick={copiar}
+                  className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-white"
+                >
+                  {copiada ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiada ? 'Copiada' : 'Copiar'}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400">
+              Anotala o pasásela ahora: queda guardada cifrada y no se puede volver a ver. Si estaba con la sesión
+              abierta en algún lado, va a tener que entrar de nuevo.
+            </p>
+            <button type="button" className="btn-primary w-full" onClick={onCerrar}>
+              Listo
             </button>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+            <div>
+              <label className="label">Contraseña nueva</label>
+              <CampoContrasena
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                minLength={4}
+                required
+                autoFocus
+              />
+              <GeneradorDeClave valor={password} onGenerar={setPassword} />
+            </div>
+
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-secondary" onClick={onCerrar}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary" disabled={guardando}>
+                {guardando ? 'Guardando...' : 'Cambiar'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>,
     document.body
@@ -316,7 +424,7 @@ function NuevoUsuarioModal({ onCerrar, onCreado }: { onCerrar: () => void; onCre
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+      <div className={CAJA_MODAL}>
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Nuevo usuario</h2>
         </div>
@@ -327,16 +435,26 @@ function NuevoUsuarioModal({ onCerrar, onCreado }: { onCerrar: () => void; onCre
           </div>
           <div>
             <label className="label">Usuario (para iniciar sesión)</label>
-            <input className="input" value={usuario} onChange={(e) => setUsuario(e.target.value)} required />
+            <input
+              className="input"
+              value={usuario}
+              onChange={(e) => setUsuario(e.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+            />
           </div>
           <div>
             <label className="label">Contraseña</label>
             <CampoContrasena
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               minLength={4}
               required
             />
+            <GeneradorDeClave valor={password} onGenerar={setPassword} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

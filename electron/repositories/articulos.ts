@@ -110,6 +110,43 @@ function construirMatchBusqueda(filtro: ArticulosFiltro): Record<string, unknown
   return match;
 }
 
+// Controla y limpia lo que se quiere guardar de un artículo: sin descripción, o
+// con un precio negativo o que no es un número, el artículo quedaba roto y
+// después falla al venderlo o al sumar el inventario.
+//
+// Al editar ("previo" = cómo está guardado ahora): un valor que ya estaba así en
+// la base (por ejemplo un stock viejo que quedó mal) no impide corregir el
+// nombre o el precio; sólo se rechaza lo que se está cambiando a algo inválido.
+function limpiarInputArticulo(input: ArticuloInput, previo?: Articulo): ArticuloInput {
+  if (!input || typeof input !== 'object') throw new Error('Faltan los datos del artículo');
+  const descripcion = typeof input.descripcion === 'string' ? input.descripcion.trim() : '';
+  if (!descripcion) throw new Error('Escribí la descripción del artículo');
+  const unidad = input.unidad ?? 'unidad';
+  if (unidad !== 'unidad' && unidad !== 'peso') throw new Error('La unidad de venta no es válida');
+
+  const numero = (valor: unknown, etiqueta: string, obligatorio: boolean, valorPrevio?: number): number => {
+    if ((valor === undefined || valor === null || valor === '') && !obligatorio) return 0;
+    if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0) {
+      if (previo && typeof valor === 'number' && Object.is(valor, valorPrevio)) return valor;
+      throw new Error(`El ${etiqueta} tiene que ser un número igual o mayor a cero`);
+    }
+    return valor;
+  };
+  return {
+    ...input,
+    descripcion,
+    unidad,
+    precioCosto: numero(input.precioCosto, 'precio de costo', false, previo?.precioCosto),
+    precioVenta: numero(input.precioVenta, 'precio de venta', true, previo?.precioVenta),
+    precioLista2: numero(input.precioLista2, 'precio de la lista 2', false, previo?.precioLista2),
+    precioLista3: numero(input.precioLista3, 'precio de la lista 3', false, previo?.precioLista3),
+    // Al editar el stock no se guarda (va por "Ajustar stock"): no se controla.
+    stock: previo ? input.stock : numero(input.stock, 'stock', false),
+    stockMinimo: numero(input.stockMinimo, 'stock mínimo', false, previo?.stockMinimo),
+    stockIdeal: numero(input.stockIdeal, 'stock ideal', false, previo?.stockIdeal),
+  };
+}
+
 export async function listArticulos(filtro: ArticulosFiltro = {}): Promise<Articulo[]> {
   const match = construirMatchBusqueda(filtro);
 
@@ -130,6 +167,7 @@ export async function listArticulos(filtro: ArticulosFiltro = {}): Promise<Artic
 }
 
 export async function getArticulo(id: string): Promise<Articulo | null> {
+  if (typeof id !== 'string' || !ObjectId.isValid(id)) return null;
   const docs = await coleccion()
     .aggregate<ArticuloDocConJoins>([{ $match: { _id: new ObjectId(id) } }, ...JOIN_STAGES])
     .toArray();
@@ -143,7 +181,8 @@ export async function buscarPorCodigo(codigo: string): Promise<Articulo | null> 
   return docs[0] ? mapDoc(docs[0]) : null;
 }
 
-export async function crearArticulo(input: ArticuloInput): Promise<Articulo> {
+export async function crearArticulo(inputRecibido: ArticuloInput): Promise<Articulo> {
+  const input = limpiarInputArticulo(inputRecibido);
   const ahora = new Date().toISOString();
   const doc: Omit<ArticuloDoc, '_id' | 'codigoBarras'> & { codigoBarras?: string } = {
     descripcion: input.descripcion,
@@ -232,7 +271,7 @@ export async function actualizarArticulo(
   if (!actual) {
     throw new Error('El artículo no existe');
   }
-  const combinado = combinarConCambiosAjenos(inputRecibido, original, actual);
+  const combinado = combinarConCambiosAjenos(limpiarInputArticulo(inputRecibido, actual), original, actual);
   // La utilidad se calcula acá con los precios que de verdad quedan (los del
   // formulario pueden haberse combinado con un cambio de otra persona).
   const input: ArticuloInput = {

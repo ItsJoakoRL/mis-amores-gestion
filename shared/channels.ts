@@ -61,6 +61,7 @@ export const Channels = {
   usuariosUpdate: 'usuarios:update',
   usuariosSetActivo: 'usuarios:setActivo',
   usuariosResetPassword: 'usuarios:resetPassword',
+  usuariosCambiarMiPassword: 'usuarios:cambiarMiPassword',
   usuariosEliminar: 'usuarios:eliminar',
 
   imagenesSeleccionar: 'imagenes:seleccionar',

@@ -40,6 +40,7 @@ import {
   actualizarUsuario,
   setUsuarioActivo,
   resetPassword,
+  cambiarPasswordPropia,
   eliminarUsuario,
 } from '../repositories/usuarios';
 import {
@@ -279,6 +280,14 @@ export async function iniciarServidorWeb(
   );
 
   // --- Sincronización entre PCs (ver sync/rutas.ts) ---
+  if (enNube) {
+    // Sumar una PC a la red le devuelve la clave de la red a quien entre con una
+    // cuenta de administradora: por internet no se ofrece (va primero para
+    // ganarle a la ruta de sync/rutas.ts).
+    app.post('/api/sync/unirse', (_req, res) => {
+      res.json({ ok: false, error: 'Esto no está disponible en el servidor de internet.' });
+    });
+  }
   if (sync) {
     registrarRutasSync(app, { ...sync, requiereAdmin: (req) => void requiereAdmin(req) });
   } else {
@@ -357,9 +366,11 @@ export async function iniciarServidorWeb(
   );
   app.get(
     '/api/articulos/:id/historial-precios',
-    ruta((req) => {
-      requiereSesion(req);
-      return historialPrecios((req.params.id as string));
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      const historial = await historialPrecios(req.params.id as string);
+      // Los cambios del precio de costo son sólo para la administradora.
+      return sesion.rol === 'admin' ? historial : historial.filter((c) => c.tipo !== 'costo');
     })
   );
   app.get(
@@ -492,9 +503,11 @@ export async function iniciarServidorWeb(
   // --- Dashboard ---
   app.get(
     '/api/dashboard/stats',
-    ruta((req) => {
-      requiereSesion(req);
-      return getDashboardStats();
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      const stats = await getDashboardStats();
+      // El valor del inventario a costo es sólo para la administradora.
+      return sesion.rol === 'admin' ? stats : { ...stats, valorInventarioCosto: 0 };
     })
   );
 
@@ -722,9 +735,20 @@ export async function iniciarServidorWeb(
   app.post(
     '/api/usuarios/:id/reset-password',
     ruta(async (req) => {
-      requiereAdmin(req);
+      const sesion = requiereAdmin(req);
+      const id = req.params.id as string;
       const password = req.body.password as string;
-      await resetPassword((req.params.id as string), password);
+      // Si se cambia la suya, esta sesión sigue abierta (las otras se cierran).
+      await resetPassword(id, password, sesion.id === id ? tokenDesdeHeader(req) : null);
+      return true;
+    })
+  );
+  app.post(
+    '/api/usuarios/mi-password',
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      const { actual, nueva } = (req.body ?? {}) as { actual?: string; nueva?: string };
+      await cambiarPasswordPropia(sesion.id, String(actual ?? ''), String(nueva ?? ''), tokenDesdeHeader(req));
       return true;
     })
   );
@@ -757,13 +781,23 @@ export async function iniciarServidorWeb(
   // Aviso en vivo: la pantalla (en un celular) se vuelve a cargar sola cuando
   // alguien, desde cualquier PC o celular, cambia algo. No lleva datos, sólo
   // el aviso de que hay algo nuevo para pedir.
+  // En internet no pide sesión (un EventSource no puede mandar el token), así
+  // que se pone un tope: nadie puede dejar abiertas miles de conexiones.
+  let conexionesEventos = 0;
+  const MAX_EVENTOS_NUBE = 100;
   app.get('/api/eventos', (req, res) => {
+    if (enNube && conexionesEventos >= MAX_EVENTOS_NUBE) {
+      res.status(503).end();
+      return;
+    }
+    conexionesEventos += 1;
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.flushHeaders();
     res.write('retry: 3000\n\n');
     const latido = setInterval(() => res.write(': latido\n\n'), 25_000);
     const parar = escucharCambios(() => res.write('event: cambio\ndata: 1\n\n'));
     req.on('close', () => {
+      conexionesEventos -= 1;
       clearInterval(latido);
       parar();
     });

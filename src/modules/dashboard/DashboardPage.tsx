@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const saludo = horaSaludo < 12 ? 'Buen día' : horaSaludo < 20 ? 'Buenas tardes' : 'Buenas noches';
 
   return (
-    <div className="mx-auto max-w-6xl animate-slide-up p-8">
+    <div className="mx-auto max-w-6xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">

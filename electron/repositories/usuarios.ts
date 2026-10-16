@@ -6,10 +6,15 @@ import type { CuentaPublica, Genero, Rol, Usuario } from '../../shared/types';
 
 const LARGO_MINIMO_PASSWORD = 4;
 
-function validarLargoPassword(password: string): void {
-  if (password.length < LARGO_MINIMO_PASSWORD) {
+function validarLargoPassword(password: unknown): asserts password is string {
+  if (typeof password !== 'string' || password.length < LARGO_MINIMO_PASSWORD) {
     throw new Error(`La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres`);
   }
+}
+
+function validarRolYGenero(rol: unknown, genero: unknown): void {
+  if (rol !== 'admin' && rol !== 'empleado') throw new Error('El rol no es válido');
+  if (genero !== 'F' && genero !== 'M') throw new Error('El género no es válido');
 }
 
 // Freno contra fuerza bruta: después de varios intentos fallidos seguidos
@@ -47,11 +52,33 @@ function mapDoc(doc: UsuarioDoc): Usuario {
   };
 }
 
+// El inicio de sesión no distingue mayúsculas ("Ana" entra como "ana"), así que
+// dos cuentas que sólo difieran en eso se confundirían: no se permiten.
+async function hayOtroConElMismoNombre(usuario: string, exceptoId?: string): Promise<boolean> {
+  const filtro: Record<string, unknown> = { usuario };
+  if (exceptoId && ObjectId.isValid(exceptoId)) filtro._id = { $ne: new ObjectId(exceptoId) };
+  const otro = await coleccion().findOne(filtro, { collation: { locale: 'es', strength: 2 } });
+  return otro !== null;
+}
+
 function esErrorDuplicado(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
+// Busca la cuenta por su nombre de usuario. Primero el nombre tal cual; si no
+// está, sin importar mayúsculas: los teclados de celular suelen poner la primera
+// letra en mayúscula ("Daniela" en vez de "daniela") y dejaban afuera a quien
+// tenía la contraseña bien puesta.
+async function buscarPorNombreDeUsuario(usuario: string): Promise<UsuarioDoc | null> {
+  const limpio = usuario.trim();
+  if (!limpio) return null;
+  const exacto = await coleccion().findOne({ usuario: limpio });
+  if (exacto) return exacto;
+  return coleccion().findOne({ usuario: limpio }, { collation: { locale: 'es', strength: 2 } });
+}
+
 export async function verificarCredenciales(usuario: string, password: string): Promise<Usuario | null> {
+  if (typeof usuario !== 'string' || typeof password !== 'string') return null;
   const clave = usuario.trim().toLowerCase();
   const estado = intentosFallidos.get(clave);
   if (estado && estado.bloqueadoHasta > Date.now()) {
@@ -59,7 +86,7 @@ export async function verificarCredenciales(usuario: string, password: string): 
     throw new Error(`Demasiados intentos fallidos. Probá de nuevo en ${minutos} minuto${minutos === 1 ? '' : 's'}.`);
   }
 
-  const doc = await coleccion().findOne({ usuario });
+  const doc = await buscarPorNombreDeUsuario(usuario);
   const ok = doc && doc.activo && bcrypt.compareSync(password, doc.passwordHash);
 
   if (!ok) {
@@ -108,8 +135,11 @@ export async function crearUsuario(
   genero: Genero
 ): Promise<Usuario> {
   validarLargoPassword(password);
-  const nombreLimpio = nombre.trim();
-  const usuarioLimpio = usuario.trim();
+  validarRolYGenero(rol, genero);
+  const nombreLimpio = String(nombre ?? '').trim();
+  const usuarioLimpio = String(usuario ?? '').trim();
+  if (!nombreLimpio || !usuarioLimpio) throw new Error('Completá el nombre y el usuario');
+  if (await hayOtroConElMismoNombre(usuarioLimpio)) throw new Error('Ya existe un usuario con ese nombre de usuario');
   const passwordHash = bcrypt.hashSync(password, 10);
   try {
     const result = await coleccion().insertOne({
@@ -155,11 +185,15 @@ export async function actualizarUsuario(
   rol: Rol,
   genero: Genero
 ): Promise<Usuario> {
+  validarRolYGenero(rol, genero);
+  if (!ObjectId.isValid(id)) throw new Error('El usuario no existe');
   if (rol !== 'admin' && (await esUnicaAdminActiva(id))) {
     throw new Error('No se le puede sacar el rol de administradora: es la única activa. Creá otra admin antes.');
   }
-  const nombreLimpio = nombre.trim();
-  const usuarioLimpio = usuario.trim();
+  const nombreLimpio = String(nombre ?? '').trim();
+  const usuarioLimpio = String(usuario ?? '').trim();
+  if (!nombreLimpio || !usuarioLimpio) throw new Error('Completá el nombre y el usuario');
+  if (await hayOtroConElMismoNombre(usuarioLimpio, id)) throw new Error('Ya existe un usuario con ese nombre de usuario');
   try {
     await coleccion().updateOne(
       { _id: new ObjectId(id) },
@@ -189,10 +223,42 @@ export async function setUsuarioActivo(id: string, activo: boolean): Promise<voi
   if (!activo) invalidarTokensDeUsuario(id);
 }
 
-export async function resetPassword(id: string, password: string): Promise<void> {
+// Cambio de contraseña hecho por una administradora. La persona tiene que
+// volver a entrar con la nueva: las sesiones que tuviera abiertas se cierran, y
+// si venía bloqueada por intentos fallidos, se le destraba.
+export async function resetPassword(id: string, password: string, conservarToken?: string | null): Promise<void> {
   validarLargoPassword(password);
+  if (!ObjectId.isValid(id)) throw new Error('El usuario no existe');
+  const doc = await coleccion().findOne({ _id: new ObjectId(id) });
+  if (!doc) throw new Error('El usuario no existe');
   const passwordHash = bcrypt.hashSync(password, 10);
-  await coleccion().updateOne({ _id: new ObjectId(id) }, { $set: { passwordHash } });
+  await coleccion().updateOne({ _id: doc._id }, { $set: { passwordHash } });
+  intentosFallidos.delete(doc.usuario.trim().toLowerCase());
+  // "conservarToken": una administradora que se cambia la suya desde el celular
+  // no se queda sin sesión (se cierran las demás).
+  invalidarTokensDeUsuario(id, conservarToken);
+}
+
+// Cada persona cambia su propia contraseña: tiene que poner la actual (si no,
+// cualquiera con el celular de otra en la mano se la podría cambiar). Pasa por
+// el mismo freno de intentos que el inicio de sesión.
+export async function cambiarPasswordPropia(
+  id: string,
+  actual: string,
+  nueva: string,
+  conservarToken?: string | null
+): Promise<void> {
+  validarLargoPassword(nueva);
+  if (typeof actual !== 'string' || actual.length === 0) throw new Error('Escribí tu contraseña actual');
+  if (!ObjectId.isValid(id)) throw new Error('El usuario no existe');
+  const doc = await coleccion().findOne({ _id: new ObjectId(id) });
+  if (!doc || !doc.activo) throw new Error('El usuario no existe');
+  const ok = await verificarCredenciales(doc.usuario, actual);
+  if (!ok) throw new Error('La contraseña actual no es correcta');
+  if (actual === nueva) throw new Error('La contraseña nueva tiene que ser distinta de la actual');
+  const passwordHash = bcrypt.hashSync(nueva, 10);
+  await coleccion().updateOne({ _id: doc._id }, { $set: { passwordHash } });
+  invalidarTokensDeUsuario(id, conservarToken);
 }
 
 // Borrado definitivo — a diferencia de desactivar (que sólo le bloquea el

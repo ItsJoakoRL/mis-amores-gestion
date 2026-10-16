@@ -120,7 +120,7 @@ export default function ReportesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl animate-slide-up p-8">
+    <div className="mx-auto max-w-6xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">

@@ -159,7 +159,7 @@ export default function ClientesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl animate-slide-up p-8">
+    <div className="mx-auto max-w-4xl animate-slide-up p-4 pb-24 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-1.5 text-2xl font-semibold text-slate-800">
@@ -210,16 +210,18 @@ export default function ClientesPage() {
 
       {ultimosFiados.length > 0 && (
         <div data-tour="cli-ultimos-fiados" className="card mb-6 overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-3">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-slate-200 px-4 py-3 sm:px-5">
             <Clock className="h-4 w-4 text-slate-400" />
             <h2 className="text-sm font-semibold text-slate-700">Últimos fiados</h2>
-            <p className="text-xs text-slate-400">Para que se vea quién anotó qué, sin entrar cliente por cliente.</p>
+            <p className="basis-full text-xs text-slate-400 sm:basis-auto">
+              Para que se vea quién anotó qué, sin entrar cliente por cliente.
+            </p>
           </div>
           <div className="divide-y divide-slate-100">
             {ultimosFiados.map((v) => (
               <div
                 key={v.id}
-                className={`flex w-full items-center justify-between px-5 py-2.5 transition-colors ${v.pagado ? 'opacity-60' : ''}`}
+                className={`flex w-full items-center justify-between px-4 py-2.5 transition-colors sm:px-5 ${v.pagado ? 'opacity-60' : ''}`}
               >
                 <button
                   onClick={() => {
@@ -261,7 +263,7 @@ export default function ClientesPage() {
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-4 py-3 font-medium">Cliente</th>
-              <th className="px-4 py-3 font-medium">Último fiado</th>
+              <th className="hidden px-4 py-3 font-medium sm:table-cell">Último fiado</th>
               <th className="px-4 py-3 font-medium">Debe</th>
               {esAdmin && <th className="px-4 py-3"></th>}
             </tr>
@@ -304,8 +306,13 @@ export default function ClientesPage() {
                         </span>
                       )}
                     </span>
+                    {c.ultimoFiado && (
+                      <span className="block text-xs font-normal text-slate-400 sm:hidden">
+                        Último fiado: {new Date(c.ultimoFiado).toLocaleDateString('es-AR')}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">
+                  <td className="hidden px-4 py-3 text-slate-500 sm:table-cell">
                     {c.ultimoFiado ? new Date(c.ultimoFiado).toLocaleDateString('es-AR') : '—'}
                   </td>
                   <td className="px-4 py-3">
@@ -571,24 +578,29 @@ function ClienteDetalleModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">{cliente.nombre}</h2>
-            <p className="text-sm text-slate-500">
-              Debe:{' '}
-              <span className={saldoActual > 0 ? 'font-semibold text-amber-600' : 'font-semibold text-slate-500'}>
-                {formatearMoneda(saldoActual)}
-              </span>
-            </p>
-            {cliente.nota && (
-              <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-400">
-                <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {cliente.nota}
+      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-slate-800">{cliente.nombre}</h2>
+              <p className="text-sm text-slate-500">
+                Debe:{' '}
+                <span className={saldoActual > 0 ? 'font-semibold text-amber-600' : 'font-semibold text-slate-500'}>
+                  {formatearMoneda(saldoActual)}
+                </span>
               </p>
-            )}
+              {cliente.nota && (
+                <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-400">
+                  <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {cliente.nota}
+                </p>
+              )}
+            </div>
+            <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 sm:hidden">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               className="btn-secondary"
               onClick={() => navigate(`/recordatorios?cliente=${cliente.id}`)}
@@ -600,7 +612,7 @@ function ClienteDetalleModal({
             <button className="btn-primary" onClick={() => setMostrarPago(true)}>
               Registrar pago
             </button>
-            <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+            <button onClick={onCerrar} className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 sm:block">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -612,7 +624,61 @@ function ClienteDetalleModal({
           ) : movimientos.length === 0 ? (
             <p className="px-6 py-8 text-center text-slate-400">Todavía no hay movimientos.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Celular: cada movimiento en su propia tarjeta. */}
+            <ul className="divide-y divide-slate-100 sm:hidden">
+              {movimientos.map((m) => (
+                <li key={`${m.tipo}-${m.id}`} className={`px-4 py-3 ${m.pagado ? 'opacity-60' : ''}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`text-sm text-slate-800 ${m.pagado ? 'line-through' : ''}`}>
+                        {m.descripcion}
+                        {m.tipo === 'pago' && m.metodoPago && (
+                          <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            {ETIQUETA_METODO[m.metodoPago]}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {formatearFechaHoraCorta(m.fecha)}
+                        {m.usuarioNombre ? ` · ${m.usuarioNombre}` : ''}
+                      </p>
+                    </div>
+                    <p
+                      className={`shrink-0 font-semibold ${m.pagado ? 'line-through' : ''} ${
+                        m.tipo === 'pago' ? 'text-emerald-600' : 'text-slate-800'
+                      }`}
+                    >
+                      {m.tipo === 'pago' ? '−' : '+'}
+                      {formatearMoneda(m.monto)}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    {m.tipo === 'venta' ? (
+                      <button
+                        onClick={() => toggleMovimientoPagado(m)}
+                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                          m.pagado ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {m.pagado ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                        {m.pagado ? 'Pagado' : 'Pendiente'}
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      onClick={() => eliminarMovimiento(m)}
+                      className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                      title={`Borrar ${ETIQUETA_TIPO[m.tipo]}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto sm:block">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
                 <tr>
@@ -677,6 +743,7 @@ function ClienteDetalleModal({
               </tbody>
             </table>
             </div>
+            </>
           )}
         </div>
       </div>
