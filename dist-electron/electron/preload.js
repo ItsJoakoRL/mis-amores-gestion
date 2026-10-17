@@ -145,6 +145,7 @@ const escritorio = {
     borrarAvisos: () => invoke(channels_1.Channels.escritorioBorrarAvisos),
     olvidarPc: (idPc) => invoke(channels_1.Channels.escritorioOlvidarPc, idPc),
     conectarNube: (direccion) => invoke(channels_1.Channels.escritorioConectarNube, direccion),
+    probarServidor: (direccion) => invoke(channels_1.Channels.escritorioProbarServidor, direccion),
     reintentar: () => invoke(channels_1.Channels.escritorioReintentar),
 };
 electron_1.contextBridge.exposeInMainWorld('escritorio', escritorio);

@@ -22,6 +22,7 @@ const diario_1 = require("./diario");
 const modelo_1 = require("./modelo");
 const seguridad_1 = require("./seguridad");
 const pedidoFirmado_1 = require("./pedidoFirmado");
+const versiones_1 = require("../../shared/versiones");
 class ErrorDeSync extends Error {
     constructor(mensaje, tipo = 'otro') {
         super(mensaje);
@@ -53,6 +54,8 @@ class Motor {
         // Con qué PCs la revisión no logró dejar todo igual: cuándo volver a probar.
         this.sinResolver = new Map();
         this.fotosPendientes = new Map();
+        // Cuándo se le preguntó por última vez la versión a cada PC.
+        this.versionConsultada = new Map();
         // =================================================================
         // Encontrar PCs nuevas de la misma red
         // =================================================================
@@ -135,6 +138,7 @@ class Motor {
             direccion: p.direccion,
             enLinea: false,
             ultimaVez: null,
+            version: null,
             pendientes: 0,
             error: null,
         });
@@ -309,10 +313,27 @@ class Motor {
             direccion: par.direccion,
             enLinea: false,
             ultimaVez: null,
+            version: null,
             pendientes: 0,
             error: null,
         };
         this.estados.set(par.idPc, { ...actual, nombre: par.nombre, direccion: par.direccion, ...cambios });
+    }
+    /** Le pregunta a esa PC qué versión de Mis Amores tiene (así se ve en
+     * Configuración cuando una quedó desactualizada). Sólo de a ratos. */
+    async consultarVersion(par, forzar = false) {
+        const ultima = this.versionConsultada.get(par.idPc) ?? 0;
+        const sabida = this.estados.get(par.idPc)?.version ?? null;
+        if (Date.now() - ultima < (0, versiones_1.esperaParaPreguntarVersion)(sabida, this.o.yo().version, forzar))
+            return;
+        this.versionConsultada.set(par.idPc, Date.now());
+        try {
+            const h = await this.hola(par.direccion, 10000);
+            this.anotar(par, { version: typeof h.version === 'string' ? h.version : null });
+        }
+        catch {
+            // Se vuelve a intentar en un rato.
+        }
     }
     async correr(bucle) {
         let fallos = 0;
@@ -349,6 +370,9 @@ class Motor {
                 }
                 await this.guardarCursor(bucle.par.idPc, Math.max(r.hasta, cursor.seq), r.epoca);
                 alDia = r.hasta >= r.maxSeq;
+                // Si estaba caída o recién se la agregó, se acaba de (re)conectar: puede
+                // haberse reiniciado para actualizarse, así que se le vuelve a preguntar la versión.
+                const recienConectada = fallos > 0 || this.estados.get(bucle.par.idPc)?.enLinea !== true;
                 fallos = 0;
                 // Sin avance pero con algo todavía escribiéndose en la otra PC: un respiro.
                 if (r.items.length === 0 && r.hasta <= cursor.seq && r.maxSeq > r.hasta)
@@ -359,6 +383,7 @@ class Motor {
                     pendientes: Math.max(0, r.maxSeq - r.hasta),
                     error: null,
                 });
+                void this.consultarVersion(bucle.par, recienConectada);
                 void this.bajarFotosPendientes();
             }
             catch (err) {

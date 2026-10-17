@@ -29,6 +29,8 @@ const diario_1 = require("./sync/diario");
 const aplicar_1 = require("./sync/aplicar");
 const motor_1 = require("./sync/motor");
 const nube_1 = require("./nube");
+const despertador_1 = require("./despertador");
+const escaneoRed_1 = require("./escaneoRed");
 const reloj_1 = require("./sync/reloj");
 const channels_1 = require("../shared/channels");
 // Diagnóstico temporal: si algo revienta antes de que haya ventana (y por lo
@@ -81,6 +83,7 @@ if (!esInstanciaUnica) {
 }
 let infoServidorWeb = null;
 let detenerMdns = null;
+let detenerDespertador = null;
 let detenerServidorWeb = null;
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
@@ -489,6 +492,9 @@ function infoPc() {
         // Las versiones anteriores distinguían "principal" de "conectada".
         modo: 'principal',
         idRed: miIdRed() ?? undefined,
+        // Sólo en el servidor de internet: si se durmiera, el proceso arrancaría de
+        // nuevo y esto volvería a cero (así se comprueba que no se duerme).
+        segundosEncendido: (0, nube_1.esModoNube)() ? Math.round(process.uptime()) : undefined,
     };
 }
 // "192.168.1.50" -> "192.168.1.50:4000" (si no se escribió el puerto, va el de siempre).
@@ -579,8 +585,15 @@ function consultarMdns(esperaMs) {
 }
 // Las direcciones donde puede haber otra PC con Mis Amores.
 async function direccionesCandidatas() {
-    const ips = await consultarMdns(2500);
-    const direcciones = new Set(ips.map((ip) => `${ip}:4000`));
+    // Dos caminos a la vez: el aviso "misamores.local" (rápido, pero muchos routers
+    // y redes de escuela no lo dejan pasar) y preguntarle directo a cada dirección
+    // de la red de la casa (ver escaneoRed.ts). Un servidor de internet no barre
+    // nada: no tiene "la red de al lado".
+    const [ips, barridas] = await Promise.all([
+        consultarMdns(2500),
+        modoServidor ? Promise.resolve([]) : (0, escaneoRed_1.escanearRedLocal)((0, httpServer_1.obtenerIpsLan)(), httpServer_1.PUERTO).catch(() => []),
+    ]);
+    const direcciones = new Set([...ips.map((ip) => `${ip}:4000`), ...barridas]);
     // En desarrollo, las PCs de prueba escuchan en otros puertos.
     if (!electron_1.app.isPackaged) {
         const extra = (process.env.MIS_AMORES_PUERTOS_BUSQUEDA ?? '')
@@ -880,6 +893,30 @@ async function conectarServidorNube(texto) {
     logCrash('red', `esta PC se conectó al servidor de internet (${direccion})`);
     return { direccion };
 }
+// ¿Anda el servidor de internet? Es una pregunta aparte de si ESTA PC está
+// conectada con él para sincronizar: la página puede andar perfecto y aun así
+// esta PC no poder hablar con ella (por ejemplo, si tiene otra clave de red).
+async function probarServidorWeb(texto) {
+    const direccion = (0, nube_1.normalizarUrlNube)(texto);
+    try {
+        const info = await pedirJson(`${direccion}/api/sistema/info`, { esperaMs: 25000 });
+        const mia = miIdRed();
+        return {
+            funciona: true,
+            version: typeof info.version === 'string' ? info.version : null,
+            mismaRed: mia && info.idRed ? info.idRed === mia : null,
+            error: null,
+        };
+    }
+    catch (err) {
+        return {
+            funciona: false,
+            version: null,
+            mismaRed: null,
+            error: err instanceof Error ? err.message : 'No contesta',
+        };
+    }
+}
 // Esta PC deja de sincronizar con las demás: se queda con sus datos, como
 // una red de una sola PC (con una clave nueva, así las otras no la buscan).
 async function salirDeLaRed() {
@@ -906,12 +943,13 @@ async function estadoRed() {
         idPc: config.idPc,
         nombrePc: os_1.default.hostname(),
         versionApp: electron_1.app.getVersion(),
-        pcs: (m?.pares ?? config.pares.map((p) => ({ ...p, enLinea: false, ultimaVez: null, pendientes: 0, error: null }))).map((p) => ({
+        pcs: (m?.pares ?? config.pares.map((p) => ({ ...p, enLinea: false, ultimaVez: null, version: null, pendientes: 0, error: null }))).map((p) => ({
             idPc: p.idPc,
             nombrePc: 'nombre' in p ? p.nombre : '',
             direccion: p.direccion,
             enLinea: p.enLinea,
             ultimaVez: p.ultimaVez,
+            version: p.version,
             pendientes: p.pendientes,
             error: p.error,
         })),
@@ -1154,6 +1192,7 @@ function registrarIpcEscritorio() {
         return true;
     }));
     electron_1.ipcMain.handle(channels_1.Channels.escritorioConectarNube, (_e, direccion) => wrapEscritorio(() => conectarServidorNube(String(direccion ?? ''))));
+    electron_1.ipcMain.handle(channels_1.Channels.escritorioProbarServidor, (_e, direccion) => wrapEscritorio(() => probarServidorWeb(String(direccion ?? ''))));
     electron_1.ipcMain.handle(channels_1.Channels.escritorioBorrarAvisos, () => wrapEscritorio(async () => {
         await diario?.borrarAvisos();
         return true;
@@ -1269,6 +1308,10 @@ async function arrancar() {
         const primeraIp = (0, httpServer_1.obtenerIpsLan)()[0];
         if (primeraIp && !modoServidor)
             detenerMdns = (0, mdns_1.iniciarMdns)(primeraIp);
+        // El plan gratuito de Render apaga el servidor a los 15 minutos sin visitas:
+        // con las PCs apagadas se visita solo para que el celular ande siempre.
+        if ((0, nube_1.esModoNube)())
+            detenerDespertador = (0, despertador_1.iniciarDespertador)({ registrar: (m) => logCrash('despertador', m) });
     }
     catch (err) {
         // Si el puerto está ocupado o falla por lo que sea, la app de escritorio
@@ -1328,6 +1371,7 @@ electron_1.app.on('before-quit', () => {
         clearInterval(temporizadorMantenimiento);
     motor?.detener();
     detenerMdns?.();
+    detenerDespertador?.();
     // Sin await a propósito: before-quit no espera promesas, y closeAllConnections
     // adentro de detenerServidorWeb ya corta las conexiones abiertas de una,
     // así el puerto no queda ocupado ni el cierre del proceso esperando a que
