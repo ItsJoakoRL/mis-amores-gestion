@@ -7,6 +7,7 @@ exports.setClienteActivo = setClienteActivo;
 exports.registrarPago = registrarPago;
 exports.eliminarPago = eliminarPago;
 exports.eliminarAjuste = eliminarAjuste;
+exports.estadoDeCuenta = estadoDeCuenta;
 exports.historialCliente = historialCliente;
 const mongodb_1 = require("mongodb");
 const database_1 = require("../db/database");
@@ -187,6 +188,26 @@ async function eliminarAjuste(id) {
     await (0, database_1.getDb)()
         .collection('ajustes_cuenta')
         .deleteOne({ _id: new mongodb_1.ObjectId(id) });
+}
+// Lo que debe un cliente para mandárselo: lo que quedó anotado sin pagar (un
+// fiado ya marcado como pagado no cuenta, igual que en el saldo de la lista),
+// los pagos que hizo, y el saldo que resulta. Devuelve null si el cliente no
+// existe o ya no está en la lista.
+async function estadoDeCuenta(clienteId) {
+    if (typeof clienteId !== 'string' || !mongodb_1.ObjectId.isValid(clienteId))
+        return null;
+    const cliente = await coleccion().findOne({ _id: new mongodb_1.ObjectId(clienteId), activo: true });
+    if (!cliente)
+        return null;
+    const movimientos = (await historialCliente(clienteId)).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+    const pendientes = movimientos
+        .filter((m) => m.tipo !== 'pago' && !(m.tipo === 'venta' && m.pagado))
+        .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+    const pagos = movimientos
+        .filter((m) => m.tipo === 'pago')
+        .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+    const saldo = redondearPesos(pendientes.reduce((acc, l) => acc + l.monto, 0) - pagos.reduce((acc, l) => acc + l.monto, 0));
+    return { clienteId, nombre: cliente.nombre, fecha: new Date().toISOString(), saldo, pendientes, pagos };
 }
 // El historial de cuenta de un cliente: cada compra fiada suma, cada pago
 // resta, todo mezclado por fecha para ver el ida y vuelta completo.

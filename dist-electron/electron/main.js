@@ -1197,6 +1197,23 @@ function registrarIpcEscritorio() {
         await diario?.borrarAvisos();
         return true;
     }));
+    // Abrir WhatsApp en el navegador (para mandar el estado de cuenta de un cliente).
+    // Sólo se abre eso: una pantalla comprometida no puede usar esto para abrir
+    // cualquier cosa en la PC.
+    electron_1.ipcMain.handle(channels_1.Channels.escritorioAbrirEnlace, (_e, url) => wrapEscritorio(async () => {
+        let destino;
+        try {
+            destino = new URL(String(url));
+        }
+        catch {
+            throw new Error('Esa dirección no es válida.');
+        }
+        if (destino.protocol !== 'https:' || !['wa.me', 'api.whatsapp.com'].includes(destino.hostname)) {
+            throw new Error('Sólo se pueden abrir enlaces de WhatsApp desde acá.');
+        }
+        await electron_1.shell.openExternal(destino.toString());
+        return true;
+    }));
     electron_1.ipcMain.handle(channels_1.Channels.escritorioReintentar, () => wrapEscritorio(async () => {
         if (estadoArranque !== 'esperando')
             return true;
@@ -1259,7 +1276,7 @@ async function arrancar() {
         estadoArranque = 'esperando';
         return true;
     }
-    (0, handlers_1.registrarHandlers)();
+    (0, handlers_1.registrarHandlers)({ claveRed: () => config.claveRed ?? '' });
     // Cuando alguien cambia datos (desde esta PC, otra PC o un celular), la
     // pantalla se vuelve a cargar sola; los celulares lo reciben por /api/eventos.
     (0, cambiosEnVivo_1.escucharCambios)(() => {

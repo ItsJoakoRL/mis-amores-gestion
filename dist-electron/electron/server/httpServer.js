@@ -16,6 +16,7 @@ const cors_1 = __importDefault(require("cors"));
 const http_1 = __importDefault(require("http"));
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
+const estadoCuenta_1 = require("../estadoCuenta");
 const types_1 = require("../../shared/types");
 const juntarDatos_1 = require("../juntarDatos");
 const backup_1 = require("../backup");
@@ -76,6 +77,7 @@ function filtroDesdeQuery(query) {
         soloStockBajo: query.soloStockBajo === 'true',
         incluirInactivos: query.incluirInactivos === 'true',
         soloInactivos: query.soloInactivos === 'true',
+        soloParaRevisar: query.soloParaRevisar === 'true',
     };
 }
 // Placas de red "de mentira" que crean programas como VirtualBox, VMware,
@@ -286,6 +288,10 @@ sync) {
         requiereAdmin(req);
         return (0, articulos_1.eliminarDefinitivo)(req.body.ids);
     }));
+    app.post('/api/articulos/aplicar-conteo', ruta((req) => {
+        const sesion = requiereSesion(req);
+        return (0, articulos_1.aplicarConteo)(req.body.items, sesion.id);
+    }));
     app.post('/api/articulos/vaciar-papelera', ruta((req) => {
         requiereAdmin(req);
         return (0, articulos_1.vaciarPapelera)(filtroDesdeQuery(req.query));
@@ -413,6 +419,50 @@ sync) {
         requiereSesion(req);
         return (0, clientes_1.historialCliente)(req.params.id);
     }));
+    // El estado de cuenta para mandárselo al cliente: los datos, el enlace firmado
+    // (el del código QR) y el PDF en base64 (para guardarlo desde la pantalla).
+    const estadoOError = async (id) => {
+        const estado = await (0, clientes_1.estadoDeCuenta)(id);
+        if (!estado)
+            throw new Error('Ese cliente ya no está en la lista.');
+        return estado;
+    };
+    app.get('/api/clientes/:id/estado', ruta(async (req) => {
+        requiereSesion(req);
+        return estadoOError(req.params.id);
+    }));
+    app.post('/api/clientes/:id/enlace-estado', ruta(async (req) => {
+        requiereSesion(req);
+        await estadoOError(req.params.id);
+        return (0, estadoCuenta_1.crearEnlaceEstado)(sync?.claveRed() ?? '', req.params.id);
+    }));
+    app.get('/api/clientes/:id/estado-pdf', ruta(async (req) => {
+        requiereSesion(req);
+        return (0, estadoCuenta_1.armarPdfEstado)(await estadoOError(req.params.id)).toString('base64');
+    }));
+    // El enlace del código QR: lo abre quien escanea (sin usuario ni contraseña),
+    // por eso va firmado y vence (ver estadoCuenta.ts). Un enlace malo o vencido
+    // dice lo mismo, para no dar pistas.
+    app.get('/estado/:id/:expira/:firma', async (req, res) => {
+        res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' });
+        try {
+            const id = String(req.params.id);
+            const valido = (0, estadoCuenta_1.verificarEnlaceEstado)(sync?.claveRed() ?? '', id, String(req.params.expira), String(req.params.firma));
+            const estado = valido === 'ok' ? await (0, clientes_1.estadoDeCuenta)(id) : null;
+            if (!estado) {
+                res.status(404).type('text/plain; charset=utf-8').send('Este enlace no es válido o ya venció. Pedile a Mis Amores que te mande uno nuevo.');
+                return;
+            }
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename="${(0, estadoCuenta_1.nombreArchivoEstado)(estado.nombre)}"`,
+            });
+            res.send((0, estadoCuenta_1.armarPdfEstado)(estado));
+        }
+        catch {
+            res.status(500).type('text/plain; charset=utf-8').send('No se pudo armar el estado de cuenta. Probá de nuevo en un rato.');
+        }
+    });
     app.post('/api/clientes/:id/activo', ruta(async (req) => {
         requiereAdmin(req);
         await (0, clientes_1.setClienteActivo)(req.params.id, req.body.activo);

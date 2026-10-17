@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.nativeImage = exports.Menu = exports.Tray = exports.dialog = exports.BrowserWindow = exports.ipcMain = exports.app = void 0;
+exports.nativeImage = exports.Menu = exports.Tray = exports.shell = exports.dialog = exports.BrowserWindow = exports.ipcMain = exports.app = void 0;
 // Un "electron" de mentira para correr la app como SERVIDOR, sin ventana: en un
 // servidor de internet (Linux, sin pantalla) no hay Electron. La base, la
 // sincronización y el acceso desde los celulares no lo necesitan; sólo lo
@@ -95,6 +95,12 @@ exports.dialog = {
     },
     showOpenDialog() {
         return Promise.resolve({ canceled: true, filePaths: [] });
+    },
+};
+// En un servidor no hay navegador donde abrir nada (y nadie lo pide: no hay pantalla).
+exports.shell = {
+    openExternal() {
+        return Promise.resolve();
     },
 };
 class Tray {

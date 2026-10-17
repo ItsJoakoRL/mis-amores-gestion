@@ -72,10 +72,11 @@ async function crearVenta(input, usuarioId) {
         throw new Error(`"${articulo.descripcion}" se vende por unidad: la cantidad tiene que ser un número entero`);
     }
     const cantidad = (0, formato_1.redondearCantidad)(input.cantidad);
-    // El descuento de stock va primero: además de ser la operación que
-    // controla que haya stock suficiente (ver ajustarStock), así nunca se
-    // registra una venta de algo que no se pudo descontar.
-    await (0, articulos_1.ajustarStock)(input.articuloId, cantidad, 'egreso', 'Venta', usuarioId);
+    // El descuento de stock va primero, así nunca se registra una venta de algo
+    // que no se pudo descontar. Si el sistema dice que no queda stock se vende
+    // igual (el producto está en la mano: el que se equivocó es el stock cargado):
+    // queda en negativo y aparece en "Para revisar" hasta que se lo cuente.
+    await (0, articulos_1.ajustarStock)(input.articuloId, cantidad, 'egreso', 'Venta', usuarioId, undefined, { permitirNegativo: true });
     const doc = {
         articuloId: new mongodb_1.ObjectId(input.articuloId),
         articuloDescripcion: articulo.descripcion,

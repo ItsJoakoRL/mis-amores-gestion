@@ -323,8 +323,12 @@ async function responderPregunta(preguntaOriginal) {
             }
             const a = encontrados[0];
             const aviso = encontrados.length > 1 ? ` (encontré ${encontrados.length} parecidos, te paso el primero)` : '';
+            // Un stock en negativo es un producto que se vendió sin stock registrado.
+            const stockTexto = a.stock < 0
+                ? `el sistema no tenía stock cargado y se vendió igual (figura ${(0, formato_1.formatearCantidad)(a.stock)}): conviene contarlo`
+                : `stock ${(0, formato_1.formatearCantidad)(a.stock)}`;
             return {
-                texto: `"${a.descripcion}": ${(0, formato_1.formatearMoneda)(a.precioVenta)}, stock ${(0, formato_1.formatearCantidad)(a.stock)}.${aviso}`,
+                texto: `"${a.descripcion}": ${(0, formato_1.formatearMoneda)(a.precioVenta)}, ${stockTexto}.${aviso}`,
                 reconocida: true,
             };
         }

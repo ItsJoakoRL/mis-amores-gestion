@@ -17,6 +17,7 @@ exports.Channels = {
     articulosEliminarDefinitivo: 'articulos:eliminarDefinitivo',
     articulosVaciarPapelera: 'articulos:vaciarPapelera',
     articulosAjustarStock: 'articulos:ajustarStock',
+    articulosAplicarConteo: 'articulos:aplicarConteo',
     articulosHistorialPrecios: 'articulos:historialPrecios',
     articulosMovimientosStock: 'articulos:movimientosStock',
     familiasList: 'familias:list',
@@ -40,6 +41,9 @@ exports.Channels = {
     clientesCrear: 'clientes:crear',
     clientesSetActivo: 'clientes:setActivo',
     clientesHistorial: 'clientes:historial',
+    clientesEstado: 'clientes:estado',
+    clientesEnlaceEstado: 'clientes:enlaceEstado',
+    clientesEstadoPdf: 'clientes:estadoPdf',
     clientesRegistrarPago: 'clientes:registrarPago',
     clientesEliminarMovimiento: 'clientes:eliminarMovimiento',
     recordatoriosList: 'recordatorios:list',
@@ -75,6 +79,7 @@ exports.Channels = {
     escritorioConectarNube: 'escritorio:conectarNube',
     escritorioProbarServidor: 'escritorio:probarServidor',
     escritorioReintentar: 'escritorio:reintentar',
+    escritorioAbrirEnlace: 'escritorio:abrirEnlace',
     // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.
     sistemaDatosCambio: 'sistema:datosCambio',
 };

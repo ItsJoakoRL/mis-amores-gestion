@@ -4,9 +4,11 @@ exports.formatearMoneda = formatearMoneda;
 exports.formatearMonedaConCentavos = formatearMonedaConCentavos;
 exports.formatearCantidad = formatearCantidad;
 exports.redondearCantidad = redondearCantidad;
+exports.pareceCodigoDeBarras = pareceCodigoDeBarras;
 exports.limpiarDecimal = limpiarDecimal;
 exports.numeroDeDecimal = numeroDeDecimal;
 exports.parsearMonto = parsearMonto;
+exports.nombreArchivoEstadoCuenta = nombreArchivoEstadoCuenta;
 // Formato de moneda único para toda la app (pantallas y asistente) — antes
 // cada archivo tenía su propio Intl.NumberFormat copiado, y se habían
 // desincronizado: el asistente mostraba decimales que el resto de la app no.
@@ -41,6 +43,13 @@ function formatearCantidad(cantidad) {
 // en binario deja restos como 0,7000000000000001 si no se redondea.
 function redondearCantidad(cantidad) {
     return Math.round(cantidad * 1000) / 1000 || 0;
+}
+// ¿Lo que se escaneó o escribió parece un código de barras (EAN-8, UPC-A,
+// EAN-13, ITF-14)? Sólo números, de 7 a 14. Un texto corto o con letras es una
+// búsqueda por nombre: con un código en cambio no se adivina el producto por un
+// parecido (un pedazo del número podría ser de otro producto).
+function pareceCodigoDeBarras(texto) {
+    return /^\d{7,14}$/.test(String(texto ?? '').trim());
 }
 // Para cuadros donde se escribe una cantidad con decimales (ej. kilos): deja
 // usar coma ("2,5", como se escribe acá) o punto, pero un solo separador —
@@ -87,4 +96,14 @@ function parsearMonto(texto) {
     if (!/^(\d+\.?\d*|\.\d+)$/.test(t))
         return NaN;
     return Number(t);
+}
+// El nombre con que se guarda el estado de cuenta de un cliente: sin tildes ni
+// símbolos (los sistemas de archivos y los navegadores lo agradecen).
+function nombreArchivoEstadoCuenta(nombre) {
+    const base = nombre
+        .normalize('NFD')
+        .replace(new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, 'g'), '')
+        .replace(/[^A-Za-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return `Estado-de-cuenta-${base || 'cliente'}.pdf`;
 }

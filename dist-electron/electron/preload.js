@@ -32,6 +32,8 @@ const api = {
         eliminarDefinitivo: (ids) => invoke(channels_1.Channels.articulosEliminarDefinitivo, ids),
         vaciarPapelera: (filtro) => invoke(channels_1.Channels.articulosVaciarPapelera, filtro ?? {}),
         ajustarStock: (id, cantidad, tipo, motivo) => invoke(channels_1.Channels.articulosAjustarStock, id, cantidad, tipo, motivo),
+        // Conteo de inventario: deja el stock de cada producto en lo que se contó.
+        aplicarConteo: (items) => invoke(channels_1.Channels.articulosAplicarConteo, items),
         historialPrecios: (articuloId) => invoke(channels_1.Channels.articulosHistorialPrecios, articuloId),
         sugerirRubro: (descripcion) => invoke(channels_1.Channels.articulosSugerirRubro, descripcion),
         movimientosStock: (articuloId) => invoke(channels_1.Channels.articulosMovimientosStock, articuloId),
@@ -71,6 +73,11 @@ const api = {
         crear: (input, deudaInicial, fechaInicial) => invoke(channels_1.Channels.clientesCrear, input, deudaInicial, fechaInicial),
         setActivo: (id, activo) => invoke(channels_1.Channels.clientesSetActivo, id, activo),
         historial: (clienteId) => invoke(channels_1.Channels.clientesHistorial, clienteId),
+        // Estado de cuenta para mandárselo al cliente: los datos, el enlace firmado del
+        // código QR y el PDF (en base64, para armar el archivo en la pantalla).
+        estado: (clienteId) => invoke(channels_1.Channels.clientesEstado, clienteId),
+        enlaceEstado: (clienteId) => invoke(channels_1.Channels.clientesEnlaceEstado, clienteId),
+        estadoPdf: (clienteId) => invoke(channels_1.Channels.clientesEstadoPdf, clienteId),
         registrarPago: (clienteId, monto, nota, metodoPago) => invoke(channels_1.Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
         eliminarMovimiento: (tipo, id) => invoke(channels_1.Channels.clientesEliminarMovimiento, tipo, id),
     },
@@ -119,7 +126,7 @@ const api = {
 const escritorio = {
     // Por si la pantalla viene de una PC con otra versión: para que pueda
     // fijarse qué sabe hacer este puente antes de usarlo.
-    versionPuente: 3,
+    versionPuente: 4,
     // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
     // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
     actualizaciones: {
@@ -147,6 +154,8 @@ const escritorio = {
     conectarNube: (direccion) => invoke(channels_1.Channels.escritorioConectarNube, direccion),
     probarServidor: (direccion) => invoke(channels_1.Channels.escritorioProbarServidor, direccion),
     reintentar: () => invoke(channels_1.Channels.escritorioReintentar),
+    // Abre un enlace en el navegador de la PC (sólo WhatsApp, para mandar el estado de cuenta).
+    abrirEnlace: (url) => invoke(channels_1.Channels.escritorioAbrirEnlace, url),
 };
 electron_1.contextBridge.exposeInMainWorld('escritorio', escritorio);
 electron_1.contextBridge.exposeInMainWorld('api', api);

@@ -15,6 +15,14 @@ const asistente_1 = require("../repositories/asistente");
 const ventas_1 = require("../repositories/ventas");
 const clientes_1 = require("../repositories/clientes");
 const recordatorios_1 = require("../repositories/recordatorios");
+const estadoCuenta_1 = require("../estadoCuenta");
+// El estado de cuenta de un cliente, o un error claro si ya no está en la lista.
+async function datosDelEstado(clienteId) {
+    const estado = await (0, clientes_1.estadoDeCuenta)(clienteId);
+    if (!estado)
+        throw new Error('Ese cliente ya no está en la lista.');
+    return estado;
+}
 // Envuelve cada handler para devolver siempre { ok, data } o { ok:false, error },
 // así el renderer nunca tiene que lidiar con excepciones sin capturar de IPC.
 async function wrap(fn) {
@@ -26,7 +34,7 @@ async function wrap(fn) {
         return { ok: false, error: err instanceof Error ? err.message : 'Error desconocido' };
     }
 }
-function registrarHandlers() {
+function registrarHandlers(deps) {
     electron_1.ipcMain.handle(channels_1.Channels.authLogin, (_e, usuario, password) => wrap(async () => {
         const user = await (0, usuarios_1.verificarCredenciales)(usuario, password);
         if (!user)
@@ -90,6 +98,10 @@ function registrarHandlers() {
     electron_1.ipcMain.handle(channels_1.Channels.articulosAjustarStock, (_e, id, cantidad, tipo, motivo) => wrap(async () => {
         const sesion = (0, session_1.requiereSesion)();
         return (0, reglasRol_1.ocultarCostoSiNoAdmin)(await (0, articulos_1.ajustarStock)(id, cantidad, tipo, motivo, sesion.id), sesion.rol);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.articulosAplicarConteo, (_e, items) => wrap(() => {
+        const sesion = (0, session_1.requiereSesion)();
+        return (0, articulos_1.aplicarConteo)(items, sesion.id);
     }));
     electron_1.ipcMain.handle(channels_1.Channels.articulosSugerirRubro, (_e, descripcion) => wrap(() => {
         (0, session_1.requiereSesion)();
@@ -240,6 +252,19 @@ function registrarHandlers() {
     electron_1.ipcMain.handle(channels_1.Channels.clientesHistorial, (_e, clienteId) => wrap(() => {
         (0, session_1.requiereSesion)();
         return (0, clientes_1.historialCliente)(clienteId);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesEstado, (_e, clienteId) => wrap(async () => {
+        (0, session_1.requiereSesion)();
+        return datosDelEstado(clienteId);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesEnlaceEstado, (_e, clienteId) => wrap(async () => {
+        (0, session_1.requiereSesion)();
+        await datosDelEstado(clienteId);
+        return (0, estadoCuenta_1.crearEnlaceEstado)(deps.claveRed(), clienteId);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesEstadoPdf, (_e, clienteId) => wrap(async () => {
+        (0, session_1.requiereSesion)();
+        return (0, estadoCuenta_1.armarPdfEstado)(await datosDelEstado(clienteId)).toString('base64');
     }));
     electron_1.ipcMain.handle(channels_1.Channels.clientesRegistrarPago, (_e, clienteId, monto, nota, metodoPago) => wrap(async () => {
         const sesion = (0, session_1.requiereSesion)();
