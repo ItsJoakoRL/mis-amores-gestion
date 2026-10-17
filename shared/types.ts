@@ -169,6 +169,9 @@ export interface InfoPc {
    * tienen igual. (Ausente en versiones anteriores.) */
   idRed?: string;
   generacion?: number;
+  /** Cuánto lleva prendido el proceso. Sólo lo informa el servidor de internet
+   * (si se durmiera y despertara, vuelve a cero). */
+  segundosEncendido?: number;
 }
 
 /** Una PC encontrada en la red al buscar con cuál sumarse. */

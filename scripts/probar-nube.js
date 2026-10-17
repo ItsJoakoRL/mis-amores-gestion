@@ -12,6 +12,7 @@
 // llega de la PC tiene que llegar porque ella se lo empuja.
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
+const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,6 +37,18 @@ delete process.env.MIS_AMORES_MODO_SERVIDOR;
 const pc = { nombre: 'PC-A', tipo: 'electron', puerto: 4161, db: 'test_nube_pc', idPc: crypto.randomUUID(), token: null, proc: null };
 const srv = { nombre: 'NUBE', tipo: 'servidor', puerto: 4162, db: 'test_nube_srv', idPc: ID_SERVIDOR, token: null, proc: null };
 for (const p of [pc, srv]) p.carpeta = path.join(TMP, p.nombre);
+
+// Hace de "dirección pública" del servidor (en Render sería RENDER_EXTERNAL_URL):
+// cuenta las visitas que el servidor se hace a sí mismo para no dormirse.
+const PUERTO_PUBLICA = 4163;
+const visitas = { cantidad: 0, rutas: new Set(), agentes: new Set() };
+const publica = http.createServer((req, res) => {
+  visitas.cantidad += 1;
+  visitas.rutas.add(req.url);
+  visitas.agentes.add(req.headers['user-agent']);
+  res.setHeader('Content-Type', 'application/json');
+  res.end('{"ok":true}');
+});
 
 let fallas = 0;
 let pasaron = 0;
@@ -115,7 +128,13 @@ function lanzar(p) {
     // Node común, en modo nube: la identidad sale de las variables de entorno.
     p.proc = spawn(process.execPath, [SERVIDOR_JS], {
       cwd: RAIZ,
-      env: { ...entornoDe(p), MIS_AMORES_CLAVE_RED: CLAVE },
+      env: {
+        ...entornoDe(p),
+        MIS_AMORES_CLAVE_RED: CLAVE,
+        // Con barra al final a propósito: tiene que quedar bien igual.
+        MIS_AMORES_URL_PUBLICA: `http://127.0.0.1:${PUERTO_PUBLICA}/`,
+        MIS_AMORES_DESPERTADOR_MS: '600',
+      },
       stdio: 'ignore',
       windowsHide: true,
     });
@@ -245,6 +264,7 @@ async function limpiarBases() {
 async function todo() {
   log(`\nCarpeta temporal: ${TMP}`);
   await limpiarBases();
+  await new Promise((r) => publica.listen(PUERTO_PUBLICA, '127.0.0.1', r));
 
   // ---- 1. El servidor de internet, solo y vacío ----
   log('\n[1] El servidor arranca vacío y cerrado a lo que no hace falta en internet');
@@ -252,6 +272,30 @@ async function todo() {
   ok(!!srv.proc, 'arrancó sin Electron y sin ningún archivo de configuración');
   const info = (await apiCruda(srv, 'GET', '/api/sistema/info')).data;
   ok(info.idPc === ID_SERVIDOR, 'su identificador sale de la clave (no del disco)');
+  ok(typeof info.segundosEncendido === 'number' && info.segundosEncendido >= 0, 'informa cuánto lleva prendido (así se ve que no se durmió)');
+
+  log('\n[1b] Se visita solo por su dirección pública para que Render no lo duerma');
+  await hasta(() => visitas.cantidad >= 2, 'que el servidor se visite solo', 15000);
+  ok(true, `se visitó solo ${visitas.cantidad} veces sin que nadie se lo pida`);
+  ok([...visitas.rutas].every((r) => r === '/api/sistema/info'), 'siempre pide la misma página liviana (sin duplicar la barra final)');
+  ok([...visitas.agentes].every((a) => a === 'mis-amores-despertador'), 'se identifica como el despertador');
+  const { direccionPublica } = require(path.join(RAIZ, 'dist-electron/electron/despertador.js'));
+  const entornoAntes = { u: process.env.MIS_AMORES_URL_PUBLICA, r: process.env.RENDER_EXTERNAL_URL };
+  delete process.env.MIS_AMORES_URL_PUBLICA;
+  delete process.env.RENDER_EXTERNAL_URL;
+  ok(direccionPublica() === null, 'sin dirección pública conocida, no hace nada');
+  process.env.RENDER_EXTERNAL_URL = 'https://mis-amores.onrender.com/';
+  ok(direccionPublica() === 'https://mis-amores.onrender.com', 'usa la dirección que Render le da sola (sin barra al final)');
+  process.env.MIS_AMORES_URL_PUBLICA = 'https://otra.example.com';
+  ok(direccionPublica() === 'https://otra.example.com', 'y se la puede fijar a mano');
+  process.env.MIS_AMORES_URL_PUBLICA = 'mis-amores.onrender.com';
+  process.env.RENDER_EXTERNAL_URL = '';
+  ok(direccionPublica() === null, 'una dirección sin "https://" no se toma (no se adivina)');
+  for (const [k, v] of [['MIS_AMORES_URL_PUBLICA', entornoAntes.u], ['RENDER_EXTERNAL_URL', entornoAntes.r]]) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  log('\n[1c] Cerrado a lo que no corresponde en internet');
   const entradaDeFabrica = await apiCruda(srv, 'POST', '/api/auth/login', { usuario: 'admin', password: 'admin123' });
   ok(entradaDeFabrica.ok === false, 'NO existe el usuario "admin" con la contraseña de fábrica');
   ok((await apiCruda(srv, 'GET', '/api/auth/cuentas')).ok === false, 'no regala la lista de cuentas');
@@ -266,6 +310,8 @@ async function todo() {
   log('\n[2] Una PC con sus datos: ella le empuja todo al servidor');
   escribirConfigPc();
   await iniciar(pc);
+  const infoPc = (await apiCruda(pc, 'GET', '/api/sistema/info')).data;
+  ok(infoPc.segundosEncendido === undefined, 'una PC común no informa "segundos encendido" (eso es sólo del servidor)');
   const rubro = await api(pc, 'POST', '/api/familias', { nombre: 'GOLOSINAS' });
   const alfajor = await api(pc, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'ALFAJOR', codigoBarras: '7790001', familiaId: rubro.id, stock: 20 }));
   await api(pc, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'CHICLE', codigoBarras: '7790002', familiaId: rubro.id, stock: 5 }));
@@ -420,6 +466,7 @@ todo()
   })
   .finally(async () => {
     for (const p of [pc, srv]) await detener(p);
+    publica.close();
     await esperar(500);
     try {
       await limpiarBases();

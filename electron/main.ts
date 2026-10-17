@@ -24,6 +24,7 @@ import { Diario } from './sync/diario';
 import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
 import { ErrorDeSync, Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
 import { esModoNube, normalizarUrlNube } from './nube';
+import { iniciarDespertador } from './despertador';
 import { escanearRedLocal } from './escaneoRed';
 import { Reloj } from './sync/reloj';
 import { Channels } from '../shared/channels';
@@ -96,6 +97,7 @@ if (!esInstanciaUnica) {
 
 let infoServidorWeb: InfoRed = null;
 let detenerMdns: (() => void) | null = null;
+let detenerDespertador: (() => void) | null = null;
 let detenerServidorWeb: (() => Promise<void>) | null = null;
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -528,6 +530,9 @@ function infoPc(): InfoPc {
     // Las versiones anteriores distinguían "principal" de "conectada".
     modo: 'principal',
     idRed: miIdRed() ?? undefined,
+    // Sólo en el servidor de internet: si se durmiera, el proceso arrancaría de
+    // nuevo y esto volvería a cero (así se comprueba que no se duerme).
+    segundosEncendido: esModoNube() ? Math.round(process.uptime()) : undefined,
   };
 }
 
@@ -1383,6 +1388,9 @@ async function arrancar(): Promise<boolean> {
     // internet no sirve de nada.
     const primeraIp = obtenerIpsLan()[0];
     if (primeraIp && !modoServidor) detenerMdns = iniciarMdns(primeraIp);
+    // El plan gratuito de Render apaga el servidor a los 15 minutos sin visitas:
+    // con las PCs apagadas se visita solo para que el celular ande siempre.
+    if (esModoNube()) detenerDespertador = iniciarDespertador({ registrar: (m) => logCrash('despertador', m) });
   } catch (err) {
     // Si el puerto está ocupado o falla por lo que sea, la app de escritorio
     // sigue funcionando igual — sólo no va a estar disponible desde el
@@ -1445,6 +1453,7 @@ app.on('before-quit', () => {
   if (temporizadorMantenimiento) clearInterval(temporizadorMantenimiento);
   motor?.detener();
   detenerMdns?.();
+  detenerDespertador?.();
   // Sin await a propósito: before-quit no espera promesas, y closeAllConnections
   // adentro de detenerServidorWeb ya corta las conexiones abiertas de una,
   // así el puerto no queda ocupado ni el cierre del proceso esperando a que

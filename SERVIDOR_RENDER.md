@@ -24,10 +24,22 @@ ahora), pero para el celular ya no hace falta.
 - **Gratis.** Render, MongoDB Atlas y GitHub tienen planes gratuitos que no
   piden tarjeta (los planes cambian: si en algún paso te pide una, mirá bien
   qué estás eligiendo).
-- **Se duerme.** El plan gratuito de Render apaga el servidor cuando nadie lo
-  usa por unos 15 minutos. La primera vez que el celular entra después de un
-  rato, **tarda hasta 1 minuto** en despertar (después anda normal). Si hay una
-  PC prendida con Mis Amores, lo mantiene despierto sola.
+- **No se duerme (a propósito).** El plan gratuito de Render apaga el servidor
+  si pasan 15 minutos sin visitas, y entonces el celular tardaría hasta 1 minuto
+  en entrar. Para que ande 24 hs con todas las PCs apagadas hay dos "despertadores"
+  que lo visitan solos: el propio servidor se visita cada 4 minutos por su
+  dirección pública (`electron/despertador.ts`) y, por si alguna vez se cayera,
+  GitHub lo visita cada 5 minutos (`.github/workflows/despertar-servidor.yml`,
+  gratis porque el repositorio es público). Para comprobar que no se durmió:
+  abrí `https://tu-servidor.onrender.com/api/sistema/info` y mirá
+  `segundosEncendido`: si va creciendo día tras día, nunca se durmió (si se
+  durmiera, vuelve a empezar de cero).
+- **Las 750 horas gratis alcanzan para UN solo servicio prendido todo el mes.**
+  Render da 750 horas por mes **por cuenta** (no por servicio) y un servicio que
+  nunca se duerme gasta unas 744. Si en la misma cuenta de Render hay otros
+  servicios gratuitos que también están prendidos, se pasan de las 750 y Render
+  **suspende todos hasta el mes siguiente**. Mantené sólo Mis Amores prendido
+  (los demás pueden dormirse) o usá otra cuenta de Render para los otros.
 - **Está en internet.** Cualquiera que tenga el link ve la pantalla de entrada.
   Lo que protege tus datos son los **usuarios y contraseñas**: por eso la app
   **no te deja conectar** mientras alguna cuenta tenga una contraseña obvia
@@ -181,10 +193,16 @@ no se tocan: viven en Atlas.
   seguidas. Esperá un rato (hasta una hora) y probá de nuevo.
 - **Atlas no conecta (en los Logs):** revisá que en *Network Access* esté
   `0.0.0.0/0` y que la contraseña de `MONGODB_URI` sea la correcta.
-- **Quiero que no se duerma:** podés usar un servicio gratuito que lo "visite"
-  cada 5 minutos (por ejemplo UptimeRobot, apuntando a
-  `https://tu-servidor.onrender.com/api/sistema/info`). Gasta horas del plan
-  gratuito de Render, que alcanzan para un solo servicio prendido todo el mes.
+- **El celular tardó un minuto en entrar:** estaba dormido. Mirá que el
+  servicio de Render esté en **Live** y que en la pestaña *Actions* del
+  repositorio de GitHub el "Despertar el servidor de internet" esté corriendo
+  (GitHub lo apaga solo si el repositorio pasa 60 días sin ningún cambio). Un
+  tercer despertador, opcional y que además te avisa por mail si el servidor se
+  cae: UptimeRobot (gratis), apuntando a
+  `https://tu-servidor.onrender.com/api/sistema/info` cada 5 minutos.
+- **Render dice que el servicio está "Suspended":** casi seguro se acabaron las
+  750 horas gratis del mes (ver arriba). No se arregla despertándolo: hay que
+  esperar al mes siguiente o pasar ese servicio a un plan pago.
 
 ## Para quien desarrolla
 
