@@ -1,7 +1,7 @@
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { formatearCantidad } from '../../shared/formato';
-import type { Cliente, ClienteInput, MetodoPago, MovimientoCuenta } from '../../shared/types';
+import type { Cliente, ClienteInput, EstadoCuenta, MetodoPago, MovimientoCuenta } from '../../shared/types';
 
 // Con qué se puede pagar una deuda — "fiado" no: sería pagar una deuda con otra.
 const METODOS_PAGO_CUENTA: readonly MetodoPago[] = ['efectivo', 'tarjeta', 'transferencia'];
@@ -209,6 +209,27 @@ export async function eliminarAjuste(id: string): Promise<void> {
   await getDb()
     .collection('ajustes_cuenta')
     .deleteOne({ _id: new ObjectId(id) });
+}
+
+// Lo que debe un cliente para mandárselo: lo que quedó anotado sin pagar (un
+// fiado ya marcado como pagado no cuenta, igual que en el saldo de la lista),
+// los pagos que hizo, y el saldo que resulta. Devuelve null si el cliente no
+// existe o ya no está en la lista.
+export async function estadoDeCuenta(clienteId: string): Promise<EstadoCuenta | null> {
+  if (typeof clienteId !== 'string' || !ObjectId.isValid(clienteId)) return null;
+  const cliente = await coleccion().findOne({ _id: new ObjectId(clienteId), activo: true });
+  if (!cliente) return null;
+  const movimientos = (await historialCliente(clienteId)).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const pendientes = movimientos
+    .filter((m) => m.tipo !== 'pago' && !(m.tipo === 'venta' && m.pagado))
+    .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+  const pagos = movimientos
+    .filter((m) => m.tipo === 'pago')
+    .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+  const saldo = redondearPesos(
+    pendientes.reduce((acc, l) => acc + l.monto, 0) - pagos.reduce((acc, l) => acc + l.monto, 0)
+  );
+  return { clienteId, nombre: cliente.nombre, fecha: new Date().toISOString(), saldo, pendientes, pagos };
 }
 
 // El historial de cuenta de un cliente: cada compra fiada suma, cada pago

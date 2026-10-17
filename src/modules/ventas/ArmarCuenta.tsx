@@ -1,10 +1,19 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, ReceiptText, Search, ShoppingCart, Trash2, X, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Plus, ReceiptText, Search, ShoppingCart, Trash2, X, RotateCcw } from 'lucide-react';
 import type { Articulo, Cliente, MetodoPago } from '@shared/types';
-import { formatearCantidad, formatearMoneda, limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
+import {
+  formatearCantidad,
+  formatearMoneda,
+  limpiarDecimal,
+  numeroDeDecimal,
+  pareceCodigoDeBarras,
+  redondearCantidad,
+} from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import CartelExito from '../../components/CartelExito';
+import AsignarCodigoModal from '../articulos/AsignarCodigoModal';
+import ArticuloFormModal from '../articulos/ArticuloFormModal';
 import { esTactil } from '../../utils/dispositivo';
 
 const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
@@ -80,6 +89,14 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   // abrir — no tiene sentido si se armó ahora mismo.
   const [mostrarAvisoRecuperada] = useState(() => !!guardado);
   const [quitadosAlRecuperar, setQuitadosAlRecuperar] = useState(0);
+  // Se escaneó un código que no está cargado: se pregunta a qué producto es (o se
+  // lo carga nuevo) y recién ahí se suma a la cuenta.
+  const [codigoDesconocido, setCodigoDesconocido] = useState<string | null>(null);
+  const [cargandoConCodigo, setCargandoConCodigo] = useState<string | null>(null);
+  // Después de cobrar: qué productos se vendieron sin stock registrado (quedan
+  // para revisar). Va fijo en pantalla (el cartel de "venta registrada" se cierra
+  // solo en 2 segundos, poco para leer una lista).
+  const [vendidosSinStock, setVendidosSinStock] = useState<string[]>([]);
 
   const hayFiado = metodoPago === 'fiado' || carrito.some((l) => l.fiado);
 
@@ -209,6 +226,41 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     setCarrito((actual) => actual.map((l) => (l.producto.id === articuloId ? { ...l, fiado: !l.fiado } : l)));
   }
 
+  // Un producto que se encontró por su código (escaneado, o recién asignado).
+  function agregarEscaneado(a: Articulo) {
+    setVendidosSinStock([]);
+    if (a.unidad === 'peso') {
+      // Se vende por peso: no hay forma de saber cuántos kg son con sólo
+      // el código, así que igual pide confirmar la cantidad a mano.
+      elegirProducto(a);
+    } else {
+      // Escaneo real de la lectora: se suma directo a la cuenta (1
+      // unidad) sin pasos intermedios — si se escanea el mismo producto
+      // de nuevo, la cantidad de ese renglón sube sola.
+      sumarAlCarrito(a, 1);
+      setTermino('');
+      setResultados([]);
+      setError(null);
+    }
+  }
+
+  function cerrarCodigoDesconocido() {
+    setCodigoDesconocido(null);
+    if (!esTactil()) busquedaRef.current?.focus();
+  }
+
+  // Se cargó como producto nuevo con el código escaneado: se lo busca por ese
+  // código y se suma a la cuenta.
+  async function sumarRecienCargado(codigo: string) {
+    try {
+      const a = await window.api.articulos.buscarPorCodigo(codigo);
+      if (a && a.activo) agregarEscaneado(a);
+    } catch {
+      // Quedó cargado igual: se lo puede escanear de nuevo.
+    }
+    if (!esTactil()) busquedaRef.current?.focus();
+  }
+
   async function handleBusquedaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
     const codigo = termino.trim();
@@ -221,19 +273,15 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         setTermino('');
         setResultados([]);
       } else if (encontrado) {
-        if (encontrado.unidad === 'peso') {
-          // Se vende por peso: no hay forma de saber cuántos kg son con sólo
-          // el código, así que igual pide confirmar la cantidad a mano.
-          elegirProducto(encontrado);
-        } else {
-          // Escaneo real de la lectora: se suma directo a la cuenta (1
-          // unidad) sin pasos intermedios — si se escanea el mismo producto
-          // de nuevo, la cantidad de ese renglón sube sola.
-          sumarAlCarrito(encontrado, 1);
-          setTermino('');
-          setResultados([]);
-          setError(null);
-        }
+        agregarEscaneado(encontrado);
+      } else if (pareceCodigoDeBarras(codigo)) {
+        // Un código que no está cargado: no se adivina el producto por un
+        // parecido de números. Se pregunta a cuál corresponde (o se lo carga) y
+        // ese producto se suma a la cuenta.
+        setCodigoDesconocido(codigo);
+        setTermino('');
+        setResultados([]);
+        setError(null);
       } else {
         // Se busca de nuevo en lugar de usar la lista que está en pantalla: si
         // se escribió rápido y se apretó Enter, esa lista puede ser la de una
@@ -269,6 +317,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
 
   function agregarAlCarrito() {
     if (!producto || cantidadNum <= 0) return;
+    setVendidosSinStock([]);
     sumarAlCarrito(producto, cantidadNum);
     setProducto(null);
     setCantidad('1');
@@ -307,6 +356,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         setCarrito((actual) => actual.filter((l) => l.producto.id !== linea.producto.id));
       }
       setCartelExito(`Venta registrada: ${formatearMoneda(totalRegistrado)} en ${pendientes.length} producto(s)`);
+      // Se mira cómo quedó el stock de verdad (no lo que mostraba la cuenta, que
+      // puede estar viejo): los que quedaron en negativo hay que contarlos.
+      const despues = await Promise.all(
+        pendientes.map((l) => window.api.articulos.get(l.producto.id).catch(() => null))
+      );
+      setVendidosSinStock(despues.filter((a): a is Articulo => !!a && a.stock < 0).map((a) => a.descripcion));
       setClienteId(null);
       setMetodoPago('efectivo');
       onVentaRegistrada();
@@ -342,6 +397,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                 <p className="text-xs text-slate-500">
                   {formatearMoneda(producto.precioVenta)} · Stock: {formatearCantidad(producto.stock)}
                 </p>
+                {producto.stock <= 0 && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-600">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    Figura sin stock: se puede vender igual y queda para revisar.
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => {
@@ -434,6 +495,13 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                     {formatearCantidad(linea.cantidad)} {linea.producto.unidad === 'peso' ? 'kg' : 'un.'} ×{' '}
                     {formatearMoneda(linea.producto.precioVenta)}
                   </p>
+                  {linea.cantidad > linea.producto.stock && (
+                    <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-600">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                      {linea.producto.stock > 0 ? `Figuran ${formatearCantidad(linea.producto.stock)}` : 'Figura sin stock'}:
+                      se vende igual y queda para revisar
+                    </p>
+                  )}
                 </div>
                 <p className="shrink-0 font-medium text-slate-700">
                   {formatearMoneda(linea.producto.precioVenta * linea.cantidad)}
@@ -544,7 +612,55 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         </p>
       )}
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {vendidosSinStock.length > 0 && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="min-w-0 flex-1">
+            La venta quedó registrada, pero el sistema no tenía stock de: <strong>{vendidosSinStock.join(', ')}</strong>.
+            Quedan <strong>para revisar</strong>: cuando puedas contalos (en Artículos y stock, o en Contar inventario)
+            y se corrige el stock.
+          </p>
+          <button
+            onClick={() => setVendidosSinStock([])}
+            className="shrink-0 rounded-lg p-1 text-amber-600 hover:bg-amber-100"
+            title="Cerrar este aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {cartelExito && <CartelExito mensaje={cartelExito} onCerrar={() => setCartelExito(null)} />}
+
+      {codigoDesconocido && (
+        <AsignarCodigoModal
+          codigo={codigoDesconocido}
+          onCerrar={cerrarCodigoDesconocido}
+          onAsignado={(a) => {
+            setCodigoDesconocido(null);
+            agregarEscaneado(a);
+            if (!esTactil()) busquedaRef.current?.focus();
+          }}
+          onCrearNuevo={() => {
+            setCargandoConCodigo(codigoDesconocido);
+            setCodigoDesconocido(null);
+          }}
+        />
+      )}
+      {cargandoConCodigo && (
+        <ArticuloFormModal
+          articulo={null}
+          codigoInicial={cargandoConCodigo}
+          onCerrar={() => {
+            setCargandoConCodigo(null);
+            if (!esTactil()) busquedaRef.current?.focus();
+          }}
+          onGuardado={() => {
+            const codigo = cargandoConCodigo;
+            setCargandoConCodigo(null);
+            void sumarRecienCargado(codigo);
+          }}
+        />
+      )}
     </div>
   );
 }

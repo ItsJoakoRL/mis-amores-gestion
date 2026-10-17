@@ -96,6 +96,24 @@ export interface ArticulosFiltro {
   incluirInactivos?: boolean;
   /** Papelera: sólo artículos dados de baja, para poder revisarlos y restaurarlos. */
   soloInactivos?: boolean;
+  /** Los que se vendieron sin stock registrado (stock en negativo): hay que
+   * contarlos y corregirlos. */
+  soloParaRevisar?: boolean;
+}
+
+/** Un producto del conteo de inventario: cuánto se contó de verdad. */
+export interface ItemConteo {
+  articuloId: string;
+  contado: number;
+}
+
+export interface ResultadoConteo {
+  /** A cuántos productos se les cambió el stock (lo contado era distinto). */
+  corregidos: number;
+  /** Cuántos ya tenían justo ese stock. */
+  sinCambios: number;
+  /** Los que no se pudieron corregir (el resto sí se corrigió). */
+  errores: { articuloId: string; descripcion: string | null; mensaje: string }[];
 }
 
 export interface MovimientoStock {
@@ -123,6 +141,8 @@ export interface DashboardStats {
   totalArticulos: number;
   stockBajoCount: number;
   sinStockCount: number;
+  /** Productos que se vendieron sin stock registrado (stock en negativo). */
+  paraRevisarCount: number;
   valorInventarioCosto: number;
   valorInventarioVenta: number;
   totalFamilias: number;
@@ -413,6 +433,33 @@ export interface MovimientoCuenta {
   /** Si ese fiado puntual ya se pagó — sólo tiene sentido para tipo 'venta';
    * null en 'pago' y 'ajuste'. */
   pagado: boolean | null;
+}
+
+/** Una línea del estado de cuenta (algo que quedó anotado, o un pago). */
+export interface LineaEstadoCuenta {
+  fecha: string;
+  descripcion: string;
+  monto: number;
+}
+
+/** Lo que debe un cliente, listo para mostrar o armar el PDF: lo que quedó
+ * anotado sin pagar, los pagos que hizo y el saldo que resulta. */
+export interface EstadoCuenta {
+  clienteId: string;
+  nombre: string;
+  /** Cuándo se armó (ISO). */
+  fecha: string;
+  /** Lo que debe hoy: lo pendiente menos lo que pagó (negativo = saldo a favor). */
+  saldo: number;
+  pendientes: LineaEstadoCuenta[];
+  pagos: LineaEstadoCuenta[];
+}
+
+/** El enlace para descargar el estado de cuenta (el que va en el código QR). */
+export interface EnlaceEstadoCuenta {
+  url: string;
+  /** Hasta cuándo sirve (ISO). */
+  expira: string;
 }
 
 export interface TopProducto {

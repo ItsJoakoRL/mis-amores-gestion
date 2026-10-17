@@ -169,6 +169,7 @@ export function crearWebApiClient(): Api {
               soloStockBajo: filtro?.soloStockBajo,
               incluirInactivos: filtro?.incluirInactivos,
               soloInactivos: filtro?.soloInactivos,
+              soloParaRevisar: filtro?.soloParaRevisar,
             })
         ),
       get: (id) => req('GET', `/api/articulos/${id}`),
@@ -186,6 +187,7 @@ export function crearWebApiClient(): Api {
         ),
       ajustarStock: (id, cantidad, tipo, motivo) =>
         req('POST', `/api/articulos/${id}/ajustar-stock`, { cantidad, tipo, motivo }),
+      aplicarConteo: (items) => req('POST', '/api/articulos/aplicar-conteo', { items }),
       historialPrecios: (articuloId) => req('GET', `/api/articulos/${articuloId}/historial-precios`),
       sugerirRubro: (descripcion) => req('POST', '/api/articulos/sugerir-rubro', { descripcion }),
       movimientosStock: (articuloId) => req('GET', `/api/articulos/${articuloId}/movimientos-stock`),
@@ -227,6 +229,9 @@ export function crearWebApiClient(): Api {
         req('POST', '/api/clientes', { ...input, deudaInicial, fechaInicial }),
       setActivo: (id, activo) => req('POST', `/api/clientes/${id}/activo`, { activo }),
       historial: (clienteId) => req('GET', `/api/clientes/${clienteId}/historial`),
+      estado: (clienteId) => req('GET', `/api/clientes/${clienteId}/estado`),
+      enlaceEstado: (clienteId) => req('POST', `/api/clientes/${clienteId}/enlace-estado`),
+      estadoPdf: (clienteId) => req('GET', `/api/clientes/${clienteId}/estado-pdf`),
       registrarPago: (clienteId, monto, nota, metodoPago) =>
         req('POST', `/api/clientes/${clienteId}/pago`, { monto, nota, metodoPago }),
       eliminarMovimiento: (tipo, id) => req('DELETE', `/api/clientes/movimientos/${tipo}/${id}`),

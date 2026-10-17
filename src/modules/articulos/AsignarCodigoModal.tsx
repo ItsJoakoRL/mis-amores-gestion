@@ -8,7 +8,8 @@ interface Props {
   /** Código escaneado que no coincidió con ningún artículo. */
   codigo: string;
   onCerrar: () => void;
-  onAsignado: () => void;
+  /** Recibe el artículo ya con el código asignado (en el mostrador se lo suma a la cuenta). */
+  onAsignado: (articulo: Articulo) => void;
   /** El usuario prefiere cargarlo como artículo nuevo en vez de buscar uno existente. */
   onCrearNuevo: () => void;
 }
@@ -52,14 +53,26 @@ export default function AsignarCodigoModal({ codigo, onCerrar, onAsignado, onCre
       return;
     }
     setBuscando(true);
+    // Una respuesta vieja (WiFi lenta) no tiene que pisar la de la última búsqueda.
+    let vigente = true;
     const debounce = setTimeout(() => {
       window.api.articulos
         .list({ busqueda })
-        .then(setResultados)
-        .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo buscar'))
-        .finally(() => setBuscando(false));
+        // Primero los que no tienen código: casi siempre es uno de ésos.
+        .then((lista) => {
+          if (vigente) setResultados([...lista].sort((a, b) => Number(!!a.codigoBarras) - Number(!!b.codigoBarras)));
+        })
+        .catch((err) => {
+          if (vigente) setError(err instanceof Error ? err.message : 'No se pudo buscar');
+        })
+        .finally(() => {
+          if (vigente) setBuscando(false);
+        });
     }, 200);
-    return () => clearTimeout(debounce);
+    return () => {
+      vigente = false;
+      clearTimeout(debounce);
+    };
   }, [busqueda]);
 
   async function asignar(articulo: Articulo) {
@@ -74,8 +87,12 @@ export default function AsignarCodigoModal({ codigo, onCerrar, onAsignado, onCre
     try {
       // Sólo cambia el código: el resto queda como esté ahora en la base,
       // aunque alguien lo haya editado desde que se cargó esta lista.
-      await window.api.articulos.actualizar(articulo.id, { ...aInput(articulo), codigoBarras: codigo }, aInput(articulo));
-      onAsignado();
+      const actualizado = await window.api.articulos.actualizar(
+        articulo.id,
+        { ...aInput(articulo), codigoBarras: codigo },
+        aInput(articulo)
+      );
+      onAsignado(actualizado);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo asignar el código');
       setAsignandoId(null);

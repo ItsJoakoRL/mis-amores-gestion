@@ -15,6 +15,7 @@ import {
   RotateCcw,
   ArrowLeft,
   ShoppingCart,
+  ClipboardList,
 } from 'lucide-react';
 import type { Articulo, Familia } from '@shared/types';
 import { formatearCantidad, formatearMoneda } from '@shared/formato';
@@ -39,6 +40,8 @@ export default function ArticulosPage() {
   const [busqueda, setBusqueda] = useState('');
   const [familiaId, setFamiliaId] = useState<string | null>(null);
   const [soloStockBajo, setSoloStockBajo] = useState(false);
+  // Los que se vendieron sin stock registrado (stock en negativo): para contar.
+  const [soloParaRevisar, setSoloParaRevisar] = useState(false);
   const [mostrandoPapelera, setMostrandoPapelera] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +87,17 @@ export default function ArticulosPage() {
         else setAjustandoStock(a);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo abrir el producto'));
+  }, [params, setParams]);
+
+  // El Panel manda acá con ?revisar=1 para ver los que se vendieron sin stock.
+  useEffect(() => {
+    if (!params.has('revisar')) return;
+    setSoloParaRevisar(true);
+    setParams((actuales) => {
+      const siguientes = new URLSearchParams(actuales);
+      siguientes.delete('revisar');
+      return siguientes;
+    }, { replace: true });
   }, [params, setParams]);
 
   function preguntarSiYaEsta() {
@@ -151,9 +165,10 @@ export default function ArticulosPage() {
       busqueda: busqueda || undefined,
       familiaId,
       soloStockBajo: mostrandoPapelera ? false : soloStockBajo,
+      soloParaRevisar: mostrandoPapelera ? false : soloParaRevisar,
       soloInactivos: mostrandoPapelera,
     }),
-    [busqueda, familiaId, soloStockBajo, mostrandoPapelera]
+    [busqueda, familiaId, soloStockBajo, soloParaRevisar, mostrandoPapelera]
   );
 
   // Si se escribe rápido o se cambia de filtro, pueden volver respuestas fuera de
@@ -207,6 +222,15 @@ export default function ArticulosPage() {
     () => articulos.filter((a) => a.stock <= a.stockMinimo).length,
     [articulos]
   );
+  // Cuántos hay para revisar en TODO el negocio (no sólo en lo que muestra el
+  // filtro de ahora): se vuelve a pedir cada vez que se recarga la lista.
+  const [totalParaRevisar, setTotalParaRevisar] = useState(0);
+  useEffect(() => {
+    window.api.dashboard
+      .stats()
+      .then((s) => setTotalParaRevisar(s.paraRevisarCount))
+      .catch(() => {});
+  }, [articulos]);
 
   async function handleEliminar(a: Articulo) {
     if (!confirm(`¿Dar de baja "${a.descripcion}"? Después lo podés recuperar desde la Papelera.`)) return;
@@ -328,9 +352,10 @@ export default function ArticulosPage() {
               ? 'bg-amber-100 text-amber-700'
               : 'bg-slate-100 text-slate-600'
         }`}
-        title="Ajustar stock"
+        title={a.stock < 0 ? 'Se vendió sin stock registrado: contalo y corregí el stock' : 'Ajustar stock'}
       >
         {formatearCantidad(a.stock)} {a.unidad === 'peso' ? 'kg' : 'un.'}
+        {a.stock < 0 ? ' · revisar' : ''}
       </button>
     );
 
@@ -442,6 +467,10 @@ export default function ArticulosPage() {
             </button>
           ) : (
             <>
+              <button data-tour="art-contar" className="btn-secondary" onClick={() => navigate('/inventario')}>
+                <ClipboardList className="h-4 w-4" />
+                Contar inventario
+              </button>
               <button className="btn-secondary" onClick={() => setMostrandoArmarCuenta(true)}>
                 <ShoppingCart className="h-4 w-4" />
                 Armar cuenta
@@ -514,6 +543,17 @@ export default function ArticulosPage() {
           >
             <AlertTriangle className="h-4 w-4" />
             Stock bajo{totalStockBajo > 0 ? ` (${totalStockBajo})` : ''}
+          </button>
+        )}
+
+        {!mostrandoPapelera && (soloParaRevisar || totalParaRevisar > 0) && (
+          <button
+            className={`btn ${soloParaRevisar ? 'bg-red-100 text-red-700' : 'btn-secondary'}`}
+            onClick={() => setSoloParaRevisar((v) => !v)}
+            title="Productos que se vendieron sin stock registrado: hay que contarlos"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Para revisar{totalParaRevisar > 0 ? ` (${totalParaRevisar})` : ''}
           </button>
         )}
       </div>

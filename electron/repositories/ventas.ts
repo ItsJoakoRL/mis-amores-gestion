@@ -88,10 +88,11 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
   }
   const cantidad = redondearCantidad(input.cantidad);
 
-  // El descuento de stock va primero: además de ser la operación que
-  // controla que haya stock suficiente (ver ajustarStock), así nunca se
-  // registra una venta de algo que no se pudo descontar.
-  await ajustarStock(input.articuloId, cantidad, 'egreso', 'Venta', usuarioId);
+  // El descuento de stock va primero, así nunca se registra una venta de algo
+  // que no se pudo descontar. Si el sistema dice que no queda stock se vende
+  // igual (el producto está en la mano: el que se equivocó es el stock cargado):
+  // queda en negativo y aparece en "Para revisar" hasta que se lo cuente.
+  await ajustarStock(input.articuloId, cantidad, 'egreso', 'Venta', usuarioId, undefined, { permitirNegativo: true });
 
   const doc: Omit<VentaDoc, '_id'> = {
     articuloId: new ObjectId(input.articuloId),

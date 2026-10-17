@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import DashboardPage from './modules/dashboard/DashboardPage';
 import ArticulosPage from './modules/articulos/ArticulosPage';
 import VentasPage from './modules/ventas/VentasPage';
+import InventarioPage from './modules/inventario/InventarioPage';
 import ReportesPage from './modules/reportes/ReportesPage';
 import ClientesPage from './modules/clientes/ClientesPage';
 import RecordatoriosPage from './modules/recordatorios/RecordatoriosPage';
@@ -31,6 +32,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/articulos" element={<ArticulosPage />} />
+        <Route path="/inventario" element={<InventarioPage />} />
         <Route path="/ventas" element={<VentasPage />} />
         <Route path="/reportes" element={<ReportesPage />} />
         <Route path="/clientes" element={<ClientesPage />} />

@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { Channels } from '../../shared/channels';
 import { seleccionarImagen } from '../imagenes';
-import type { ApiResult, ArticuloInput, ArticulosFiltro, Genero, Rol } from '../../shared/types';
+import type { ApiResult, ArticuloInput, ArticulosFiltro, Genero, ItemConteo, Rol } from '../../shared/types';
 import { getSesion, requiereAdmin, requiereSesion, setSesion } from '../session';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
 import {
@@ -26,6 +26,7 @@ import {
   eliminarDefinitivo,
   vaciarPapelera,
   ajustarStock,
+  aplicarConteo,
   historialPrecios,
   movimientosStock,
 } from '../repositories/articulos';
@@ -57,6 +58,7 @@ import {
   registrarPago,
   eliminarPago,
   eliminarAjuste,
+  estadoDeCuenta,
 } from '../repositories/clientes';
 import {
   listRecordatorios,
@@ -66,7 +68,15 @@ import {
   marcarRecordatorioHecho,
   eliminarRecordatorio,
 } from '../repositories/recordatorios';
-import type { ClienteInput, MetodoPago, RecordatorioInput, VentaInput } from '../../shared/types';
+import type { ClienteInput, EstadoCuenta, MetodoPago, RecordatorioInput, VentaInput } from '../../shared/types';
+import { armarPdfEstado, crearEnlaceEstado } from '../estadoCuenta';
+
+// El estado de cuenta de un cliente, o un error claro si ya no está en la lista.
+async function datosDelEstado(clienteId: string): Promise<EstadoCuenta> {
+  const estado = await estadoDeCuenta(clienteId);
+  if (!estado) throw new Error('Ese cliente ya no está en la lista.');
+  return estado;
+}
 
 // Envuelve cada handler para devolver siempre { ok, data } o { ok:false, error },
 // así el renderer nunca tiene que lidiar con excepciones sin capturar de IPC.
@@ -79,7 +89,12 @@ async function wrap<T>(fn: () => Promise<T> | T): Promise<ApiResult<T>> {
   }
 }
 
-export function registrarHandlers() {
+export interface DepsHandlers {
+  /** La clave de la red de PCs (con ella se firman los enlaces del estado de cuenta). */
+  claveRed: () => string;
+}
+
+export function registrarHandlers(deps: DepsHandlers) {
   ipcMain.handle(Channels.authLogin, (_e, usuario: string, password: string) =>
     wrap(async () => {
       const user = await verificarCredenciales(usuario, password);
@@ -180,6 +195,13 @@ export function registrarHandlers() {
         const sesion = requiereSesion();
         return ocultarCostoSiNoAdmin(await ajustarStock(id, cantidad, tipo, motivo, sesion.id), sesion.rol);
       })
+  );
+
+  ipcMain.handle(Channels.articulosAplicarConteo, (_e, items: ItemConteo[]) =>
+    wrap(() => {
+      const sesion = requiereSesion();
+      return aplicarConteo(items, sesion.id);
+    })
   );
 
   ipcMain.handle(Channels.articulosSugerirRubro, (_e, descripcion: string) =>
@@ -405,6 +427,25 @@ export function registrarHandlers() {
     wrap(() => {
       requiereSesion();
       return historialCliente(clienteId);
+    })
+  );
+  ipcMain.handle(Channels.clientesEstado, (_e, clienteId: string) =>
+    wrap(async () => {
+      requiereSesion();
+      return datosDelEstado(clienteId);
+    })
+  );
+  ipcMain.handle(Channels.clientesEnlaceEstado, (_e, clienteId: string) =>
+    wrap(async () => {
+      requiereSesion();
+      await datosDelEstado(clienteId);
+      return crearEnlaceEstado(deps.claveRed(), clienteId);
+    })
+  );
+  ipcMain.handle(Channels.clientesEstadoPdf, (_e, clienteId: string) =>
+    wrap(async () => {
+      requiereSesion();
+      return armarPdfEstado(await datosDelEstado(clienteId)).toString('base64');
     })
   );
   ipcMain.handle(

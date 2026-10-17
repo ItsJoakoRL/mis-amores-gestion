@@ -55,6 +55,12 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       titulo: 'Filtrar por stock bajo',
       texto: 'Con este filtro ves de una sólo los productos que se están por terminar.',
     },
+    {
+      selector: '[data-tour="art-contar"]',
+      titulo: 'Contar inventario',
+      texto:
+        'Si el stock cargado no coincide con lo que hay de verdad, elegí un rubro, contá (escaneando o escribiendo) y el sistema corrige el stock a lo que contaste. Lo que vas contando queda guardado. Si vendés algo que figura sin stock, igual se vende y queda en "Para revisar" hasta que lo cuentes.',
+    },
   ],
   Calendario: [
     {
@@ -110,6 +116,12 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       selector: '[data-tour="cli-ultimos-fiados"]',
       titulo: 'Últimos fiados',
       texto: 'Acá ves los últimos fiados de todos los clientes juntos, sin entrar uno por uno.',
+    },
+    {
+      selector: '[data-tour="cli-estado"]',
+      titulo: 'Estado de cuenta con código QR',
+      texto:
+        'Con este botón de cada cliente aparece un código QR: lo escaneás con el celular y baja un PDF con lo que debe, listo para mandárselo. También podés descargarlo, mandarlo por WhatsApp o copiar el enlace.',
     },
   ],
   Recordatorios: [

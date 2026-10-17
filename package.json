@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.8.13",
+  "version": "0.8.14",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",
@@ -13,6 +13,8 @@
     "build:win": "npm run build && electron-builder --win --publish always",
     "actualizaciones:servir": "node scripts/servidor-actualizaciones.js",
     "probar:sync": "node scripts/probar-sync.js",
+    "probar:inventario": "node scripts/probar-inventario.js",
+    "probar:estado-cuenta": "node scripts/probar-estado-cuenta.js",
     "probar:union": "node scripts/probar-union.js",
     "probar:azar": "node scripts/probar-azar.js",
     "probar:servidor": "node scripts/probar-servidor.js",

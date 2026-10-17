@@ -902,6 +902,30 @@ async function extras() {
   ok(hist.length === 1 && hist[0].precioAnterior === 100 && hist[0].precioNuevo === 120, 'cuando la edición sí se guarda, el cambio queda anotado una vez');
   await hasta(coinciden, 'que coincidan al final', 40000);
   ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 23. Vender sin stock registrado y contar el inventario ----
+  log('\n[23] Dos PCs venden sin stock registrado y después cuentan');
+  const sinStock = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'SIN STOCK', codigoBarras: '7797777', stock: 1 }));
+  await hasta(async () => porDescripcion(pcs.B, 'SIN STOCK'), 'que B vea el producto');
+  // A y B venden a la vez más de lo que hay: tienen que llegar al mismo número (negativo).
+  await Promise.all([
+    api(pcs.A, 'POST', '/api/ventas', { articuloId: sinStock.id, cantidad: 2, metodoPago: 'efectivo' }),
+    api(pcs.B, 'POST', '/api/ventas', { articuloId: sinStock.id, cantidad: 3, metodoPago: 'efectivo' }),
+  ]);
+  await hasta(async () => (await stockDe(pcs.A, 'SIN STOCK')) === -4 && (await stockDe(pcs.B, 'SIN STOCK')) === -4, 'que el stock quede en -4 en las dos (1 - 2 - 3)');
+  ok(true, 'las dos PCs venden sin stock a la vez y quedan las dos en -4');
+  ok((await api(pcs.B, 'GET', '/api/articulos?soloParaRevisar=true')).some((a) => a.descripcion === 'SIN STOCK'), 'B lo tiene en la lista "Para revisar"');
+  await hasta(coinciden, 'que coincidan con el stock en negativo', 40000);
+  ok(true, 'las dos PCs siguen idénticas con un stock negativo');
+
+  // B cuenta lo que hay de verdad (6): el ajuste llega a A.
+  const conteo = await api(pcs.B, 'POST', '/api/articulos/aplicar-conteo', { items: [{ articuloId: sinStock.id, contado: 6 }] });
+  ok(conteo.corregidos === 1 && conteo.errores.length === 0, 'B corrige el stock con el conteo');
+  await hasta(async () => (await stockDe(pcs.A, 'SIN STOCK')) === 6 && (await stockDe(pcs.B, 'SIN STOCK')) === 6, 'que A vea el stock contado (6)');
+  ok(true, 'el conteo hecho en B llega a A: las dos en 6');
+  ok((await api(pcs.A, 'GET', '/api/articulos?soloParaRevisar=true')).every((a) => a.descripcion !== 'SIN STOCK'), 'y en A ya no figura para revisar');
+  await hasta(coinciden, 'que coincidan después del conteo', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
 }
 
 async function todo() {

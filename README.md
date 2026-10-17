@@ -97,6 +97,23 @@ build-assets/        ícono de la app
 
 Pantalla común (en el menú, con el número de pendientes) para anotar lo que hay que hacer, cambiar, reponer o cobrar, con día opcional y marca de urgente, para que todas estén al tanto. Se anotan desde las PCs y los celulares, se sincronizan como el resto de los datos y queda registrado quién lo anotó y quién lo hizo. Cualquiera con sesión los ve y los marca; los borra quien los anotó o una administradora. Un recordatorio puede estar **atado a un producto o a un cliente**: en la lista tiene botones que llevan directo a ajustar su stock, editarlo, ver su cuenta o registrarle un pago (y al terminar pregunta si ya se puede marcar como hecho). También se puede anotar un recordatorio desde la fila de un producto o desde la cuenta de un cliente.
 
+## Vender sin stock y contar el inventario
+
+Muchos productos están cargados con un stock que no es el real (o en cero). Para poder usar el mostrador igual:
+
+- **Vender sin stock registrado.** Una venta se registra aunque el sistema diga que no queda (avisa en la cuenta, no la frena): el stock queda en negativo y el producto pasa a **"Para revisar"** (filtro en Artículos y tarjeta en el Panel) hasta que se lo cuenta. Sólo las ventas pasan en negativo: un egreso o un ajuste manual sigue sin poder dejar el stock bajo cero, y el valor del inventario no resta los negativos. Se sincroniza como cualquier stock (`stockBase` + movimientos).
+- **Código de barras desconocido en el mostrador.** Si se escanea un código (7 a 14 números) que no está cargado, pregunta **a qué producto es** (buscándolo por nombre, con los que no tienen código primero), se lo asigna para siempre y lo suma a la cuenta; o permite cargarlo como producto nuevo con ese código. No se adivina el producto por un parecido de números.
+- **Contar inventario** (menú, también en el celular). Se elige un rubro (o "Para revisar", o todos), se cuenta escribiendo o escaneando (cada escaneo suma 1; los productos por peso se escriben en kg) y se ve la diferencia de cada uno. Recién al apretar **Corregir el stock** el sistema deja cada producto en lo contado (un ajuste que queda en su historial como "Conteo de inventario (figuraba N)"). Lo contado se guarda en el aparato: se puede dejar y seguir después. Contar el mismo producto desde dos aparatos a la vez suma los dos ajustes: que cuente una sola persona por rubro. Prueba: `npm run probar:inventario`.
+
+## Estado de cuenta de los fiados (código QR)
+
+En **Clientes**, cada cliente tiene un botón con un código QR (en la lista y en su cuenta). Abre un cuadro con lo que debe y el **QR**: al escanearlo con el celular baja un **PDF** con el estado de cuenta (lo que quedó anotado sin pagar, los pagos que hizo y el total), listo para mandárselo. Desde el mismo cuadro se puede **descargar el PDF**, **mandarlo por WhatsApp** (abre WhatsApp con el mensaje y el enlace ya escritos; se elige a quién) o **copiar el enlace**. Se ve igual en la PC y en el celular.
+
+- **El enlace** (`/estado/<cliente>/<vence>/<firma>`, en `electron/estadoCuenta.ts`) se abre **sin usuario ni contraseña** (quien escanea no tiene cuenta), así que lo protege una firma: sale de la clave de la red del negocio, no se puede armar el enlace de otro cliente, la fecha de vencimiento va firmada (**30 días**) y un enlace malo, vencido o de un cliente que ya no está dice siempre lo mismo. Siempre muestra lo que debe **en ese momento** (no una foto). Lo atiende el servidor de internet (`URL_SERVIDOR_INTERNET`), igual que el celular: si estaba dormido, la primera vez tarda hasta 1 minuto.
+- **Lo que cuenta:** lo anotado sin pagar (un fiado ya marcado como pagado no cuenta) + saldos iniciales y ajustes − pagos: el mismo saldo que muestra la lista.
+- **El PDF** lo arma `electron/pdfSimple.ts`, un generador mínimo sin librerías (texto Helvetica y rectángulos, varias páginas, tildes y ñ), así que no suma peso al instalador ni al servidor. Quien reciba el enlace puede ver el nombre y las compras fiadas de ese cliente hasta que venza: conviene mandarlo sólo a la persona.
+- Prueba: `npm run probar:estado-cuenta`.
+
 ## Próximos módulos
 
 Proveedores/Compras — pendiente de implementar sobre esta misma base de datos.

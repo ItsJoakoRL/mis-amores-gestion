@@ -7,8 +7,10 @@ import type {
   ArticulosFiltro,
   Familia,
   HistorialPrecio,
+  ItemConteo,
   Marca,
   MovimientoStock,
+  ResultadoConteo,
   Proveedor,
   Rol,
   Genero,
@@ -35,6 +37,8 @@ import type {
   PcEncontrada,
   ResultadoConectarNube,
   EstadoServidorWeb,
+  EstadoCuenta,
+  EnlaceEstadoCuenta,
   SumarPcInput,
   ResultadoSumarPc,
 } from '../shared/types';
@@ -73,6 +77,8 @@ const api = {
     vaciarPapelera: (filtro?: ArticulosFiltro) => invoke<number>(Channels.articulosVaciarPapelera, filtro ?? {}),
     ajustarStock: (id: string, cantidad: number, tipo: 'ingreso' | 'egreso' | 'ajuste', motivo: string | null) =>
       invoke<Articulo>(Channels.articulosAjustarStock, id, cantidad, tipo, motivo),
+    // Conteo de inventario: deja el stock de cada producto en lo que se contó.
+    aplicarConteo: (items: ItemConteo[]) => invoke<ResultadoConteo>(Channels.articulosAplicarConteo, items),
     historialPrecios: (articuloId: string) =>
       invoke<HistorialPrecio[]>(Channels.articulosHistorialPrecios, articuloId),
     sugerirRubro: (descripcion: string) =>
@@ -117,6 +123,11 @@ const api = {
       invoke<Cliente>(Channels.clientesCrear, input, deudaInicial, fechaInicial),
     setActivo: (id: string, activo: boolean) => invoke<boolean>(Channels.clientesSetActivo, id, activo),
     historial: (clienteId: string) => invoke<MovimientoCuenta[]>(Channels.clientesHistorial, clienteId),
+    // Estado de cuenta para mandárselo al cliente: los datos, el enlace firmado del
+    // código QR y el PDF (en base64, para armar el archivo en la pantalla).
+    estado: (clienteId: string) => invoke<EstadoCuenta>(Channels.clientesEstado, clienteId),
+    enlaceEstado: (clienteId: string) => invoke<EnlaceEstadoCuenta>(Channels.clientesEnlaceEstado, clienteId),
+    estadoPdf: (clienteId: string) => invoke<string>(Channels.clientesEstadoPdf, clienteId),
     registrarPago: (clienteId: string, monto: number, nota: string | null, metodoPago: MetodoPago) =>
       invoke<boolean>(Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
     eliminarMovimiento: (tipo: 'venta' | 'pago' | 'ajuste', id: string) =>
@@ -174,7 +185,7 @@ const api = {
 const escritorio = {
   // Por si la pantalla viene de una PC con otra versión: para que pueda
   // fijarse qué sabe hacer este puente antes de usarlo.
-  versionPuente: 3,
+  versionPuente: 4,
   // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
   // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
   actualizaciones: {
@@ -202,6 +213,8 @@ const escritorio = {
   conectarNube: (direccion: string) => invoke<ResultadoConectarNube>(Channels.escritorioConectarNube, direccion),
   probarServidor: (direccion: string) => invoke<EstadoServidorWeb>(Channels.escritorioProbarServidor, direccion),
   reintentar: () => invoke<boolean>(Channels.escritorioReintentar),
+  // Abre un enlace en el navegador de la PC (sólo WhatsApp, para mandar el estado de cuenta).
+  abrirEnlace: (url: string) => invoke<boolean>(Channels.escritorioAbrirEnlace, url),
 };
 
 contextBridge.exposeInMainWorld('escritorio', escritorio);

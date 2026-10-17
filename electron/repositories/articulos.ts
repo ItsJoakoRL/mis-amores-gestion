@@ -6,7 +6,9 @@ import type {
   ArticuloInput,
   ArticulosFiltro,
   HistorialPrecio,
+  ItemConteo,
   MovimientoStock,
+  ResultadoConteo,
   UnidadVenta,
 } from '../../shared/types';
 
@@ -157,6 +159,10 @@ export async function listArticulos(filtro: ArticulosFiltro = {}): Promise<Artic
   }
   if (filtro.soloStockBajo) {
     match.$expr = { $lte: ['$stock', '$stockMinimo'] };
+  }
+  // Se vendieron sin stock registrado: hay que contarlos y corregirlos.
+  if (filtro.soloParaRevisar) {
+    match.stock = { $lt: 0 };
   }
 
   const docs = await coleccion()
@@ -416,7 +422,13 @@ export async function ajustarStock(
   usuarioId: string,
   /** Si se indica, el movimiento se guarda con ese _id: así, si dos PCs hacen
    * "lo mismo" a la vez (anular la misma venta), terminan con un solo movimiento. */
-  idMovimiento?: ObjectId
+  idMovimiento?: ObjectId,
+  opciones: {
+    /** Una venta se registra aunque el sistema diga que no queda stock (en el
+     * local el producto está en la mano): el stock queda en negativo y el
+     * artículo aparece en "Para revisar" hasta que se lo cuente. */
+    permitirNegativo?: boolean;
+  } = {}
 ): Promise<Articulo> {
   if (typeof cantidadPedida !== 'number' || !Number.isFinite(cantidadPedida)) {
     throw new Error('La cantidad no es un número válido');
@@ -455,7 +467,9 @@ export async function ajustarStock(
       // update con pipeline (en vez de $inc) para poder redondear en la misma
       // operación; el "+ 0" convierte en 0 el -0 que puede dejar el redondeo.
       const condicion =
-        delta < 0 ? { _id: objectId, stock: { $gte: -delta - TOLERANCIA_STOCK } } : { _id: objectId };
+        delta < 0 && !opciones.permitirNegativo
+          ? { _id: objectId, stock: { $gte: -delta - TOLERANCIA_STOCK } }
+          : { _id: objectId };
       const actualizado = await coleccion().findOneAndUpdate(
         condicion,
         [
@@ -513,6 +527,76 @@ export async function ajustarStock(
   });
 
   return (await getArticulo(id))!;
+}
+
+// El conteo de inventario: alguien contó lo que hay en la góndola o el depósito
+// y el stock del sistema se corrige a lo contado. Es un "ajuste" por producto
+// (queda en su historial de movimientos, con lo que figuraba antes), y recién
+// ahí se sincroniza con las otras PCs. Cada producto se resuelve por su cuenta:
+// si uno falla (ya no existe, está en la papelera, número inválido) los demás se
+// corrigen igual y el problema vuelve en `errores`.
+const MAX_ITEMS_CONTEO = 1000;
+
+export async function aplicarConteo(items: ItemConteo[], usuarioId: string): Promise<ResultadoConteo> {
+  if (!Array.isArray(items) || items.length === 0) throw new Error('No hay nada contado para corregir');
+  if (items.length > MAX_ITEMS_CONTEO) {
+    throw new Error(`Se pueden corregir hasta ${MAX_ITEMS_CONTEO} productos por vez`);
+  }
+  const resultado: ResultadoConteo = { corregidos: 0, sinCambios: 0, errores: [] };
+  const vistos = new Set<string>();
+
+  for (const item of items) {
+    const id = typeof item?.articuloId === 'string' ? item.articuloId : '';
+    const falla = (mensaje: string, descripcion: string | null = null) =>
+      resultado.errores.push({ articuloId: id, descripcion, mensaje });
+
+    if (!ObjectId.isValid(id)) {
+      falla('El producto no es válido');
+      continue;
+    }
+    if (vistos.has(id)) {
+      falla('El producto vino repetido en el conteo');
+      continue;
+    }
+    vistos.add(id);
+
+    const articulo = await getArticulo(id);
+    if (!articulo) {
+      falla('El producto ya no existe');
+      continue;
+    }
+    if (!articulo.activo) {
+      falla('Está en la papelera', articulo.descripcion);
+      continue;
+    }
+    const contado = item.contado;
+    if (typeof contado !== 'number' || !Number.isFinite(contado) || contado < 0) {
+      falla('Lo contado tiene que ser un número igual o mayor a cero', articulo.descripcion);
+      continue;
+    }
+    if (articulo.unidad !== 'peso' && !Number.isInteger(contado)) {
+      falla('Se cuenta por unidad: tiene que ser un número entero', articulo.descripcion);
+      continue;
+    }
+    const nuevo = redondearCantidad(contado);
+    if (nuevo === articulo.stock) {
+      resultado.sinCambios += 1;
+      continue;
+    }
+    try {
+      await ajustarStock(
+        id,
+        nuevo,
+        'ajuste',
+        `Conteo de inventario (figuraba ${formatearCantidad(articulo.stock)})`,
+        usuarioId
+      );
+      resultado.corregidos += 1;
+    } catch (err) {
+      falla(err instanceof Error ? err.message : 'No se pudo corregir', articulo.descripcion);
+    }
+  }
+  return resultado;
 }
 
 export async function historialPrecios(articuloId: string): Promise<HistorialPrecio[]> {

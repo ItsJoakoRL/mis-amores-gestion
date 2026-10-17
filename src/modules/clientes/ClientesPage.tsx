@@ -3,9 +3,33 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { UserPlus, X, Wallet, Clock, Trash2, Search, StickyNote, CheckCircle2, Circle, BellRing } from 'lucide-react';
-import type { Cliente, MetodoPago, MovimientoCuenta, Venta } from '@shared/types';
-import { formatearCantidad, formatearMoneda, formatearMonedaConCentavos, parsearMonto } from '@shared/formato';
+import QRCode from 'qrcode';
+import {
+  UserPlus,
+  X,
+  Wallet,
+  Clock,
+  Trash2,
+  Search,
+  StickyNote,
+  CheckCircle2,
+  Circle,
+  BellRing,
+  QrCode,
+  Download,
+  Copy,
+  Check,
+  MessageCircle,
+  Loader2,
+} from 'lucide-react';
+import type { Cliente, EnlaceEstadoCuenta, EstadoCuenta, MetodoPago, MovimientoCuenta, Venta } from '@shared/types';
+import {
+  formatearCantidad,
+  formatearMoneda,
+  formatearMonedaConCentavos,
+  nombreArchivoEstadoCuenta,
+  parsearMonto,
+} from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
@@ -69,6 +93,8 @@ export default function ClientesPage() {
   const [cargando, setCargando] = useState(true);
   const [mostrarNuevo, setMostrarNuevo] = useState(false);
   const [clienteAbierto, setClienteAbierto] = useState<Cliente | null>(null);
+  // De quién se muestra el estado de cuenta (el código QR para descargarlo y mandarlo).
+  const [estadoDe, setEstadoDe] = useState<Pick<Cliente, 'id' | 'nombre'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Si se llegó desde un recordatorio ("cobrarle a tal cliente"), se abre
   // directo su cuenta (o el pago), y al terminar se pregunta si ya está hecho.
@@ -265,27 +291,27 @@ export default function ClientesPage() {
               <th className="px-4 py-3 font-medium">Cliente</th>
               <th className="hidden px-4 py-3 font-medium sm:table-cell">Último fiado</th>
               <th className="px-4 py-3 font-medium">Debe</th>
-              {esAdmin && <th className="px-4 py-3"></th>}
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {cargando && (
               <tr>
-                <td colSpan={esAdmin ? 4 : 3} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-10 text-center text-slate-400">
                   Cargando...
                 </td>
               </tr>
             )}
             {!cargando && clientes.length === 0 && (
               <tr>
-                <td colSpan={esAdmin ? 4 : 3} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-10 text-center text-slate-400">
                   Todavía no cargaste ningún cliente.
                 </td>
               </tr>
             )}
             {!cargando && clientes.length > 0 && clientesFiltrados.length === 0 && (
               <tr>
-                <td colSpan={esAdmin ? 4 : 3} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-10 text-center text-slate-400">
                   Ningún cliente coincide con la búsqueda.
                 </td>
               </tr>
@@ -324,20 +350,31 @@ export default function ClientesPage() {
                       {formatearMoneda(c.saldo)}
                     </span>
                   </td>
-                  {esAdmin && (
-                    <td className="px-2 py-3 text-right">
+                  <td className="whitespace-nowrap px-2 py-3 text-right">
+                    <button
+                      data-tour="cli-estado"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEstadoDe(c);
+                      }}
+                      className="mr-1 rounded-lg bg-brand-50 p-2 text-brand-600 transition-colors hover:bg-brand-100 sm:p-1.5"
+                      title="Estado de cuenta: código QR para descargar y mandarle lo que debe"
+                    >
+                      <QrCode className="h-4 w-4" />
+                    </button>
+                    {esAdmin && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEliminar(c);
                         }}
-                        className="rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600 sm:p-1.5"
                         title="Sacar de la lista"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </td>
-                  )}
+                    )}
+                  </td>
                 </tr>
               ))}
           </tbody>
@@ -360,6 +397,7 @@ export default function ClientesPage() {
         <ClienteDetalleModal
           cliente={clienteAbierto}
           abrirPago={abrirPago}
+          onEstadoCuenta={() => setEstadoDe(clienteAbierto)}
           onCerrar={() => {
             setClienteAbierto(null);
             setAbrirPago(false);
@@ -371,6 +409,8 @@ export default function ClientesPage() {
           }}
         />
       )}
+
+      {estadoDe && <EstadoCuentaModal cliente={estadoDe} onCerrar={() => setEstadoDe(null)} />}
     </div>
   );
 }
@@ -514,12 +554,15 @@ function NuevoClienteModal({
 function ClienteDetalleModal({
   cliente,
   abrirPago,
+  onEstadoCuenta,
   onCerrar,
   onCambio,
 }: {
   cliente: Cliente;
   /** Abrir directo el cuadro para registrar un pago (viene de un recordatorio). */
   abrirPago?: boolean;
+  /** Abrir el estado de cuenta (código QR para descargarlo y mandárselo). */
+  onEstadoCuenta: () => void;
   onCerrar: () => void;
   onCambio: () => void;
 }) {
@@ -608,6 +651,14 @@ function ClienteDetalleModal({
             >
               <BellRing className="h-4 w-4" />
               Recordatorio
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={onEstadoCuenta}
+              title="Código QR para descargar y mandarle lo que debe"
+            >
+              <QrCode className="h-4 w-4" />
+              Estado de cuenta
             </button>
             <button className="btn-primary" onClick={() => setMostrarPago(true)}>
               Registrar pago
@@ -760,6 +811,198 @@ function ClienteDetalleModal({
           }}
         />
       )}
+    </div>,
+    document.body
+  );
+}
+
+// El estado de cuenta de un cliente para mandárselo: un código QR (lleva a un PDF
+// con lo que debe, sin usuario ni contraseña) y botones para descargarlo, mandarlo
+// por WhatsApp o copiar el enlace. El enlace vale 30 días y siempre trae lo de ahora.
+function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' | 'nombre'>; onCerrar: () => void }) {
+  const [estado, setEstado] = useState<EstadoCuenta | null>(null);
+  const [enlace, setEnlace] = useState<EnlaceEstadoCuenta | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [errorEstado, setErrorEstado] = useState<string | null>(null);
+  const [errorEnlace, setErrorEnlace] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  const [descargando, setDescargando] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  useEffect(() => {
+    let vigente = true;
+    window.api.clientes
+      .estado(cliente.id)
+      .then((e) => vigente && setEstado(e))
+      .catch((err) => vigente && setErrorEstado(err instanceof Error ? err.message : 'No se pudo cargar la cuenta'));
+    window.api.clientes
+      .enlaceEstado(cliente.id)
+      .then(async (l) => {
+        const imagen = await QRCode.toDataURL(l.url, { margin: 1, width: 240, errorCorrectionLevel: 'M' });
+        if (!vigente) return;
+        setEnlace(l);
+        setQr(imagen);
+      })
+      .catch((err) => vigente && setErrorEnlace(err instanceof Error ? err.message : 'No se pudo armar el enlace'));
+    return () => {
+      vigente = false;
+    };
+  }, [cliente.id]);
+
+  async function descargarPdf() {
+    setDescargando(true);
+    setAviso(null);
+    try {
+      const base64 = await window.api.clientes.estadoPdf(cliente.id);
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nombreArchivoEstadoCuenta(cliente.nombre);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      setAviso({ tipo: 'ok', texto: 'Listo: se descargó el PDF.' });
+    } catch (err) {
+      setAviso({ tipo: 'error', texto: err instanceof Error ? err.message : 'No se pudo armar el PDF' });
+    } finally {
+      setDescargando(false);
+    }
+  }
+
+  async function copiarEnlace() {
+    if (!enlace) return;
+    try {
+      await navigator.clipboard.writeText(enlace.url);
+    } catch {
+      // Sin permiso para el portapapeles (página sin https): se copia con un cuadro escondido.
+      const cuadro = document.createElement('textarea');
+      cuadro.value = enlace.url;
+      document.body.appendChild(cuadro);
+      cuadro.select();
+      document.execCommand('copy');
+      cuadro.remove();
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  }
+
+  async function mandarPorWhatsApp() {
+    if (!enlace) return;
+    const nombre = cliente.nombre.trim().split(/\s+/)[0];
+    const debe = estado && estado.saldo > 0 ? `: debés ${formatearMonedaConCentavos(estado.saldo)}` : '';
+    const mensaje = `Hola ${nombre}! Te paso el detalle de tu cuenta en Mis Amores${debe}. Lo podés ver y descargar acá: ${enlace.url}`;
+    const direccion = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    try {
+      if (window.escritorio?.abrirEnlace) await window.escritorio.abrirEnlace(direccion);
+      else window.open(direccion, '_blank', 'noopener');
+    } catch (err) {
+      setAviso({ tipo: 'error', texto: err instanceof Error ? err.message : 'No se pudo abrir WhatsApp' });
+    }
+  }
+
+  const debe = estado ? estado.saldo > 0 : false;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+      <div className="flex max-h-[92dvh] w-full max-w-md animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="font-semibold text-slate-800">Estado de cuenta</h2>
+            <p className="truncate text-sm text-slate-500">{cliente.nombre}</p>
+          </div>
+          <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" title="Cerrar">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 overflow-y-auto px-5 py-4">
+          {errorEstado ? (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{errorEstado}</p>
+          ) : (
+            <div
+              className={`rounded-lg px-4 py-3 ${
+                !estado ? 'bg-slate-50' : debe ? 'bg-amber-50' : 'bg-emerald-50'
+              }`}
+            >
+              <p className="text-xs text-slate-500">
+                {!estado ? 'Cargando...' : debe ? 'Debe' : estado.saldo < 0 ? 'Saldo a favor' : 'Estado'}
+              </p>
+              <p
+                className={`text-2xl font-semibold ${
+                  !estado ? 'text-slate-300' : debe ? 'text-amber-700' : 'text-emerald-700'
+                }`}
+              >
+                {estado
+                  ? debe || estado.saldo < 0
+                    ? formatearMonedaConCentavos(Math.abs(estado.saldo))
+                    : 'No debe nada'
+                  : '—'}
+              </p>
+            </div>
+          )}
+
+          <div className="text-center">
+            {errorEnlace ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-left text-sm text-amber-700">
+                {errorEnlace} Igual podés descargar el PDF con el botón de abajo.
+              </p>
+            ) : qr ? (
+              <>
+                <img src={qr} alt="Código QR del estado de cuenta" className="mx-auto rounded-lg border border-slate-200" />
+                <p className="mt-2 text-sm text-slate-600">
+                  Escaneá este código con el celular para <strong>descargar el estado de cuenta</strong> (PDF) y mandárselo
+                  a {cliente.nombre.trim().split(/\s+/)[0]}.
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  El enlace vale 30 días y siempre muestra lo que debe en ese momento. La primera vez puede tardar hasta 1
+                  minuto en abrir (el servidor de internet descansa cuando no se usa).
+                </p>
+              </>
+            ) : (
+              <p className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Armando el código...
+              </p>
+            )}
+          </div>
+
+          {aviso && (
+            <p
+              className={`rounded-lg px-3 py-2 text-sm ${
+                aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+              }`}
+            >
+              {aviso.texto}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="btn-primary col-span-2 justify-center"
+              onClick={descargarPdf}
+              disabled={descargando || !!errorEstado}
+            >
+              {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Descargar PDF
+            </button>
+            <button
+              className="btn-secondary justify-center"
+              onClick={mandarPorWhatsApp}
+              disabled={!enlace}
+              title="Abre WhatsApp con un mensaje listo para mandar (elegís a quién)"
+            >
+              <MessageCircle className="h-4 w-4 text-emerald-600" />
+              WhatsApp
+            </button>
+            <button className="btn-secondary justify-center" onClick={copiarEnlace} disabled={!enlace}>
+              {copiado ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+              {copiado ? '¡Copiado!' : 'Copiar enlace'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>,
     document.body
   );

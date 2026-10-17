@@ -8,14 +8,17 @@ import cors from 'cors';
 import http from 'http';
 import os from 'os';
 import path from 'path';
+import { armarPdfEstado, crearEnlaceEstado, nombreArchivoEstado, verificarEnlaceEstado } from '../estadoCuenta';
 import {
   MENSAJE_SIN_SESION,
   type ArticuloInput,
   type ArticulosFiltro,
   type ClienteInput,
   type DatosParaJuntar,
+  type EstadoCuenta,
   type Genero,
   type InfoPc,
+  type ItemConteo,
   type MetodoPago,
   type Rol,
   type SesionActual,
@@ -54,6 +57,7 @@ import {
   eliminarDefinitivo,
   vaciarPapelera,
   ajustarStock,
+  aplicarConteo,
   historialPrecios,
   movimientosStock,
 } from '../repositories/articulos';
@@ -78,6 +82,7 @@ import {
   registrarPago,
   eliminarPago,
   eliminarAjuste,
+  estadoDeCuenta,
 } from '../repositories/clientes';
 import {
   listRecordatorios,
@@ -139,6 +144,7 @@ function filtroDesdeQuery(query: Request['query']): ArticulosFiltro {
     soloStockBajo: query.soloStockBajo === 'true',
     incluirInactivos: query.incluirInactivos === 'true',
     soloInactivos: query.soloInactivos === 'true',
+    soloParaRevisar: query.soloParaRevisar === 'true',
   };
 }
 
@@ -396,6 +402,13 @@ export async function iniciarServidorWeb(
     })
   );
   app.post(
+    '/api/articulos/aplicar-conteo',
+    ruta((req) => {
+      const sesion = requiereSesion(req);
+      return aplicarConteo((req.body as { items: ItemConteo[] }).items, sesion.id);
+    })
+  );
+  app.post(
     '/api/articulos/vaciar-papelera',
     ruta((req) => {
       requiereAdmin(req);
@@ -610,6 +623,57 @@ export async function iniciarServidorWeb(
       return historialCliente((req.params.id as string));
     })
   );
+  // El estado de cuenta para mandárselo al cliente: los datos, el enlace firmado
+  // (el del código QR) y el PDF en base64 (para guardarlo desde la pantalla).
+  const estadoOError = async (id: string): Promise<EstadoCuenta> => {
+    const estado = await estadoDeCuenta(id);
+    if (!estado) throw new Error('Ese cliente ya no está en la lista.');
+    return estado;
+  };
+  app.get(
+    '/api/clientes/:id/estado',
+    ruta(async (req) => {
+      requiereSesion(req);
+      return estadoOError(req.params.id as string);
+    })
+  );
+  app.post(
+    '/api/clientes/:id/enlace-estado',
+    ruta(async (req) => {
+      requiereSesion(req);
+      await estadoOError(req.params.id as string);
+      return crearEnlaceEstado(sync?.claveRed() ?? '', req.params.id as string);
+    })
+  );
+  app.get(
+    '/api/clientes/:id/estado-pdf',
+    ruta(async (req) => {
+      requiereSesion(req);
+      return armarPdfEstado(await estadoOError(req.params.id as string)).toString('base64');
+    })
+  );
+  // El enlace del código QR: lo abre quien escanea (sin usuario ni contraseña),
+  // por eso va firmado y vence (ver estadoCuenta.ts). Un enlace malo o vencido
+  // dice lo mismo, para no dar pistas.
+  app.get('/estado/:id/:expira/:firma', async (req, res) => {
+    res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' });
+    try {
+      const id = String(req.params.id);
+      const valido = verificarEnlaceEstado(sync?.claveRed() ?? '', id, String(req.params.expira), String(req.params.firma));
+      const estado = valido === 'ok' ? await estadoDeCuenta(id) : null;
+      if (!estado) {
+        res.status(404).type('text/plain; charset=utf-8').send('Este enlace no es válido o ya venció. Pedile a Mis Amores que te mande uno nuevo.');
+        return;
+      }
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${nombreArchivoEstado(estado.nombre)}"`,
+      });
+      res.send(armarPdfEstado(estado));
+    } catch {
+      res.status(500).type('text/plain; charset=utf-8').send('No se pudo armar el estado de cuenta. Probá de nuevo en un rato.');
+    }
+  });
   app.post(
     '/api/clientes/:id/activo',
     ruta(async (req) => {

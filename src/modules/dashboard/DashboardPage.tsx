@@ -11,6 +11,7 @@ import {
   Smartphone,
   BellRing,
   Flame,
+  ClipboardList,
 } from 'lucide-react';
 import type { DashboardStats, Recordatorio, ResumenDiaVentas } from '@shared/types';
 import { formatearMoneda } from '@shared/formato';
@@ -96,6 +97,29 @@ export default function DashboardPage() {
           delay={180}
         />
       </div>
+
+      {stats && stats.paraRevisarCount > 0 && (
+        <Link
+          to="/articulos?revisar=1"
+          className="group mt-6 flex animate-slide-up items-center justify-between card border-amber-200 bg-amber-50/60 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm shadow-amber-500/30">
+              <ClipboardList className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-medium text-slate-700">Para revisar</h2>
+              <p className="mt-0.5 text-sm text-slate-600">
+                {stats.paraRevisarCount === 1
+                  ? '1 producto se vendió sin stock registrado'
+                  : `${stats.paraRevisarCount} productos se vendieron sin stock registrado`}
+                : contalos para corregir el stock.
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      )}
 
       <Link
         to="/ventas"

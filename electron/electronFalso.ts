@@ -106,6 +106,13 @@ export const dialog = {
   },
 };
 
+// En un servidor no hay navegador donde abrir nada (y nadie lo pide: no hay pantalla).
+export const shell = {
+  openExternal(): Promise<void> {
+    return Promise.resolve();
+  },
+};
+
 export class Tray {}
 
 export const Menu = {

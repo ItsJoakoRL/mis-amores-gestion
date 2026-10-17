@@ -40,6 +40,14 @@ export function redondearCantidad(cantidad: number): number {
   return Math.round(cantidad * 1000) / 1000 || 0;
 }
 
+// ¿Lo que se escaneó o escribió parece un código de barras (EAN-8, UPC-A,
+// EAN-13, ITF-14)? Sólo números, de 7 a 14. Un texto corto o con letras es una
+// búsqueda por nombre: con un código en cambio no se adivina el producto por un
+// parecido (un pedazo del número podría ser de otro producto).
+export function pareceCodigoDeBarras(texto: string): boolean {
+  return /^\d{7,14}$/.test(String(texto ?? '').trim());
+}
+
 // Para cuadros donde se escribe una cantidad con decimales (ej. kilos): deja
 // usar coma ("2,5", como se escribe acá) o punto, pero un solo separador —
 // con dos, el número quedaba inválido sin avisar. Devuelve el texto tal como
@@ -81,4 +89,15 @@ export function parsearMonto(texto: string): number {
   }
   if (!/^(\d+\.?\d*|\.\d+)$/.test(t)) return NaN;
   return Number(t);
+}
+
+// El nombre con que se guarda el estado de cuenta de un cliente: sin tildes ni
+// símbolos (los sistemas de archivos y los navegadores lo agradecen).
+export function nombreArchivoEstadoCuenta(nombre: string): string {
+  const base = nombre
+    .normalize('NFD')
+    .replace(new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, 'g'), '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `Estado-de-cuenta-${base || 'cliente'}.pdf`;
 }
