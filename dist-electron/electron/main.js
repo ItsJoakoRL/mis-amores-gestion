@@ -1308,9 +1308,10 @@ async function arrancar() {
         const primeraIp = (0, httpServer_1.obtenerIpsLan)()[0];
         if (primeraIp && !modoServidor)
             detenerMdns = (0, mdns_1.iniciarMdns)(primeraIp);
-        // El plan gratuito de Render apaga el servidor a los 15 minutos sin visitas:
-        // con las PCs apagadas se visita solo para que el celular ande siempre.
-        if ((0, nube_1.esModoNube)())
+        // Por defecto el servidor se duerme a los 15 minutos sin visitas (Render
+        // gratis) y despierta cuando entra alguien. Sólo si se pide a propósito
+        // (MIS_AMORES_MANTENER_DESPIERTO=1) se visita solo para no dormirse.
+        if ((0, nube_1.esModoNube)() && (0, despertador_1.mantenerDespiertoActivado)())
             detenerDespertador = (0, despertador_1.iniciarDespertador)({ registrar: (m) => logCrash('despertador', m) });
     }
     catch (err) {
