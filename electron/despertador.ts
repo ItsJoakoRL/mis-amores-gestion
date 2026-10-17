@@ -1,18 +1,23 @@
-// Que el servidor de internet no se duerma (ver SERVIDOR_RENDER.md).
+// Que el servidor de internet no se duerma (ver SERVIDOR_RENDER.md). OPCIONAL y
+// APAGADO por defecto: se prende con MIS_AMORES_MANTENER_DESPIERTO=1.
 //
 // El plan gratuito de Render apaga el servidor si pasan 15 minutos sin que nadie
-// lo visite, y al celular le toca esperar un minuto a que despierte. Con las PCs
-// apagadas no hay quien lo visite, así que se visita solo: cada pocos minutos
-// pide su propia página por la dirección pública (la que usa el celular), y eso
-// llega a Render como una visita más, desde afuera.
-//
-// Es una de las dos capas. La otra es externa (.github/workflows/despertar-servidor.yml)
-// y vuelve a levantarlo si alguna vez se cayera: un servidor dormido no puede
-// visitarse a sí mismo.
+// lo visite, y al celular le toca esperar un minuto a que despierte. Así está
+// bien para el uso normal y gasta pocas de las 750 horas gratis del mes (que
+// Render cuenta por cuenta, sumando todos los servicios gratuitos). Quien
+// prefiera que ande siempre, sin esperar, puede prenderlo: el servidor se visita
+// solo, cada pocos minutos, por su dirección pública (la que usa el celular), y
+// eso llega a Render como una visita más desde afuera. Gasta ~744 horas por mes:
+// alcanza para UN solo servicio gratuito por cuenta.
 
 /** Cada cuánto se visita: bien dentro de los 15 minutos de Render. */
 const CADA_MS = 4 * 60 * 1000;
 const ESPERA_MAX_MS = 30_000;
+
+/** ¿Se pidió mantenerlo despierto? Por defecto no: se duerme como siempre. */
+export function mantenerDespiertoActivado(): boolean {
+  return (process.env.MIS_AMORES_MANTENER_DESPIERTO ?? '').trim() === '1';
+}
 
 /** La dirección pública de este servidor, si se sabe: Render la pone sola en
  * RENDER_EXTERNAL_URL; MIS_AMORES_URL_PUBLICA sirve para fijarla a mano. */

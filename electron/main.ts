@@ -24,7 +24,7 @@ import { Diario } from './sync/diario';
 import { Aplicador, completarStockBase, recalcularTodoElStock } from './sync/aplicar';
 import { ErrorDeSync, Motor, idDeRed, type HolaSync, type ParConfig } from './sync/motor';
 import { esModoNube, normalizarUrlNube } from './nube';
-import { iniciarDespertador } from './despertador';
+import { iniciarDespertador, mantenerDespiertoActivado } from './despertador';
 import { escanearRedLocal } from './escaneoRed';
 import { Reloj } from './sync/reloj';
 import { Channels } from '../shared/channels';
@@ -1388,9 +1388,10 @@ async function arrancar(): Promise<boolean> {
     // internet no sirve de nada.
     const primeraIp = obtenerIpsLan()[0];
     if (primeraIp && !modoServidor) detenerMdns = iniciarMdns(primeraIp);
-    // El plan gratuito de Render apaga el servidor a los 15 minutos sin visitas:
-    // con las PCs apagadas se visita solo para que el celular ande siempre.
-    if (esModoNube()) detenerDespertador = iniciarDespertador({ registrar: (m) => logCrash('despertador', m) });
+    // Por defecto el servidor se duerme a los 15 minutos sin visitas (Render
+    // gratis) y despierta cuando entra alguien. Sólo si se pide a propósito
+    // (MIS_AMORES_MANTENER_DESPIERTO=1) se visita solo para no dormirse.
+    if (esModoNube() && mantenerDespiertoActivado()) detenerDespertador = iniciarDespertador({ registrar: (m) => logCrash('despertador', m) });
   } catch (err) {
     // Si el puerto está ocupado o falla por lo que sea, la app de escritorio
     // sigue funcionando igual — sólo no va a estar disponible desde el

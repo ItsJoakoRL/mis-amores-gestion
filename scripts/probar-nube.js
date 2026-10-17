@@ -134,6 +134,8 @@ function lanzar(p) {
         // Con barra al final a propósito: tiene que quedar bien igual.
         MIS_AMORES_URL_PUBLICA: `http://127.0.0.1:${PUERTO_PUBLICA}/`,
         MIS_AMORES_DESPERTADOR_MS: '600',
+        // Apagado por defecto: acá se prende a propósito para probar que anda.
+        MIS_AMORES_MANTENER_DESPIERTO: '1',
       },
       stdio: 'ignore',
       windowsHide: true,
@@ -274,7 +276,17 @@ async function todo() {
   ok(info.idPc === ID_SERVIDOR, 'su identificador sale de la clave (no del disco)');
   ok(typeof info.segundosEncendido === 'number' && info.segundosEncendido >= 0, 'informa cuánto lleva prendido (así se ve que no se durmió)');
 
-  log('\n[1b] Se visita solo por su dirección pública para que Render no lo duerma');
+  log('\n[1b] Opcional: si se pide, se visita solo por su dirección pública para que Render no lo duerma');
+  const { mantenerDespiertoActivado } = require(path.join(RAIZ, 'dist-electron/electron/despertador.js'));
+  const interruptorAntes = process.env.MIS_AMORES_MANTENER_DESPIERTO;
+  delete process.env.MIS_AMORES_MANTENER_DESPIERTO;
+  ok(mantenerDespiertoActivado() === false, 'por defecto NO se mantiene despierto (se duerme como siempre y gasta pocas horas gratis)');
+  process.env.MIS_AMORES_MANTENER_DESPIERTO = '0';
+  ok(mantenerDespiertoActivado() === false, 'con "0" tampoco');
+  process.env.MIS_AMORES_MANTENER_DESPIERTO = '1';
+  ok(mantenerDespiertoActivado() === true, 'sólo con "1" se prende');
+  if (interruptorAntes === undefined) delete process.env.MIS_AMORES_MANTENER_DESPIERTO;
+  else process.env.MIS_AMORES_MANTENER_DESPIERTO = interruptorAntes;
   await hasta(() => visitas.cantidad >= 2, 'que el servidor se visite solo', 15000);
   ok(true, `se visitó solo ${visitas.cantidad} veces sin que nadie se lo pida`);
   ok([...visitas.rutas].every((r) => r === '/api/sistema/info'), 'siempre pide la misma página liviana (sin duplicar la barra final)');
