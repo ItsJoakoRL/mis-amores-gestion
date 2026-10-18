@@ -161,6 +161,9 @@ const SUMA_FIADO = { $cond: [{ $eq: ['$metodoPago', 'fiado'] }, '$total', 0] };
 // necesita el calendario para pintar cada casillero sin traer cada venta.
 async function resumenMes(anio, mesIndiceCero) {
     const { desde, hasta } = (0, fechaLocal_1.limitesMesLocal)(anio, mesIndiceCero);
+    // Los pagos que clientes de cuenta corriente hicieron ese mes también son plata
+    // que entró: se suman al día en que se recibieron (aunque ese día no haya ventas).
+    const pagos = await (0, clientes_1.pagosPorDia)(desde, hasta);
     const docs = await coleccion()
         .aggregate([
         { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -176,13 +179,24 @@ async function resumenMes(anio, mesIndiceCero) {
         { $sort: { _id: 1 } },
     ])
         .toArray();
-    return docs.map((d) => ({
-        fecha: d._id,
-        total: d.total,
-        totalCobrado: d.totalCobrado,
-        totalFiado: d.totalFiado,
-        cantidadVentas: d.cantidadVentas,
-    }));
+    const filas = new Map(docs.map((d) => [
+        d._id,
+        {
+            fecha: d._id,
+            total: d.total,
+            totalCobrado: d.totalCobrado,
+            totalFiado: d.totalFiado,
+            cantidadVentas: d.cantidadVentas,
+            totalPagos: pagos.get(d._id)?.total ?? 0,
+            cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
+        },
+    ]));
+    for (const [dia, p] of pagos) {
+        if (!filas.has(dia)) {
+            filas.set(dia, { fecha: dia, total: 0, totalCobrado: 0, totalFiado: 0, cantidadVentas: 0, totalPagos: p.total, cantidadPagos: p.cantidad });
+        }
+    }
+    return [...filas.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 // Los fiados más recientes de TODOS los clientes, de una — pensado para que
 // cualquiera (esté en el celular o en la PC) vea de un vistazo quién le fió
@@ -201,6 +215,7 @@ async function listUltimosFiados(limite) {
 }
 async function resumenHoy() {
     const { desde, hasta } = (0, fechaLocal_1.limitesDiaLocal)(0);
+    const pagos = [...(await (0, clientes_1.pagosPorDia)(desde, hasta)).values()].reduce((acc, p) => ({ total: acc.total + p.total, cantidad: acc.cantidad + p.cantidad }), { total: 0, cantidad: 0 });
     const docs = await coleccion()
         .aggregate([
         { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -221,5 +236,7 @@ async function resumenHoy() {
         totalCobrado: docs[0]?.totalCobrado ?? 0,
         totalFiado: docs[0]?.totalFiado ?? 0,
         cantidadVentas: docs[0]?.cantidadVentas ?? 0,
+        totalPagos: pagos.total,
+        cantidadPagos: pagos.cantidad,
     };
 }

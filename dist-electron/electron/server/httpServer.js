@@ -17,6 +17,7 @@ const http_1 = __importDefault(require("http"));
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
 const estadoCuenta_1 = require("../estadoCuenta");
+const precios_1 = require("../repositories/precios");
 const types_1 = require("../../shared/types");
 const juntarDatos_1 = require("../juntarDatos");
 const backup_1 = require("../backup");
@@ -405,6 +406,24 @@ sync) {
         await (0, ventas_1.marcarFiadoPagado)(req.params.id, req.body.pagado);
         return true;
     }));
+    // --- Precios y costos masivos (sólo la administradora) ---
+    app.post('/api/precios/aplicar', ruta((req) => {
+        const sesion = requiereAdmin(req);
+        const { items, descripcion, loteId } = req.body;
+        return (0, precios_1.aplicarCambioPrecios)(items, descripcion, loteId, sesion.id);
+    }));
+    app.get('/api/precios/lotes', ruta((req) => {
+        requiereAdmin(req);
+        return (0, precios_1.lotesDePrecios)();
+    }));
+    app.post('/api/precios/lotes/:id/deshacer', ruta((req) => {
+        const sesion = requiereAdmin(req);
+        return (0, precios_1.deshacerLotePrecios)(req.params.id, sesion.id);
+    }));
+    app.post('/api/precios/costos', ruta((req) => {
+        const sesion = requiereAdmin(req);
+        return (0, precios_1.aplicarCostos)(req.body.items, sesion.id);
+    }));
     // --- Clientes / fiado ---
     app.get('/api/clientes', ruta((req) => {
         requiereSesion(req);
@@ -463,6 +482,21 @@ sync) {
             res.status(500).type('text/plain; charset=utf-8').send('No se pudo armar el estado de cuenta. Probá de nuevo en un rato.');
         }
     });
+    app.post('/api/clientes/:id/deuda', ruta(async (req) => {
+        const sesion = requiereSesion(req);
+        const { monto, nota, fecha } = req.body;
+        await (0, clientes_1.registrarAjuste)(req.params.id, monto, nota ?? null, sesion.id, fecha);
+        return true;
+    }));
+    app.put('/api/clientes/:id', ruta(async (req) => {
+        requiereSesion(req);
+        await (0, clientes_1.actualizarCliente)(req.params.id, req.body);
+        return true;
+    }));
+    app.get('/api/clientes/pagos/dia/:fecha', ruta((req) => {
+        requiereSesion(req);
+        return (0, clientes_1.pagosDelDia)(req.params.fecha);
+    }));
     app.post('/api/clientes/:id/activo', ruta(async (req) => {
         requiereAdmin(req);
         await (0, clientes_1.setClienteActivo)(req.params.id, req.body.activo);

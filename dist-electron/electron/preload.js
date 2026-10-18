@@ -38,6 +38,13 @@ const api = {
         sugerirRubro: (descripcion) => invoke(channels_1.Channels.articulosSugerirRubro, descripcion),
         movimientosStock: (articuloId) => invoke(channels_1.Channels.articulosMovimientosStock, articuloId),
     },
+    // Sólo la administradora: cambios de precios y costos de muchos productos juntos.
+    precios: {
+        aplicar: (items, descripcion, loteId) => invoke(channels_1.Channels.preciosAplicar, items, descripcion, loteId),
+        lotes: () => invoke(channels_1.Channels.preciosLotes),
+        deshacer: (loteId) => invoke(channels_1.Channels.preciosDeshacer, loteId),
+        aplicarCostos: (items) => invoke(channels_1.Channels.preciosAplicarCostos, items),
+    },
     familias: {
         list: () => invoke(channels_1.Channels.familiasList),
         crear: (nombre) => invoke(channels_1.Channels.familiasCreate, nombre),
@@ -79,6 +86,10 @@ const api = {
         enlaceEstado: (clienteId) => invoke(channels_1.Channels.clientesEnlaceEstado, clienteId),
         estadoPdf: (clienteId) => invoke(channels_1.Channels.clientesEstadoPdf, clienteId),
         registrarPago: (clienteId, monto, nota, metodoPago) => invoke(channels_1.Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
+        // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe.
+        anotarDeuda: (clienteId, monto, nota, fecha) => invoke(channels_1.Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha),
+        actualizar: (id, input) => invoke(channels_1.Channels.clientesActualizar, id, input),
+        pagosDelDia: (fechaYMD) => invoke(channels_1.Channels.clientesPagosDelDia, fechaYMD),
         eliminarMovimiento: (tipo, id) => invoke(channels_1.Channels.clientesEliminarMovimiento, tipo, id),
     },
     recordatorios: {
@@ -126,7 +137,7 @@ const api = {
 const escritorio = {
     // Por si la pantalla viene de una PC con otra versión: para que pueda
     // fijarse qué sabe hacer este puente antes de usarlo.
-    versionPuente: 4,
+    versionPuente: 3,
     // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
     // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
     actualizaciones: {
@@ -154,8 +165,6 @@ const escritorio = {
     conectarNube: (direccion) => invoke(channels_1.Channels.escritorioConectarNube, direccion),
     probarServidor: (direccion) => invoke(channels_1.Channels.escritorioProbarServidor, direccion),
     reintentar: () => invoke(channels_1.Channels.escritorioReintentar),
-    // Abre un enlace en el navegador de la PC (sólo WhatsApp, para mandar el estado de cuenta).
-    abrirEnlace: (url) => invoke(channels_1.Channels.escritorioAbrirEnlace, url),
 };
 electron_1.contextBridge.exposeInMainWorld('escritorio', escritorio);
 electron_1.contextBridge.exposeInMainWorld('api', api);

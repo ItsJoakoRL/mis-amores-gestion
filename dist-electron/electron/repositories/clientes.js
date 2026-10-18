@@ -1,7 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.limpiarTelefono = limpiarTelefono;
 exports.listClientes = listClientes;
 exports.crearCliente = crearCliente;
+exports.actualizarCliente = actualizarCliente;
+exports.registrarAjuste = registrarAjuste;
+exports.pagosDelDia = pagosDelDia;
+exports.pagosPorDia = pagosPorDia;
 exports.existeClienteActivo = existeClienteActivo;
 exports.setClienteActivo = setClienteActivo;
 exports.registrarPago = registrarPago;
@@ -12,10 +17,26 @@ exports.historialCliente = historialCliente;
 const mongodb_1 = require("mongodb");
 const database_1 = require("../db/database");
 const formato_1 = require("../../shared/formato");
+const fechaLocal_1 = require("../fechaLocal");
 // Con qué se puede pagar una deuda — "fiado" no: sería pagar una deuda con otra.
 const METODOS_PAGO_CUENTA = ['efectivo', 'tarjeta', 'transferencia'];
 function redondearPesos(monto) {
     return Math.round(monto * 100) / 100;
+}
+/** El teléfono tal como se anotó, sin espacios de más. Sólo números, espacios y
+ * + - ( ) . (a una persona se la llama o se le escribe: no hace falta más). */
+function limpiarTelefono(valor) {
+    if (valor === undefined || valor === null)
+        return null;
+    if (typeof valor !== 'string')
+        throw new Error('El teléfono no es válido');
+    const texto = valor.trim().replace(/\s+/g, ' ');
+    if (texto === '')
+        return null;
+    if (texto.length > 30 || !/^[0-9 +()\-.]+$/.test(texto) || !/[0-9]/.test(texto)) {
+        throw new Error('El teléfono sólo puede tener números, espacios y los signos + - ( )');
+    }
+    return texto;
 }
 function coleccion() {
     return (0, database_1.getDb)().collection('clientes');
@@ -77,20 +98,71 @@ async function listClientes() {
         },
     ])
         .toArray();
-    const clientes = docs.map((doc) => {
+    const saldos = docs.map((doc) => {
         const debe = (doc.ventasFiado[0]?.totalPendiente ?? 0) + (doc.ajustes[0]?.total ?? 0);
         const totalPagos = doc.pagos[0]?.total ?? 0;
-        return {
-            id: doc._id.toHexString(),
-            nombre: doc.nombre,
-            nota: doc.nota,
-            activo: doc.activo,
-            saldo: Math.round((debe - totalPagos) * 100) / 100,
-            ultimoFiado: doc.ventasFiado[0]?.ultimaFecha ?? null,
-        };
+        return { doc, saldo: Math.round((debe - totalPagos) * 100) / 100, totalPagos };
     });
+    const desde = await deudaDesdeDeLosQueDeben(saldos.filter((x) => x.saldo > 0).map((x) => ({ id: x.doc._id, totalPagos: x.totalPagos })));
+    const clientes = saldos.map(({ doc, saldo }) => ({
+        id: doc._id.toHexString(),
+        nombre: doc.nombre,
+        nota: doc.nota,
+        telefono: doc.telefono ?? null,
+        activo: doc.activo,
+        saldo,
+        ultimoFiado: doc.ventasFiado[0]?.ultimaFecha ?? null,
+        deudaDesde: desde.get(doc._id.toHexString()) ?? null,
+    }));
     // Los que más deben primero — es lo que la jefa quiere ver de un vistazo.
     return clientes.sort((a, b) => b.saldo - a.saldo);
+}
+// Desde cuándo debe cada uno: los pagos (y los descuentos) se van descontando de lo
+// más viejo primero, y la deuda "arranca" en la fecha de lo primero que todavía no
+// quedó cubierto. Así quien pagó sus deudas viejas y debe sólo lo de esta semana
+// figura "debe desde esta semana", no desde hace 3 meses. Con dos consultas para
+// todos juntos (no una por cliente).
+async function deudaDesdeDeLosQueDeben(deben) {
+    const resultado = new Map();
+    if (deben.length === 0)
+        return resultado;
+    const ids = deben.map((d) => d.id);
+    const db = (0, database_1.getDb)();
+    const [ventas, ajustes] = await Promise.all([
+        db
+            .collection('ventas')
+            .find({ clienteId: { $in: ids }, metodoPago: 'fiado', pagado: { $ne: true } }, { projection: { clienteId: 1, fecha: 1, total: 1 } })
+            .toArray(),
+        db.collection('ajustes_cuenta').find({ clienteId: { $in: ids } }, { projection: { clienteId: 1, fecha: 1, monto: 1 } }).toArray(),
+    ]);
+    const porCliente = new Map();
+    const agregar = (clienteId, fecha, monto) => {
+        const k = clienteId.toHexString();
+        if (!porCliente.has(k))
+            porCliente.set(k, []);
+        porCliente.get(k).push({ fecha, monto });
+    };
+    for (const v of ventas)
+        agregar(v.clienteId, String(v.fecha), Number(v.total) || 0);
+    for (const a of ajustes)
+        agregar(a.clienteId, String(a.fecha), Number(a.monto) || 0);
+    for (const { id, totalPagos } of deben) {
+        const k = id.toHexString();
+        const lineas = (porCliente.get(k) ?? []).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+        // Un descuento (ajuste negativo) cubre deuda igual que un pago.
+        let credito = totalPagos + lineas.filter((l) => l.monto < 0).reduce((acc, l) => acc - l.monto, 0);
+        for (const l of lineas) {
+            if (l.monto <= 0)
+                continue;
+            if (credito >= l.monto - 0.005) {
+                credito -= l.monto;
+                continue;
+            }
+            resultado.set(k, l.fecha);
+            break;
+        }
+    }
+    return resultado;
 }
 function esErrorDuplicado(err) {
     return typeof err === 'object' && err !== null && err.code === 11000;
@@ -109,9 +181,11 @@ async function crearCliente(input, deudaInicial, usuarioId, fechaInicial) {
     const deuda = typeof deudaInicial === 'number' && Number.isFinite(deudaInicial) && deudaInicial > 0
         ? redondearPesos(deudaInicial)
         : 0;
+    const telefono = limpiarTelefono(input.telefono);
     const doc = {
         nombre,
         nota: input.nota?.trim() || null,
+        telefono,
         activo: true,
         creadoEn: new Date().toISOString(),
     };
@@ -132,9 +206,11 @@ async function crearCliente(input, deudaInicial, usuarioId, fechaInicial) {
             id: result.insertedId.toHexString(),
             nombre: doc.nombre,
             nota: doc.nota,
+            telefono,
             activo: true,
             saldo: deuda,
             ultimoFiado: null,
+            deudaDesde: deuda > 0 ? (fechaInicial || doc.creadoEn) : null,
         };
     }
     catch (err) {
@@ -142,6 +218,93 @@ async function crearCliente(input, deudaInicial, usuarioId, fechaInicial) {
             throw new Error('Ya existe un cliente con ese nombre');
         throw err;
     }
+}
+// Cambia el nombre, la nota o el teléfono de un cliente. Dos clientes no pueden
+// llamarse igual (sin importar mayúsculas), como al crearlos.
+async function actualizarCliente(id, input) {
+    if (!(await existeClienteActivo(id)))
+        throw new Error('Ese cliente ya no está en la lista');
+    const nombre = typeof input?.nombre === 'string' ? input.nombre.trim() : '';
+    if (!nombre)
+        throw new Error('Ingresá el nombre del cliente');
+    if (nombre.length > 120)
+        throw new Error('El nombre es demasiado largo');
+    const nota = typeof input.nota === 'string' ? input.nota.trim().slice(0, 300) || null : null;
+    const telefono = limpiarTelefono(input.telefono);
+    try {
+        await coleccion().updateOne({ _id: new mongodb_1.ObjectId(id) }, { $set: { nombre, nota, telefono } });
+    }
+    catch (err) {
+        if (esErrorDuplicado(err))
+            throw new Error('Ya existe un cliente con ese nombre');
+        throw err;
+    }
+}
+// Anota una deuda a mano en la cuenta del cliente (por ejemplo, algo que estaba en el
+// cuaderno): se guarda como un "ajuste" que suma deuda, no como una venta, para no
+// inventar una venta que nunca pasó por la caja. `fecha` es desde cuándo debe (puede
+// ser de hace rato), no puede ser del futuro.
+async function registrarAjuste(clienteId, monto, nota, usuarioId, fecha) {
+    if (typeof monto !== 'number' || !(monto > 0) || !Number.isFinite(monto) || monto > 1e9) {
+        throw new Error('El monto de la deuda tiene que ser mayor a cero');
+    }
+    if (!(await existeClienteActivo(clienteId)))
+        throw new Error('Ese cliente ya no está en la lista');
+    let cuando = new Date();
+    if (fecha !== undefined && fecha !== null && fecha !== '') {
+        const f = new Date(fecha);
+        if (typeof fecha !== 'string' || Number.isNaN(f.getTime()))
+            throw new Error('La fecha no es válida');
+        if (f.getTime() > Date.now() + 60000)
+            throw new Error('La fecha no puede ser de más adelante');
+        cuando = f;
+    }
+    const detalle = typeof nota === 'string' ? nota.trim().slice(0, 200) : '';
+    await (0, database_1.getDb)()
+        .collection('ajustes_cuenta')
+        .insertOne({
+        clienteId: new mongodb_1.ObjectId(clienteId),
+        monto: redondearPesos(monto),
+        fecha: cuando.toISOString(),
+        usuarioId: new mongodb_1.ObjectId(usuarioId),
+        nota: detalle || 'Deuda anotada',
+    });
+}
+// Los pagos que se recibieron en un día (hora de Argentina), para verlos junto a las ventas.
+async function pagosDelDia(fechaYMD) {
+    if (typeof fechaYMD !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYMD))
+        throw new Error('La fecha no es válida');
+    const { desde, hasta } = (0, fechaLocal_1.limitesDiaLocalYMD)(fechaYMD);
+    const docs = await (0, database_1.getDb)()
+        .collection('pagos_cuenta')
+        .aggregate([
+        { $match: { fecha: { $gte: desde, $lt: hasta } } },
+        { $lookup: { from: 'clientes', localField: 'clienteId', foreignField: '_id', as: 'cliente' } },
+        { $lookup: { from: 'usuarios', localField: 'usuarioId', foreignField: '_id', as: 'usuario' } },
+        { $sort: { fecha: 1 } },
+    ])
+        .toArray();
+    return docs.map((d) => ({
+        id: d._id.toHexString(),
+        fecha: d.fecha,
+        monto: d.monto,
+        metodoPago: d.metodoPago ?? null,
+        clienteId: d.clienteId.toHexString(),
+        clienteNombre: d.cliente?.[0]?.nombre ?? null,
+        usuarioNombre: d.usuario?.[0]?.nombre ?? null,
+        nota: d.nota ?? null,
+    }));
+}
+/** Cuánto se cobró en pagos de cuentas, día por día, dentro de [desde, hasta). */
+async function pagosPorDia(desde, hasta) {
+    const docs = await (0, database_1.getDb)()
+        .collection('pagos_cuenta')
+        .aggregate([
+        { $match: { fecha: { $gte: desde, $lt: hasta } } },
+        { $group: { _id: fechaLocal_1.DIA_LOCAL_EXPR, total: { $sum: '$monto' }, cantidad: { $sum: 1 } } },
+    ])
+        .toArray();
+    return new Map(docs.map((d) => [d._id, { total: d.total, cantidad: d.cantidad }]));
 }
 /** ¿Existe este cliente y está en la lista? Una venta fiada o un pago a nombre
  * de alguien que no está dejaría una deuda que no aparece en ninguna pantalla. */

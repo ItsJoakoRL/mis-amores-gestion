@@ -16,6 +16,7 @@ const ventas_1 = require("../repositories/ventas");
 const clientes_1 = require("../repositories/clientes");
 const recordatorios_1 = require("../repositories/recordatorios");
 const estadoCuenta_1 = require("../estadoCuenta");
+const precios_1 = require("../repositories/precios");
 // El estado de cuenta de un cliente, o un error claro si ya no está en la lista.
 async function datosDelEstado(clienteId) {
     const estado = await (0, clientes_1.estadoDeCuenta)(clienteId);
@@ -102,6 +103,23 @@ function registrarHandlers(deps) {
     electron_1.ipcMain.handle(channels_1.Channels.articulosAplicarConteo, (_e, items) => wrap(() => {
         const sesion = (0, session_1.requiereSesion)();
         return (0, articulos_1.aplicarConteo)(items, sesion.id);
+    }));
+    // --- Precios y costos masivos (sólo la administradora) ---
+    electron_1.ipcMain.handle(channels_1.Channels.preciosAplicar, (_e, items, descripcion, loteId) => wrap(() => {
+        const sesion = (0, session_1.requiereAdmin)();
+        return (0, precios_1.aplicarCambioPrecios)(items, descripcion, loteId, sesion.id);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.preciosLotes, () => wrap(() => {
+        (0, session_1.requiereAdmin)();
+        return (0, precios_1.lotesDePrecios)();
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.preciosDeshacer, (_e, loteId) => wrap(() => {
+        const sesion = (0, session_1.requiereAdmin)();
+        return (0, precios_1.deshacerLotePrecios)(loteId, sesion.id);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.preciosAplicarCostos, (_e, items) => wrap(() => {
+        const sesion = (0, session_1.requiereAdmin)();
+        return (0, precios_1.aplicarCostos)(items, sesion.id);
     }));
     electron_1.ipcMain.handle(channels_1.Channels.articulosSugerirRubro, (_e, descripcion) => wrap(() => {
         (0, session_1.requiereSesion)();
@@ -252,6 +270,20 @@ function registrarHandlers(deps) {
     electron_1.ipcMain.handle(channels_1.Channels.clientesHistorial, (_e, clienteId) => wrap(() => {
         (0, session_1.requiereSesion)();
         return (0, clientes_1.historialCliente)(clienteId);
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesAnotarDeuda, (_e, clienteId, monto, nota, fecha) => wrap(async () => {
+        const sesion = (0, session_1.requiereSesion)();
+        await (0, clientes_1.registrarAjuste)(clienteId, monto, nota ?? null, sesion.id, fecha);
+        return true;
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesActualizar, (_e, id, input) => wrap(async () => {
+        (0, session_1.requiereSesion)();
+        await (0, clientes_1.actualizarCliente)(id, input);
+        return true;
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.clientesPagosDelDia, (_e, fechaYMD) => wrap(() => {
+        (0, session_1.requiereSesion)();
+        return (0, clientes_1.pagosDelDia)(fechaYMD);
     }));
     electron_1.ipcMain.handle(channels_1.Channels.clientesEstado, (_e, clienteId) => wrap(async () => {
         (0, session_1.requiereSesion)();

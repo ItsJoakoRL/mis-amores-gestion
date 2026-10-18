@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getReporteVentas = getReporteVentas;
 const database_1 = require("../db/database");
 const fechaLocal_1 = require("../fechaLocal");
+const clientes_1 = require("./clientes");
 function coleccionVentas() {
     return (0, database_1.getDb)().collection('ventas');
 }
@@ -14,6 +15,7 @@ const SUMA_FIADO = { $cond: [{ $eq: ['$metodoPago', 'fiado'] }, '$total', 0] };
 // ventas.ts/resumenMes pero para un rango arbitrario, lo que pide el
 // gráfico de tendencia de Reportes.
 async function porDia(desde, hasta) {
+    const pagos = await (0, clientes_1.pagosPorDia)(desde, hasta);
     const docs = await coleccionVentas()
         .aggregate([
         { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -29,13 +31,25 @@ async function porDia(desde, hasta) {
         { $sort: { _id: 1 } },
     ])
         .toArray();
-    return docs.map((d) => ({
-        fecha: d._id,
-        total: d.total,
-        totalCobrado: d.totalCobrado,
-        totalFiado: d.totalFiado,
-        cantidadVentas: d.cantidadVentas,
-    }));
+    const filas = new Map(docs.map((d) => [
+        d._id,
+        {
+            fecha: d._id,
+            total: d.total,
+            totalCobrado: d.totalCobrado,
+            totalFiado: d.totalFiado,
+            cantidadVentas: d.cantidadVentas,
+            totalPagos: pagos.get(d._id)?.total ?? 0,
+            cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
+        },
+    ]));
+    // Un día con pagos de cuentas pero sin ventas también cuenta.
+    for (const [dia, p] of pagos) {
+        if (!filas.has(dia)) {
+            filas.set(dia, { fecha: dia, total: 0, totalCobrado: 0, totalFiado: 0, cantidadVentas: 0, totalPagos: p.total, cantidadPagos: p.cantidad });
+        }
+    }
+    return [...filas.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 async function topProductos(desde, hasta, limite) {
     const docs = await coleccionVentas()
@@ -105,6 +119,8 @@ async function getReporteVentas(desde, hasta) {
     const totalCobrado = dia.reduce((acc, d) => acc + d.totalCobrado, 0);
     const totalFiado = dia.reduce((acc, d) => acc + d.totalFiado, 0);
     const cantidadVentas = dia.reduce((acc, d) => acc + d.cantidadVentas, 0);
+    const totalPagos = dia.reduce((acc, d) => acc + d.totalPagos, 0);
+    const cantidadPagos = dia.reduce((acc, d) => acc + d.cantidadPagos, 0);
     return {
         desde,
         hasta,
@@ -112,6 +128,8 @@ async function getReporteVentas(desde, hasta) {
         totalCobrado,
         totalFiado,
         cantidadVentas,
+        totalPagos,
+        cantidadPagos,
         ticketPromedio: cantidadVentas > 0 ? totalVendido / cantidadVentas : 0,
         porDia: dia,
         topProductos: top,
