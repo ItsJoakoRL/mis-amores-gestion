@@ -6,6 +6,7 @@ import DashboardPage from './modules/dashboard/DashboardPage';
 import ArticulosPage from './modules/articulos/ArticulosPage';
 import VentasPage from './modules/ventas/VentasPage';
 import InventarioPage from './modules/inventario/InventarioPage';
+import PreciosPage from './modules/precios/PreciosPage';
 import ReportesPage from './modules/reportes/ReportesPage';
 import ClientesPage from './modules/clientes/ClientesPage';
 import RecordatoriosPage from './modules/recordatorios/RecordatoriosPage';
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/articulos" element={<ArticulosPage />} />
         <Route path="/inventario" element={<InventarioPage />} />
+        <Route path="/precios" element={esAdmin ? <PreciosPage /> : <Navigate to="/" replace />} />
         <Route path="/ventas" element={<VentasPage />} />
         <Route path="/reportes" element={<ReportesPage />} />
         <Route path="/clientes" element={<ClientesPage />} />

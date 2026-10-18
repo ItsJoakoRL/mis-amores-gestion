@@ -55,6 +55,63 @@ function escapeRegex(texto: string): string {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// --- La búsqueda por texto ---
+//
+// Lo que se escribe se parte en palabras y TODAS tienen que aparecer (en la
+// descripción o en el código de barras), en cualquier orden: "coca 1,5" encuentra
+// "COCA COLA 1.5L" y "1.5 coca" también. Tampoco importan las mayúsculas, las
+// tildes ("cafe" encuentra "Café", "pina" encuentra "PIÑA") ni si el decimal se
+// escribe con coma o con punto. Cada letra se convierte en un grupo (a → [aáàäâãAÁ…])
+// en vez de guardar una copia sin tildes de cada descripción: así funciona con los
+// artículos que ya están cargados, sin migrar nada.
+const RANGO_DIACRITICOS = new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, 'g');
+const VARIANTES: Record<string, string> = {
+  a: 'aáàäâã',
+  e: 'eéèëê',
+  i: 'iíìïî',
+  o: 'oóòöôõ',
+  u: 'uúùüû',
+  n: 'nñ',
+  c: 'cç',
+};
+
+function sinTildes(texto: string): string {
+  return texto.normalize('NFD').replace(RANGO_DIACRITICOS, '').toLowerCase();
+}
+
+function palabrasDeBusqueda(texto: string): string[] {
+  return texto.split(/\s+/).filter(Boolean).slice(0, 8);
+}
+
+function patronDePalabra(palabra: string): string {
+  let patron = '';
+  for (const letra of palabra.normalize('NFC')) {
+    const base = sinTildes(letra);
+    const grupo = base.length === 1 ? VARIANTES[base] : undefined;
+    if (grupo) patron += `[${grupo}${grupo.toUpperCase()}]`;
+    else if (letra === '.' || letra === ',') patron += '[.,]';
+    else patron += escapeRegex(letra);
+  }
+  return patron;
+}
+
+/** Qué tan parecido es un artículo a lo buscado: 0 es lo mejor. Sólo ordena (dentro
+ * de lo que ya coincide, queda en orden alfabético). */
+function puntajeDeBusqueda(a: Articulo, palabras: string[], buscado: string): number {
+  if (a.codigoBarras && a.codigoBarras === buscado.trim()) return 0;
+  const descripcion = sinTildes(a.descripcion);
+  const consulta = sinTildes(buscado).trim().replace(/\s+/g, ' ');
+  if (descripcion === consulta) return 1;
+  if (descripcion.startsWith(consulta)) return 2;
+  const inicios = descripcion.split(/[^a-z0-9ñ]+/);
+  const todasAlPrincipio = palabras.every((p) => {
+    const q = sinTildes(p);
+    return inicios.some((w) => w.startsWith(q));
+  });
+  if (todasAlPrincipio) return 3;
+  return 4;
+}
+
 function aObjectIdOrNull(id: string | null | undefined): ObjectId | null {
   return id ? new ObjectId(id) : null;
 }
@@ -102,9 +159,12 @@ const JOIN_STAGES = [
 // mostrando en ese momento (con el mismo filtro), ni más ni menos.
 function construirMatchBusqueda(filtro: ArticulosFiltro): Record<string, unknown> {
   const match: Record<string, unknown> = {};
-  if (filtro.busqueda) {
-    const re = new RegExp(escapeRegex(filtro.busqueda), 'i');
-    match.$or = [{ descripcion: re }, { codigoBarras: re }];
+  const palabras = filtro.busqueda ? palabrasDeBusqueda(filtro.busqueda) : [];
+  if (palabras.length > 0) {
+    match.$and = palabras.map((p) => {
+      const re = new RegExp(patronDePalabra(p), 'i');
+      return { $or: [{ descripcion: re }, { codigoBarras: re }] };
+    });
   }
   if (filtro.familiaId) {
     match.familiaId = new ObjectId(filtro.familiaId);
@@ -169,7 +229,15 @@ export async function listArticulos(filtro: ArticulosFiltro = {}): Promise<Artic
     .aggregate<ArticuloDocConJoins>([{ $match: match }, ...JOIN_STAGES, { $sort: { descripcion: 1 } }])
     .toArray();
 
-  return docs.map(mapDoc);
+  const articulos = docs.map(mapDoc);
+  // Buscando, lo más parecido primero (el orden de siempre se mantiene entre iguales).
+  const palabras = filtro.busqueda ? palabrasDeBusqueda(filtro.busqueda) : [];
+  if (palabras.length > 0 && filtro.busqueda) {
+    const buscado = filtro.busqueda;
+    const puntajes = new Map(articulos.map((a) => [a.id, puntajeDeBusqueda(a, palabras, buscado)]));
+    articulos.sort((a, b) => (puntajes.get(a.id) ?? 4) - (puntajes.get(b.id) ?? 4));
+  }
+  return articulos;
 }
 
 export async function getArticulo(id: string): Promise<Articulo | null> {

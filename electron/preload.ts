@@ -39,6 +39,13 @@ import type {
   EstadoServidorWeb,
   EstadoCuenta,
   EnlaceEstadoCuenta,
+  PagoCuentaDelDia,
+  CambioPrecioItem,
+  CostoItem,
+  LotePrecios,
+  ResultadoCambioPrecios,
+  ResultadoCostos,
+  ResultadoDeshacerPrecios,
   SumarPcInput,
   ResultadoSumarPc,
 } from '../shared/types';
@@ -86,6 +93,14 @@ const api = {
     movimientosStock: (articuloId: string) =>
       invoke<MovimientoStock[]>(Channels.articulosMovimientosStock, articuloId),
   },
+  // Sólo la administradora: cambios de precios y costos de muchos productos juntos.
+  precios: {
+    aplicar: (items: CambioPrecioItem[], descripcion: string, loteId: string) =>
+      invoke<ResultadoCambioPrecios>(Channels.preciosAplicar, items, descripcion, loteId),
+    lotes: () => invoke<LotePrecios[]>(Channels.preciosLotes),
+    deshacer: (loteId: string) => invoke<ResultadoDeshacerPrecios>(Channels.preciosDeshacer, loteId),
+    aplicarCostos: (items: CostoItem[]) => invoke<ResultadoCostos>(Channels.preciosAplicarCostos, items),
+  },
   familias: {
     list: () => invoke<Familia[]>(Channels.familiasList),
     crear: (nombre: string) => invoke<Familia>(Channels.familiasCreate, nombre),
@@ -130,6 +145,11 @@ const api = {
     estadoPdf: (clienteId: string) => invoke<string>(Channels.clientesEstadoPdf, clienteId),
     registrarPago: (clienteId: string, monto: number, nota: string | null, metodoPago: MetodoPago) =>
       invoke<boolean>(Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
+    // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe.
+    anotarDeuda: (clienteId: string, monto: number, nota: string | null, fecha?: string) =>
+      invoke<boolean>(Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha),
+    actualizar: (id: string, input: ClienteInput) => invoke<boolean>(Channels.clientesActualizar, id, input),
+    pagosDelDia: (fechaYMD: string) => invoke<PagoCuentaDelDia[]>(Channels.clientesPagosDelDia, fechaYMD),
     eliminarMovimiento: (tipo: 'venta' | 'pago' | 'ajuste', id: string) =>
       invoke<boolean>(Channels.clientesEliminarMovimiento, tipo, id),
   },
@@ -185,7 +205,7 @@ const api = {
 const escritorio = {
   // Por si la pantalla viene de una PC con otra versión: para que pueda
   // fijarse qué sabe hacer este puente antes de usarlo.
-  versionPuente: 4,
+  versionPuente: 3,
   // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
   // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
   actualizaciones: {
@@ -213,8 +233,6 @@ const escritorio = {
   conectarNube: (direccion: string) => invoke<ResultadoConectarNube>(Channels.escritorioConectarNube, direccion),
   probarServidor: (direccion: string) => invoke<EstadoServidorWeb>(Channels.escritorioProbarServidor, direccion),
   reintentar: () => invoke<boolean>(Channels.escritorioReintentar),
-  // Abre un enlace en el navegador de la PC (sólo WhatsApp, para mandar el estado de cuenta).
-  abrirEnlace: (url: string) => invoke<boolean>(Channels.escritorioAbrirEnlace, url),
 };
 
 contextBridge.exposeInMainWorld('escritorio', escritorio);

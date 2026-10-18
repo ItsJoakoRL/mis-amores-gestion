@@ -926,6 +926,53 @@ async function extras() {
   ok((await api(pcs.A, 'GET', '/api/articulos?soloParaRevisar=true')).every((a) => a.descripcion !== 'SIN STOCK'), 'y en A ya no figura para revisar');
   await hasta(coinciden, 'que coincidan después del conteo', 40000);
   ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 24. Precios, costos y fiados nuevos: lo que se hace en una PC lo ve la otra ----
+  log('\n[24] Cambio de precios, costos, deudas anotadas y teléfonos entre dos PCs');
+  const pa = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'PRECIO UNO', precioVenta: 100, precioCosto: 60 }));
+  const pb = await api(pcs.A, 'POST', '/api/articulos', entradaArticulo({ descripcion: 'PRECIO DOS', precioVenta: 200, precioCosto: 0 }));
+  await hasta(async () => (await porDescripcion(pcs.B, 'PRECIO DOS')) && (await porDescripcion(pcs.B, 'PRECIO UNO')), 'que B vea los dos productos');
+  const loteSync = 'loteprueba24a1b2c3';
+  const rLote = await api(pcs.A, 'POST', '/api/precios/aplicar', {
+    items: [
+      { articuloId: pa.id, precioNuevo: 150, precioVisto: 100 },
+      { articuloId: pb.id, precioNuevo: 250, precioVisto: 200 },
+    ],
+    descripcion: 'prueba: subir',
+    loteId: loteSync,
+  });
+  ok(rLote.cambiados === 2, 'A cambia los precios de 2 productos juntos');
+  await hasta(async () => (await porDescripcion(pcs.B, 'PRECIO UNO')).precioVenta === 150 && (await porDescripcion(pcs.B, 'PRECIO DOS')).precioVenta === 250, 'que B vea los precios nuevos');
+  ok(true, 'B ve los precios nuevos (150 y 250)');
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/precios/lotes')).some((l) => l.loteId === loteSync && l.cantidad === 2), 'que B vea el cambio en "Cambios anteriores"');
+  ok(true, 'y B tiene el cambio en su lista de cambios anteriores (para poder deshacerlo desde cualquier PC)');
+  const rDes = await api(pcs.B, 'POST', `/api/precios/lotes/${loteSync}/deshacer`);
+  ok(rDes.revertidos === 2, 'B deshace el cambio que hizo A');
+  await hasta(async () => (await porDescripcion(pcs.A, 'PRECIO UNO')).precioVenta === 100 && (await porDescripcion(pcs.A, 'PRECIO DOS')).precioVenta === 200, 'que A vea los precios de antes');
+  ok(true, 'A ve los precios de antes (100 y 200)');
+  await hasta(async () => (await api(pcs.A, 'GET', '/api/precios/lotes')).find((l) => l.loteId === loteSync)?.deshecho === true, 'que A vea que ya se deshizo');
+  ok(true, 'y A ve que ese cambio ya se deshizo');
+  await api(pcs.B, 'POST', '/api/precios/costos', { items: [{ articuloId: pb.id, precioCosto: 120, costoVisto: 0 }] });
+  await hasta(async () => (await porDescripcion(pcs.A, 'PRECIO DOS')).precioCosto === 120, 'que A vea el costo cargado en B');
+  ok(true, 'un costo cargado en B llega a A');
+
+  const clienteSync = await api(pcs.A, 'POST', '/api/clientes', { nombre: 'CLIENTE SYNC 24', nota: null, telefono: '11 4444-5555', deudaInicial: 0 });
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/clientes')).find((c) => c.nombre === 'CLIENTE SYNC 24')?.telefono === '11 4444-5555', 'que B vea el teléfono');
+  ok(true, 'el teléfono de un cliente cargado en A aparece en B');
+  await api(pcs.B, 'POST', `/api/clientes/${clienteSync.id}/deuda`, { monto: 700, nota: 'del cuaderno', fecha: new Date(Date.now() - 40 * 86400000).toISOString() });
+  await hasta(async () => {
+    const c = (await api(pcs.A, 'GET', '/api/clientes')).find((x) => x.nombre === 'CLIENTE SYNC 24');
+    return c && c.saldo === 700 && c.deudaDesde;
+  }, 'que A vea la deuda anotada en B');
+  ok(true, 'una deuda anotada a mano en B ($700, de hace 40 días) la ve A, con desde cuándo debe');
+  await api(pcs.A, 'PUT', `/api/clientes/${clienteSync.id}`, { nombre: 'CLIENTE SYNC 24', nota: 'vive enfrente', telefono: '11 9999-0000' });
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/clientes')).find((c) => c.nombre === 'CLIENTE SYNC 24')?.telefono === '11 9999-0000', 'que B vea el teléfono nuevo');
+  ok(true, 'un teléfono editado en A cambia en B');
+  await api(pcs.A, 'POST', `/api/clientes/${clienteSync.id}/pago`, { monto: 300, nota: null, metodoPago: 'efectivo' });
+  await hasta(async () => (await api(pcs.B, 'GET', '/api/ventas/resumen-hoy')).totalPagos >= 300, 'que B cuente el pago en lo cobrado de hoy');
+  ok(true, 'un pago recibido en A figura en lo cobrado de hoy en B');
+  await hasta(coinciden, 'que coincidan al final', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
 }
 
 async function todo() {

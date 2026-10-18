@@ -14,7 +14,7 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, DollarSign, Loader2, Trash2, X } from 'lucide-react';
-import type { ResumenDiaVentas, Venta } from '@shared/types';
+import type { PagoCuentaDelDia, ResumenDiaVentas, Venta } from '@shared/types';
 import { formatearCantidad, formatearMoneda } from '@shared/formato';
 import BotonAyuda from '../../components/BotonAyuda';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
@@ -84,11 +84,14 @@ export default function VentasPage() {
           <div>
             <p className="text-xs text-slate-400">Hoy</p>
             <p className="font-semibold text-slate-800">
-              {ventasHoy ? formatearMoneda(ventasHoy.totalCobrado) : '—'}
+              {ventasHoy ? formatearMoneda(ventasHoy.totalCobrado + ventasHoy.totalPagos) : '—'}
               {ventasHoy && ventasHoy.cantidadVentas > 0 && (
                 <span className="ml-1 font-normal text-slate-400">({ventasHoy.cantidadVentas})</span>
               )}
             </p>
+            {ventasHoy && ventasHoy.totalPagos > 0 && (
+              <p className="text-xs text-sky-600">incluye {formatearMoneda(ventasHoy.totalPagos)} de pagos de cuentas</p>
+            )}
             {ventasHoy && ventasHoy.totalFiado > 0 && (
               <p className="text-xs text-amber-600">+ {formatearMoneda(ventasHoy.totalFiado)} fiado</p>
             )}
@@ -151,10 +154,10 @@ export default function VentasPage() {
                 >
                   {format(dia, 'd')}
                 </span>
-                {resumen && resumen.totalCobrado > 0 && (
+                {resumen && resumen.totalCobrado + resumen.totalPagos > 0 && (
                   <span className="rounded-md bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700 sm:px-1.5 sm:text-[11px]">
-                    <span className="sm:hidden">{montoCorto(resumen.totalCobrado)}</span>
-                    <span className="hidden sm:inline">{formatearMoneda(resumen.totalCobrado)}</span>
+                    <span className="sm:hidden">{montoCorto(resumen.totalCobrado + resumen.totalPagos)}</span>
+                    <span className="hidden sm:inline">{formatearMoneda(resumen.totalCobrado + resumen.totalPagos)}</span>
                   </span>
                 )}
                 {resumen && resumen.totalFiado > 0 && (
@@ -163,7 +166,12 @@ export default function VentasPage() {
                     <span className="hidden sm:inline">+{formatearMoneda(resumen.totalFiado)} fiado</span>
                   </span>
                 )}
-                {resumen && <span className="hidden text-[10px] text-slate-400 sm:block">{resumen.cantidadVentas} venta(s)</span>}
+                {resumen && (
+                  <span className="hidden text-[10px] text-slate-400 sm:block">
+                    {resumen.cantidadVentas} venta(s)
+                    {resumen.totalPagos > 0 && <span className="text-sky-600"> · {resumen.cantidadPagos} pago(s) de cuentas</span>}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -191,15 +199,19 @@ function DiaDetalleModal({
   onCambio: () => void;
 }) {
   const [ventas, setVentas] = useState<Venta[]>([]);
+  // Los pagos que clientes de cuenta corriente hicieron ese día: también es plata que entró.
+  const [pagos, setPagos] = useState<PagoCuentaDelDia[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
     setErrorCarga(null);
-    window.api.ventas
-      .listPorDia(fecha)
-      .then(setVentas)
+    Promise.all([window.api.ventas.listPorDia(fecha), window.api.clientes.pagosDelDia(fecha)])
+      .then(([v, p]) => {
+        setVentas(v);
+        setPagos(p);
+      })
       .catch((err) => setErrorCarga(err instanceof Error ? err.message : 'No se pudieron cargar las ventas'))
       .finally(() => setCargando(false));
   }, [fecha]);
@@ -208,6 +220,7 @@ function DiaDetalleModal({
 
   const totalCobrado = ventas.reduce((acc, v) => acc + (v.metodoPago !== 'fiado' ? v.total : 0), 0);
   const totalFiado = ventas.reduce((acc, v) => acc + (v.metodoPago === 'fiado' ? v.total : 0), 0);
+  const totalPagos = pagos.reduce((acc, p) => acc + p.monto, 0);
 
   async function handleEliminar(v: Venta) {
     if (!confirm(`¿Anular la venta de "${v.articuloDescripcion}"? Se repone el stock.`)) return;
@@ -235,7 +248,8 @@ function DiaDetalleModal({
           <div>
             <h2 className="text-lg font-semibold text-slate-800">{fechaLegible}</h2>
             <p className="text-sm text-slate-500">
-              {ventas.length} venta(s) · Cobrado {formatearMoneda(totalCobrado)}
+              {ventas.length} venta(s) · Cobrado {formatearMoneda(totalCobrado + totalPagos)}
+              {totalPagos > 0 && <span className="text-sky-600"> (ventas {formatearMoneda(totalCobrado)} + pagos de cuentas {formatearMoneda(totalPagos)})</span>}
               {totalFiado > 0 && <span className="text-amber-600"> · Fiado {formatearMoneda(totalFiado)}</span>}
             </p>
           </div>
@@ -249,10 +263,32 @@ function DiaDetalleModal({
             <p className="px-6 py-8 text-center text-slate-400">Cargando...</p>
           ) : errorCarga ? (
             <p className="px-6 py-8 text-center text-red-600">{errorCarga}</p>
-          ) : ventas.length === 0 ? (
+          ) : ventas.length === 0 && pagos.length === 0 ? (
             <p className="px-6 py-8 text-center text-slate-400">No hay ventas registradas este día.</p>
           ) : (
             <>
+            {pagos.length > 0 && (
+              <div className="border-b border-sky-100 bg-sky-50/50">
+                <p className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-sky-700 sm:px-6">
+                  Pagos de cuentas recibidos
+                </p>
+                <ul className="divide-y divide-sky-100">
+                  {pagos.map((p) => (
+                    <li key={p.id} className="flex items-start gap-3 px-4 py-2.5 sm:px-6">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-800">{p.clienteNombre ?? 'Cliente eliminado'}</p>
+                        <p className="text-xs text-slate-400">
+                          {format(new Date(p.fecha), 'HH:mm')}
+                          {p.metodoPago ? ` · ${p.metodoPago}` : ''}
+                          {p.usuarioNombre ? ` · lo recibió ${p.usuarioNombre}` : ''}
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-semibold text-sky-700">+{formatearMoneda(p.monto)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {/* Celular: una línea por venta (la tabla de 7 columnas no entra). */}
             <ul className="divide-y divide-slate-100 sm:hidden">
               {ventas.map((v) => (

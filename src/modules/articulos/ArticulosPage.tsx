@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ShoppingCart,
   ClipboardList,
+  Camera,
 } from 'lucide-react';
 import type { Articulo, Familia } from '@shared/types';
 import { formatearCantidad, formatearMoneda } from '@shared/formato';
@@ -25,6 +26,7 @@ import AjustarStockModal from './AjustarStockModal';
 import AsignarCodigoModal from './AsignarCodigoModal';
 import ArmarCuentaModal from './ArmarCuentaModal';
 import CartelExito from '../../components/CartelExito';
+import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
 import BotonAyuda from '../../components/BotonAyuda';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
 import { urlImagen } from '../../urlImagen';
@@ -132,6 +134,16 @@ export default function ArticulosPage() {
   const [scanValue, setScanValue] = useState('');
   const [buscandoScan, setBuscandoScan] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
+
+  // Un código leído con la cámara: si el producto existe se va a ajustar su stock, y si no, se
+  // pregunta a cuál corresponde. Las dos cosas necesitan la pantalla, así que se cierra la cámara.
+  async function alLeerConCamara(codigo: string): Promise<RespuestaDeCodigo> {
+    const encontrado = await window.api.articulos.buscarPorCodigo(codigo);
+    if (encontrado) setAjustandoStock(encontrado);
+    else setCodigoSinAsignar(codigo);
+    return { cerrar: true };
+  }
 
   async function handleScan(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
@@ -507,6 +519,17 @@ export default function ArticulosPage() {
             onKeyDown={handleScan}
             autoFocus={!esTactil()}
           />
+          {puedeUsarCamara() && (
+            <button
+              type="button"
+              onClick={() => setCamaraAbierta(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+              title="Escanear con la cámara del celular"
+            >
+              <Camera className="h-4 w-4" />
+              Cámara
+            </button>
+          )}
           {scanError && <span className="text-xs font-medium text-red-600">{scanError}</span>}
         </div>
       )}
@@ -747,6 +770,17 @@ export default function ArticulosPage() {
             setCodigoParaNuevo(codigoSinAsignar);
             setCodigoSinAsignar(null);
             setEditando('nuevo');
+          }}
+        />
+      )}
+
+      {camaraAbierta && (
+        <LectorCamara
+          titulo="Escaneá un código de barras"
+          alLeer={alLeerConCamara}
+          onCerrar={() => {
+            setCamaraAbierta(false);
+            enfocarScan();
           }}
         />
       )}

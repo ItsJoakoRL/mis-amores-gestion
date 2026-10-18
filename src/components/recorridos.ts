@@ -43,7 +43,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="art-scan"]',
       titulo: 'Lector de código de barras',
-      texto: 'Si tenés lector, escaneá acá directo: si el producto ya existe te lleva a sumarle stock, y si es nuevo te deja crearlo.',
+      texto: 'Si tenés lector, escaneá acá directo: si el producto ya existe te lleva a sumarle stock, y si es nuevo te deja crearlo. En el celular también podés usar el botón de la cámara.',
     },
     {
       selector: '[data-tour="art-stock"]',
@@ -60,6 +60,26 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       titulo: 'Contar inventario',
       texto:
         'Si el stock cargado no coincide con lo que hay de verdad, elegí un rubro, contá (escaneando o escribiendo) y el sistema corrige el stock a lo que contaste. Lo que vas contando queda guardado. Si vendés algo que figura sin stock, igual se vende y queda en "Para revisar" hasta que lo cuentes.',
+    },
+  ],
+  'Precios y costos': [
+    {
+      selector: '[data-tour="precios-pestanas"]',
+      titulo: 'Dos herramientas en una',
+      texto:
+        '"Cambiar precios" sube o baja los precios de muchos productos juntos (por rubro, por porcentaje o por pesos, con redondeo). "Cargar costos" es una planilla para completar lo que te cuesta cada producto y ver cuánto ganás.',
+    },
+    {
+      selector: '[data-tour="precios-pestanas"]',
+      titulo: 'Primero ves cómo queda',
+      texto:
+        'En "Cambiar precios" elegís a cuáles, cuánto y a cuánto redondear, y abajo ves el precio de antes y el de después de cada producto (podés destildar los que no querés tocar). Recién cuando apretás el botón de abajo se cambia.',
+    },
+    {
+      selector: '[data-tour="precios-pestanas"]',
+      titulo: 'Si te equivocás, se deshace',
+      texto:
+        'Cada cambio queda en "Cambios anteriores" con un botón "Deshacer": los precios vuelven a como estaban (menos los que ya cambiaste a mano después).',
     },
   ],
   Calendario: [
@@ -88,7 +108,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="rep-stats"]',
       titulo: 'Resumen del período',
-      texto: 'Cuánto cobraste, cuánto quedó fiado, cuántas ventas hiciste y el ticket promedio.',
+      texto: 'Cuánto cobraste (incluye lo que los clientes pagaron de su cuenta), cuánto quedó fiado, cuántas ventas hiciste y el ticket promedio.',
     },
     {
       selector: '[data-tour="rep-grafico-dia"]',
@@ -100,7 +120,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="cli-buscar"]',
       titulo: 'Buscar cliente',
-      texto: 'Buscá por nombre o tildá "Solo con deuda" para ver de una a quién le tenés que cobrar.',
+      texto: 'Buscá por nombre o teléfono, tildá "Solo con deuda" o elegí "+30 / +60 / +90 días" para ver de una a quién le tenés que cobrar hace rato. La lista también se puede ordenar por la deuda más vieja.',
     },
     {
       selector: '[data-tour="cli-nuevo"]',
@@ -110,7 +130,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="cli-tabla"]',
       titulo: 'La cuenta de cada cliente',
-      texto: 'Tocá un cliente de la lista para ver su cuenta completa y registrarle un pago cuando te paga.',
+      texto: 'Tocá un cliente de la lista para ver su cuenta completa, registrarle un pago cuando te paga, anotarle una deuda a mano (por ejemplo, la del cuaderno) o editar sus datos y su teléfono.',
     },
     {
       selector: '[data-tour="cli-ultimos-fiados"]',
@@ -121,7 +141,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       selector: '[data-tour="cli-estado"]',
       titulo: 'Estado de cuenta con código QR',
       texto:
-        'Con este botón de cada cliente aparece un código QR: lo escaneás con el celular y baja un PDF con lo que debe, listo para mandárselo. También podés descargarlo, mandarlo por WhatsApp o copiar el enlace.',
+        'Con este botón de cada cliente aparece un código QR: lo escaneás con el celular y baja un PDF con lo que debe, listo para compartirlo y mandárselo. También podés bajar el PDF directo desde ahí.',
     },
   ],
   Recordatorios: [

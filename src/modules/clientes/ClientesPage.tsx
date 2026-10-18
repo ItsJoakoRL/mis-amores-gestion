@@ -17,12 +17,12 @@ import {
   BellRing,
   QrCode,
   Download,
-  Copy,
-  Check,
-  MessageCircle,
   Loader2,
+  Phone,
+  Pencil,
+  NotebookPen,
 } from 'lucide-react';
-import type { Cliente, EnlaceEstadoCuenta, EstadoCuenta, MetodoPago, MovimientoCuenta, Venta } from '@shared/types';
+import type { Cliente, EstadoCuenta, MetodoPago, MovimientoCuenta, Venta } from '@shared/types';
 import {
   formatearCantidad,
   formatearMoneda,
@@ -78,6 +78,30 @@ const ETIQUETA_METODO: Record<MetodoPago, string> = {
   fiado: 'Fiado',
 };
 
+const MS_DIA = 86_400_000;
+
+// Hace cuántos días debe (desde lo más viejo que sigue sin cubrirse): null si no debe.
+function diasDeDeuda(c: Cliente): number | null {
+  if (!c.deudaDesde || c.saldo <= 0) return null;
+  return Math.max(0, Math.floor((Date.now() - new Date(c.deudaDesde).getTime()) / MS_DIA));
+}
+
+function textoDeDeuda(dias: number): string {
+  if (dias === 0) return 'debe desde hoy';
+  if (dias === 1) return 'debe desde ayer';
+  return `debe hace ${dias} días`;
+}
+
+// Cuanto más vieja la deuda, más llamativo el color.
+function claseDeDeuda(dias: number): string {
+  if (dias >= 90) return 'font-medium text-red-600';
+  if (dias >= 60) return 'font-medium text-orange-600';
+  if (dias >= 30) return 'text-amber-600';
+  return 'text-slate-400';
+}
+
+const soloDigitos = (t: string) => t.replace(/\D/g, '');
+
 // Para que buscar "jose" encuentre a "José" sin importar tildes. Se evita
 // escribir el rango Unicode de diacríticos como literal en el código (da
 // problemas de encoding en algunos editores) armándolo a partir de sus
@@ -105,6 +129,9 @@ export default function ClientesPage() {
   const [ultimosFiados, setUltimosFiados] = useState<Venta[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [soloConDeuda, setSoloConDeuda] = useState(false);
+  // Sólo los que deben hace tanto o más (0 = todos) y en qué orden se muestran.
+  const [antiguedadMin, setAntiguedadMin] = useState(0);
+  const [orden, setOrden] = useState<'saldo' | 'antigua' | 'nombre'>('saldo');
 
   // Con "silencioso" no muestra "Cargando..." (para refrescar al volver a la pantalla).
   function cargar(silencioso = false) {
@@ -143,6 +170,14 @@ export default function ClientesPage() {
     setClienteAbierto(c);
   }, [clientes, cargando]);
 
+  useEffect(() => {
+    setClienteAbierto((abierto) => {
+      if (!abierto) return abierto;
+      const nuevo = clientes.find((c) => c.id === abierto.id);
+      return nuevo && nuevo !== abierto ? nuevo : abierto;
+    });
+  }, [clientes]);
+
   function preguntarSiYaEsta() {
     const id = recordatorioPendiente.current;
     if (!id) return;
@@ -157,12 +192,28 @@ export default function ClientesPage() {
 
   const clientesFiltrados = useMemo(() => {
     const texto = normalizar(busqueda.trim());
-    return clientes.filter((c) => {
+    const digitos = soloDigitos(busqueda);
+    const filtrados = clientes.filter((c) => {
       if (soloConDeuda && c.saldo <= 0) return false;
-      if (texto && !normalizar(c.nombre).includes(texto)) return false;
+      if (antiguedadMin > 0) {
+        const dias = diasDeDeuda(c);
+        if (dias === null || dias < antiguedadMin) return false;
+      }
+      if (texto) {
+        const porNombre = normalizar(c.nombre).includes(texto);
+        // También por teléfono (con 3 números o más, sin importar espacios ni guiones).
+        const porTelefono = digitos.length >= 3 && soloDigitos(c.telefono ?? '').includes(digitos);
+        if (!porNombre && !porTelefono) return false;
+      }
       return true;
     });
-  }, [clientes, busqueda, soloConDeuda]);
+    if (orden === 'nombre') return [...filtrados].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    if (orden === 'antigua') {
+      // Los que deben desde hace más tiempo primero; los que no deben, al final.
+      return [...filtrados].sort((a, b) => (diasDeDeuda(b) ?? -1) - (diasDeDeuda(a) ?? -1) || b.saldo - a.saldo);
+    }
+    return filtrados; // "Más deben primero": así viene de la base
+  }, [clientes, busqueda, soloConDeuda, antiguedadMin, orden]);
 
   async function handleEliminar(c: Cliente) {
     if (!confirm(`¿Sacar a "${c.nombre}" de la lista de clientes? Su historial de fiados y pagos queda guardado.`))
@@ -232,6 +283,30 @@ export default function ClientesPage() {
           />
           Solo con deuda
         </label>
+        <select
+          className="input w-auto"
+          value={orden}
+          onChange={(e) => setOrden(e.target.value as 'saldo' | 'antigua' | 'nombre')}
+          title="Cómo se ordena la lista"
+        >
+          <option value="saldo">Más deben primero</option>
+          <option value="antigua">Deuda más vieja primero</option>
+          <option value="nombre">Por nombre</option>
+        </select>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-slate-400">Debe hace:</span>
+          {[0, 30, 60, 90].map((n) => (
+            <button
+              key={n}
+              onClick={() => setAntiguedadMin(n)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                antiguedadMin === n ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+            >
+              {n === 0 ? 'Todos' : `+${n} días`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {ultimosFiados.length > 0 && (
@@ -332,6 +407,7 @@ export default function ClientesPage() {
                         </span>
                       )}
                     </span>
+                    {c.telefono && <span className="block text-xs font-normal text-slate-400">{c.telefono}</span>}
                     {c.ultimoFiado && (
                       <span className="block text-xs font-normal text-slate-400 sm:hidden">
                         Último fiado: {new Date(c.ultimoFiado).toLocaleDateString('es-AR')}
@@ -349,6 +425,12 @@ export default function ClientesPage() {
                     >
                       {formatearMoneda(c.saldo)}
                     </span>
+                    {(() => {
+                      const dias = diasDeDeuda(c);
+                      return dias === null ? null : (
+                        <span className={`mt-1 block text-xs ${claseDeDeuda(dias)}`}>{textoDeDeuda(dias)}</span>
+                      );
+                    })()}
                   </td>
                   <td className="whitespace-nowrap px-2 py-3 text-right">
                     <button
@@ -428,6 +510,7 @@ function NuevoClienteModal({
   const [deudaInicial, setDeudaInicial] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(ahoraParaInputLocal);
   const [nota, setNota] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
@@ -468,6 +551,7 @@ function NuevoClienteModal({
         {
           nombre: nombreLimpio,
           nota: nota.trim() || null,
+          telefono: telefono.trim() || null,
         },
         deudaNum,
         fechaISO
@@ -530,6 +614,17 @@ function NuevoClienteModal({
             </div>
           )}
           <div>
+            <label className="label">Teléfono (opcional)</label>
+            <input
+              className="input"
+              type="tel"
+              inputMode="tel"
+              placeholder="Ej: 11 5555-1234"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+            />
+          </div>
+          <div>
             <label className="label">Nota (opcional)</label>
             <input className="input" value={nota} onChange={(e) => setNota(e.target.value)} />
           </div>
@@ -570,6 +665,8 @@ function ClienteDetalleModal({
   const [movimientos, setMovimientos] = useState<MovimientoCuenta[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarPago, setMostrarPago] = useState(abrirPago === true);
+  const [mostrarDeuda, setMostrarDeuda] = useState(false);
+  const [editando, setEditando] = useState(false);
 
   function cargar() {
     setCargando(true);
@@ -632,6 +729,20 @@ function ClienteDetalleModal({
                   {formatearMoneda(saldoActual)}
                 </span>
               </p>
+              {(() => {
+                const dias = diasDeDeuda({ ...cliente, saldo: saldoActual });
+                return dias === null ? null : (
+                  <p className={`text-xs ${claseDeDeuda(dias)}`}>{textoDeDeuda(dias)}</p>
+                );
+              })()}
+              {cliente.telefono && (
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                  <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <a href={`tel:${cliente.telefono.replace(/[^0-9+]/g, '')}`} className="hover:text-brand-600">
+                    {cliente.telefono}
+                  </a>
+                </p>
+              )}
               {cliente.nota && (
                 <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-400">
                   <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -659,6 +770,22 @@ function ClienteDetalleModal({
             >
               <QrCode className="h-4 w-4" />
               Estado de cuenta
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => setEditando(true)}
+              title="Cambiar el nombre, el teléfono o la nota"
+            >
+              <Pencil className="h-4 w-4" />
+              Editar
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => setMostrarDeuda(true)}
+              title="Anotar una deuda a mano (por ejemplo, algo que estaba en el cuaderno)"
+            >
+              <NotebookPen className="h-4 w-4" />
+              Anotar deuda
             </button>
             <button className="btn-primary" onClick={() => setMostrarPago(true)}>
               Registrar pago
@@ -799,6 +926,30 @@ function ClienteDetalleModal({
         </div>
       </div>
 
+      {mostrarDeuda && (
+        <AnotarDeudaModal
+          cliente={cliente}
+          saldo={saldoActual}
+          onCerrar={() => setMostrarDeuda(false)}
+          onAnotada={() => {
+            setMostrarDeuda(false);
+            cargar();
+            onCambio();
+          }}
+        />
+      )}
+
+      {editando && (
+        <EditarClienteModal
+          cliente={cliente}
+          onCerrar={() => setEditando(false)}
+          onGuardado={() => {
+            setEditando(false);
+            onCambio();
+          }}
+        />
+      )}
+
       {mostrarPago && (
         <RegistrarPagoModal
           cliente={cliente}
@@ -816,18 +967,17 @@ function ClienteDetalleModal({
   );
 }
 
-// El estado de cuenta de un cliente para mandárselo: un código QR (lleva a un PDF
-// con lo que debe, sin usuario ni contraseña) y botones para descargarlo, mandarlo
-// por WhatsApp o copiar el enlace. El enlace vale 30 días y siempre trae lo de ahora.
+// El estado de cuenta de un cliente: un código QR que se escanea con el celular y baja
+// un PDF con lo que debe (sin usuario ni contraseña), para compartirlo y mandárselo, y
+// un botón para bajar ese mismo PDF desde acá. El enlace vale 30 días y siempre trae lo
+// de ahora.
 function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' | 'nombre'>; onCerrar: () => void }) {
   const [estado, setEstado] = useState<EstadoCuenta | null>(null);
-  const [enlace, setEnlace] = useState<EnlaceEstadoCuenta | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [errorEstado, setErrorEstado] = useState<string | null>(null);
   const [errorEnlace, setErrorEnlace] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [descargando, setDescargando] = useState(false);
-  const [copiado, setCopiado] = useState(false);
 
   useEffect(() => {
     let vigente = true;
@@ -839,9 +989,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
       .enlaceEstado(cliente.id)
       .then(async (l) => {
         const imagen = await QRCode.toDataURL(l.url, { margin: 1, width: 240, errorCorrectionLevel: 'M' });
-        if (!vigente) return;
-        setEnlace(l);
-        setQr(imagen);
+        if (vigente) setQr(imagen);
       })
       .catch((err) => vigente && setErrorEnlace(err instanceof Error ? err.message : 'No se pudo armar el enlace'));
     return () => {
@@ -868,37 +1016,6 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
       setAviso({ tipo: 'error', texto: err instanceof Error ? err.message : 'No se pudo armar el PDF' });
     } finally {
       setDescargando(false);
-    }
-  }
-
-  async function copiarEnlace() {
-    if (!enlace) return;
-    try {
-      await navigator.clipboard.writeText(enlace.url);
-    } catch {
-      // Sin permiso para el portapapeles (página sin https): se copia con un cuadro escondido.
-      const cuadro = document.createElement('textarea');
-      cuadro.value = enlace.url;
-      document.body.appendChild(cuadro);
-      cuadro.select();
-      document.execCommand('copy');
-      cuadro.remove();
-    }
-    setCopiado(true);
-    setTimeout(() => setCopiado(false), 2000);
-  }
-
-  async function mandarPorWhatsApp() {
-    if (!enlace) return;
-    const nombre = cliente.nombre.trim().split(/\s+/)[0];
-    const debe = estado && estado.saldo > 0 ? `: debés ${formatearMonedaConCentavos(estado.saldo)}` : '';
-    const mensaje = `Hola ${nombre}! Te paso el detalle de tu cuenta en Mis Amores${debe}. Lo podés ver y descargar acá: ${enlace.url}`;
-    const direccion = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
-    try {
-      if (window.escritorio?.abrirEnlace) await window.escritorio.abrirEnlace(direccion);
-      else window.open(direccion, '_blank', 'noopener');
-    } catch (err) {
-      setAviso({ tipo: 'error', texto: err instanceof Error ? err.message : 'No se pudo abrir WhatsApp' });
     }
   }
 
@@ -978,30 +1095,207 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              className="btn-primary col-span-2 justify-center"
-              onClick={descargarPdf}
-              disabled={descargando || !!errorEstado}
-            >
-              {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Descargar PDF
+          <button className="btn-primary w-full justify-center" onClick={descargarPdf} disabled={descargando || !!errorEstado}>
+            {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Descargar PDF
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Anotar una deuda a mano: lo que ya debía de antes (el cuaderno) o algo que no pasó
+// por la caja. Se suma a lo que debe y queda anotado con su detalle y su fecha.
+function AnotarDeudaModal({
+  cliente,
+  saldo,
+  onCerrar,
+  onAnotada,
+}: {
+  cliente: Cliente;
+  /** Lo que debe ahora (calculado del historial recién cargado). */
+  saldo: number;
+  onCerrar: () => void;
+  onAnotada: () => void;
+}) {
+  const [monto, setMonto] = useState('');
+  const [detalle, setDetalle] = useState('');
+  const [fecha, setFecha] = useState(ahoraParaInputLocal);
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const montoNum = parsearMonto(monto);
+  const montoValido = Number.isFinite(montoNum) && montoNum > 0;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!montoValido) {
+      setError('Ingresá un monto válido');
+      return;
+    }
+    setGuardando(true);
+    setError(null);
+    try {
+      await window.api.clientes.anotarDeuda(
+        cliente.id,
+        montoNum,
+        detalle.trim() || null,
+        fecha ? new Date(fecha).toISOString() : undefined
+      );
+      onAnotada();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo anotar la deuda');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="font-semibold text-slate-800">Anotar deuda de {cliente.nombre}</h2>
+          <p className="text-xs text-slate-400">Hoy debe {formatearMoneda(saldo)}</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+          <div>
+            <label className="label">Monto que debe</label>
+            <input
+              className="input"
+              inputMode="decimal"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value.replace(/[^0-9.,]/g, ''))}
+              autoFocus
+              required
+            />
+            {monto.trim() !== '' && (
+              <p className={`mt-1 text-xs ${montoValido ? 'text-slate-500' : 'text-red-600'}`}>
+                {montoValido
+                  ? `Se le suman ${formatearMonedaConCentavos(montoNum)}: pasa a deber ${formatearMonedaConCentavos(saldo + montoNum)}`
+                  : 'Ese monto no es un número válido.'}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="label">Detalle (opcional)</label>
+            <input
+              className="input"
+              maxLength={200}
+              placeholder="Ej: del cuaderno, fiambre del 3/10"
+              value={detalle}
+              onChange={(e) => setDetalle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">¿Desde cuándo lo debe?</label>
+            <input
+              type="datetime-local"
+              className="input"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              max={ahoraParaInputLocal()}
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              {fecha ? capitalizarPrimera(format(new Date(fecha), "EEEE d 'de' MMMM", { locale: es })) : ''}
+              {' · '}así se sabe hace cuánto debe.
+            </p>
+          </div>
+
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary" onClick={onCerrar}>
+              Cancelar
             </button>
-            <button
-              className="btn-secondary justify-center"
-              onClick={mandarPorWhatsApp}
-              disabled={!enlace}
-              title="Abre WhatsApp con un mensaje listo para mandar (elegís a quién)"
-            >
-              <MessageCircle className="h-4 w-4 text-emerald-600" />
-              WhatsApp
-            </button>
-            <button className="btn-secondary justify-center" onClick={copiarEnlace} disabled={!enlace}>
-              {copiado ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-              {copiado ? '¡Copiado!' : 'Copiar enlace'}
+            <button type="submit" className="btn-primary" disabled={guardando}>
+              {guardando ? 'Guardando...' : 'Anotar'}
             </button>
           </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Cambiar el nombre, el teléfono o la nota de un cliente.
+function EditarClienteModal({
+  cliente,
+  onCerrar,
+  onGuardado,
+}: {
+  cliente: Cliente;
+  onCerrar: () => void;
+  onGuardado: () => void;
+}) {
+  const [nombre, setNombre] = useState(cliente.nombre);
+  const [telefono, setTelefono] = useState(cliente.telefono ?? '');
+  const [nota, setNota] = useState(cliente.nota ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!nombre.trim()) {
+      setError('Ingresá el nombre del cliente');
+      return;
+    }
+    setGuardando(true);
+    setError(null);
+    try {
+      await window.api.clientes.actualizar(cliente.id, {
+        nombre: nombre.trim(),
+        nota: nota.trim() || null,
+        telefono: telefono.trim() || null,
+      });
+      onGuardado();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="font-semibold text-slate-800">Datos del cliente</h2>
         </div>
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+          <div>
+            <label className="label">Nombre y apellido</label>
+            <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} required autoFocus />
+          </div>
+          <div>
+            <label className="label">Teléfono (opcional)</label>
+            <input
+              className="input"
+              type="tel"
+              inputMode="tel"
+              placeholder="Ej: 11 5555-1234"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Nota (opcional)</label>
+            <input className="input" value={nota} onChange={(e) => setNota(e.target.value)} />
+          </div>
+
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary" onClick={onCerrar}>
+              Cancelar
+            </button>
+            <button type="submit" className="btn-primary" disabled={guardando}>
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>,
     document.body

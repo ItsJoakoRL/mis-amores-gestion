@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Barcode,
+  Camera,
   Check,
   ClipboardList,
   Loader2,
@@ -17,6 +18,7 @@ import type { Articulo, ArticulosFiltro, Familia, ItemConteo, ResultadoConteo } 
 import { formatearCantidad, limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import CartelExito from '../../components/CartelExito';
+import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
 import { esTactil } from '../../utils/dispositivo';
 
 const TANDA = 60;
@@ -102,6 +104,7 @@ export default function InventarioPage() {
   const [scanValue, setScanValue] = useState('');
   const [scanAviso, setScanAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [resaltado, setResaltado] = useState<{ id: string; n: number } | null>(null);
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
 
   const [aplicando, setAplicando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoConteo | null>(null);
@@ -268,31 +271,19 @@ export default function InventarioPage() {
     };
   }, [resaltado]);
 
-  // Escanear un producto lo suma al conteo (+1). Si se vende por peso no hay
-  // forma de saber cuántos kilos son con el código: se lleva a su casillero.
-  async function manejarEscaneo(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter') return;
-    const codigo = scanValue.trim();
-    if (!codigo) return;
-    setScanValue('');
+  // Un código leído (con la lectora o con la cámara) lo suma al conteo (+1). Si se vende por
+  // peso no hay forma de saber cuántos kilos son con el código: se lleva a su casillero.
+  async function registrarCodigo(codigo: string): Promise<{ tipo: 'ok' | 'error'; mensaje: string; esPeso?: boolean }> {
     let a: Articulo | undefined | null = listaRef.current.find((x) => x.codigoBarras === codigo);
     if (!a) {
       try {
         a = await window.api.articulos.buscarPorCodigo(codigo);
       } catch (err) {
-        setScanAviso({ tipo: 'error', texto: err instanceof Error ? err.message : 'No se pudo buscar el código' });
-        return;
+        return { tipo: 'error', mensaje: err instanceof Error ? err.message : 'No se pudo buscar el código' };
       }
-      if (a && !a.activo) {
-        setScanAviso({ tipo: 'error', texto: `"${a.descripcion}" está en la papelera.` });
-        return;
-      }
+      if (a && !a.activo) return { tipo: 'error', mensaje: `"${a.descripcion}" está en la papelera.` };
       if (!a) {
-        setScanAviso({
-          tipo: 'error',
-          texto: `El código ${codigo} no está cargado. Asignáselo a un producto desde Artículos y stock.`,
-        });
-        return;
+        return { tipo: 'error', mensaje: `El código ${codigo} no está cargado. Asignáselo a un producto desde Artículos y stock.` };
       }
       const nuevo = a;
       // De otro rubro: se suma arriba de la lista.
@@ -306,12 +297,28 @@ export default function InventarioPage() {
     setLimiteVisible((l) => Math.max(l, listaRef.current.findIndex((x) => x.id === producto.id) + 2, TANDA));
     setResaltado((r) => ({ id: producto.id, n: (r?.n ?? 0) + 1 }));
     if (producto.unidad === 'peso') {
-      setScanAviso({ tipo: 'ok', texto: `${producto.descripcion}: escribí cuántos kg hay.` });
       setTimeout(() => (document.getElementById(`contado-${producto.id}`) as HTMLInputElement | null)?.focus(), 120);
-      return;
+      return { tipo: 'ok', mensaje: `${producto.descripcion}: escribí cuántos kg hay.`, esPeso: true };
     }
     setContados((previos) => ({ ...previos, [producto.id]: String((parseInt(previos[producto.id] ?? '0', 10) || 0) + 1) }));
-    setScanAviso({ tipo: 'ok', texto: `+1 · ${producto.descripcion}` });
+    return { tipo: 'ok', mensaje: `+1 · ${producto.descripcion}` };
+  }
+
+  async function manejarEscaneo(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return;
+    const codigo = scanValue.trim();
+    if (!codigo) return;
+    setScanValue('');
+    const r = await registrarCodigo(codigo);
+    setScanAviso({ tipo: r.tipo, texto: r.mensaje });
+  }
+
+  // Con la cámara: queda abierta para ir escaneando uno tras otro (los de peso la cierran,
+  // porque hay que escribir los kilos).
+  async function alLeerConCamara(codigo: string): Promise<RespuestaDeCodigo> {
+    const r = await registrarCodigo(codigo);
+    setScanAviso({ tipo: r.tipo, texto: r.mensaje });
+    return { mensaje: r.mensaje, tipo: r.tipo, cerrar: r.esPeso };
   }
 
   async function corregirStock() {
@@ -506,6 +513,17 @@ export default function InventarioPage() {
           onChange={(e) => setScanValue(e.target.value)}
           onKeyDown={manejarEscaneo}
         />
+        {puedeUsarCamara() && (
+          <button
+            type="button"
+            onClick={() => setCamaraAbierta(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700"
+            title="Escanear con la cámara del celular"
+          >
+            <Camera className="h-4 w-4" />
+            Cámara
+          </button>
+        )}
       </div>
       {scanAviso && (
         <p
@@ -659,6 +677,13 @@ export default function InventarioPage() {
       )}
 
       {cartel && <CartelExito mensaje={cartel} onCerrar={() => setCartel(null)} />}
+      {camaraAbierta && (
+        <LectorCamara
+          titulo="Escaneá los productos que contás"
+          alLeer={alLeerConCamara}
+          onCerrar={() => setCamaraAbierta(false)}
+        />
+      )}
     </div>
   );
 }

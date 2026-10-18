@@ -16,6 +16,10 @@ export const Channels = {
   articulosVaciarPapelera: 'articulos:vaciarPapelera',
   articulosAjustarStock: 'articulos:ajustarStock',
   articulosAplicarConteo: 'articulos:aplicarConteo',
+  preciosAplicar: 'precios:aplicar',
+  preciosLotes: 'precios:lotes',
+  preciosDeshacer: 'precios:deshacer',
+  preciosAplicarCostos: 'precios:aplicarCostos',
   articulosHistorialPrecios: 'articulos:historialPrecios',
   articulosMovimientosStock: 'articulos:movimientosStock',
 
@@ -51,6 +55,9 @@ export const Channels = {
   clientesEnlaceEstado: 'clientes:enlaceEstado',
   clientesEstadoPdf: 'clientes:estadoPdf',
   clientesRegistrarPago: 'clientes:registrarPago',
+  clientesAnotarDeuda: 'clientes:anotarDeuda',
+  clientesActualizar: 'clientes:actualizar',
+  clientesPagosDelDia: 'clientes:pagosDelDia',
   clientesEliminarMovimiento: 'clientes:eliminarMovimiento',
 
   recordatoriosList: 'recordatorios:list',
@@ -90,7 +97,6 @@ export const Channels = {
   escritorioConectarNube: 'escritorio:conectarNube',
   escritorioProbarServidor: 'escritorio:probarServidor',
   escritorioReintentar: 'escritorio:reintentar',
-  escritorioAbrirEnlace: 'escritorio:abrirEnlace',
 
   // Lo manda el proceso principal a la pantalla cuando alguien cambió datos.
   sistemaDatosCambio: 'sistema:datosCambio',

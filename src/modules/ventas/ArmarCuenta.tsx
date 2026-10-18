@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Plus, ReceiptText, Search, ShoppingCart, Trash2, X, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Camera, Plus, ReceiptText, Search, ShoppingCart, Trash2, X, RotateCcw } from 'lucide-react';
 import type { Articulo, Cliente, MetodoPago } from '@shared/types';
 import {
   formatearCantidad,
@@ -12,6 +12,7 @@ import {
 } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import CartelExito from '../../components/CartelExito';
+import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
 import AsignarCodigoModal from '../articulos/AsignarCodigoModal';
 import ArticuloFormModal from '../articulos/ArticuloFormModal';
 import { esTactil } from '../../utils/dispositivo';
@@ -97,6 +98,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   // para revisar). Va fijo en pantalla (el cartel de "venta registrada" se cierra
   // solo en 2 segundos, poco para leer una lista).
   const [vendidosSinStock, setVendidosSinStock] = useState<string[]>([]);
+  // La cámara del celular como lectora de códigos (se va escaneando producto tras producto).
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
 
   const hayFiado = metodoPago === 'fiado' || carrito.some((l) => l.fiado);
 
@@ -261,6 +264,26 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     if (!esTactil()) busquedaRef.current?.focus();
   }
 
+  // Un código leído con la cámara (uno tras otro, sin tocar nada): se lo busca y se suma a la
+  // cuenta. Si hay que escribir algo (un producto por peso, o un código que no está cargado)
+  // se cierra la cámara para poder hacerlo.
+  async function procesarCodigoDeCamara(codigo: string): Promise<RespuestaDeCodigo> {
+    if (!pareceCodigoDeBarras(codigo)) return { mensaje: 'Ese código no parece el de un producto', tipo: 'error' };
+    const encontrado = await window.api.articulos.buscarPorCodigo(codigo);
+    if (encontrado && !encontrado.activo) {
+      return { mensaje: `"${encontrado.descripcion}" está en la papelera: no se puede vender`, tipo: 'error' };
+    }
+    if (encontrado) {
+      agregarEscaneado(encontrado);
+      return encontrado.unidad === 'peso'
+        ? { mensaje: `${encontrado.descripcion}: poné cuántos kg`, tipo: 'ok', cerrar: true }
+        : { mensaje: `+1 · ${encontrado.descripcion}`, tipo: 'ok' };
+    }
+    setCodigoDesconocido(codigo);
+    setError(null);
+    return { cerrar: true };
+  }
+
   async function handleBusquedaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
     const codigo = termino.trim();
@@ -420,13 +443,23 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={busquedaRef}
-                className="input pl-9"
+                className={`input pl-9 ${puedeUsarCamara() ? 'pr-11' : ''}`}
                 placeholder="Escaneá o buscá por nombre..."
                 value={termino}
                 onChange={(e) => setTermino(e.target.value)}
                 onKeyDown={handleBusquedaKeyDown}
                 autoFocus
               />
+              {puedeUsarCamara() && (
+                <button
+                  type="button"
+                  onClick={() => setCamaraAbierta(true)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-brand-600 hover:bg-brand-50"
+                  title="Escanear con la cámara del celular"
+                >
+                  <Camera className="h-5 w-5" />
+                </button>
+              )}
               {(resultados.length > 0 || buscando) && (
                 <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
                   {buscando && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
@@ -630,6 +663,14 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         </div>
       )}
       {cartelExito && <CartelExito mensaje={cartelExito} onCerrar={() => setCartelExito(null)} />}
+
+      {camaraAbierta && (
+        <LectorCamara
+          titulo="Escaneá los productos de la cuenta"
+          alLeer={procesarCodigoDeCamara}
+          onCerrar={() => setCamaraAbierta(false)}
+        />
+      )}
 
       {codigoDesconocido && (
         <AsignarCodigoModal

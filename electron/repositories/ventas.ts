@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { getArticulo, ajustarStock } from './articulos';
-import { existeClienteActivo } from './clientes';
+import { existeClienteActivo, pagosPorDia } from './clientes';
 import { DIA_LOCAL_EXPR, limitesDiaLocal, limitesDiaLocalYMD, limitesMesLocal, ymdLocal } from '../fechaLocal';
 import { redondearCantidad } from '../../shared/formato';
 import type { MetodoPago, ResumenDiaVentas, Venta, VentaInput } from '../../shared/types';
@@ -189,6 +189,9 @@ const SUMA_FIADO = { $cond: [{ $eq: ['$metodoPago', 'fiado'] }, '$total', 0] };
 // necesita el calendario para pintar cada casillero sin traer cada venta.
 export async function resumenMes(anio: number, mesIndiceCero: number): Promise<ResumenDiaVentas[]> {
   const { desde, hasta } = limitesMesLocal(anio, mesIndiceCero);
+  // Los pagos que clientes de cuenta corriente hicieron ese mes también son plata
+  // que entró: se suman al día en que se recibieron (aunque ese día no haya ventas).
+  const pagos = await pagosPorDia(desde, hasta);
 
   const docs = await coleccion()
     .aggregate<{ _id: string; total: number; totalCobrado: number; totalFiado: number; cantidadVentas: number }>([
@@ -206,13 +209,26 @@ export async function resumenMes(anio: number, mesIndiceCero: number): Promise<R
     ])
     .toArray();
 
-  return docs.map((d) => ({
-    fecha: d._id,
-    total: d.total,
-    totalCobrado: d.totalCobrado,
-    totalFiado: d.totalFiado,
-    cantidadVentas: d.cantidadVentas,
-  }));
+  const filas = new Map<string, ResumenDiaVentas>(
+    docs.map((d) => [
+      d._id,
+      {
+        fecha: d._id,
+        total: d.total,
+        totalCobrado: d.totalCobrado,
+        totalFiado: d.totalFiado,
+        cantidadVentas: d.cantidadVentas,
+        totalPagos: pagos.get(d._id)?.total ?? 0,
+        cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
+      },
+    ])
+  );
+  for (const [dia, p] of pagos) {
+    if (!filas.has(dia)) {
+      filas.set(dia, { fecha: dia, total: 0, totalCobrado: 0, totalFiado: 0, cantidadVentas: 0, totalPagos: p.total, cantidadPagos: p.cantidad });
+    }
+  }
+  return [...filas.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 
 // Los fiados más recientes de TODOS los clientes, de una — pensado para que
@@ -233,6 +249,10 @@ export async function listUltimosFiados(limite: number): Promise<Venta[]> {
 
 export async function resumenHoy(): Promise<ResumenDiaVentas> {
   const { desde, hasta } = limitesDiaLocal(0);
+  const pagos = [...(await pagosPorDia(desde, hasta)).values()].reduce(
+    (acc, p) => ({ total: acc.total + p.total, cantidad: acc.cantidad + p.cantidad }),
+    { total: 0, cantidad: 0 }
+  );
   const docs = await coleccion()
     .aggregate<{ total: number; totalCobrado: number; totalFiado: number; cantidadVentas: number }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -253,5 +273,7 @@ export async function resumenHoy(): Promise<ResumenDiaVentas> {
     totalCobrado: docs[0]?.totalCobrado ?? 0,
     totalFiado: docs[0]?.totalFiado ?? 0,
     cantidadVentas: docs[0]?.cantidadVentas ?? 0,
+    totalPagos: pagos.total,
+    cantidadPagos: pagos.cantidad,
   };
 }

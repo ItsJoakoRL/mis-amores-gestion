@@ -101,6 +101,57 @@ export interface ArticulosFiltro {
   soloParaRevisar?: boolean;
 }
 
+/** Un producto de un cambio masivo de precios: el precio nuevo, y el que se vio al armar
+ * el cambio (si alguien lo cambió en el medio, no se pisa). */
+export interface CambioPrecioItem {
+  articuloId: string;
+  precioNuevo: number;
+  precioVisto: number;
+}
+
+export interface ProductoOmitido {
+  articuloId: string;
+  descripcion: string | null;
+  motivo: string;
+}
+
+export interface ResultadoCambioPrecios {
+  loteId: string;
+  cambiados: number;
+  sinCambios: number;
+  /** Los que no se pudieron cambiar (el resto sí se cambió). */
+  omitidos: ProductoOmitido[];
+}
+
+/** Un cambio masivo de precios ya hecho (para poder deshacerlo). */
+export interface LotePrecios {
+  loteId: string;
+  fecha: string;
+  descripcion: string;
+  cantidad: number;
+  usuarioNombre: string | null;
+  deshecho: boolean;
+}
+
+export interface ResultadoDeshacerPrecios {
+  revertidos: number;
+  /** Los que ya se habían vuelto a cambiar después: no se pisan. */
+  omitidos: number;
+}
+
+/** Un costo de la planilla: el nuevo, y el que se vio (si alguien lo cambió en el medio, no se pisa). */
+export interface CostoItem {
+  articuloId: string;
+  precioCosto: number;
+  costoVisto: number;
+}
+
+export interface ResultadoCostos {
+  cambiados: number;
+  sinCambios: number;
+  omitidos: ProductoOmitido[];
+}
+
 /** Un producto del conteo de inventario: cuánto se contó de verdad. */
 export interface ItemConteo {
   articuloId: string;
@@ -356,6 +407,10 @@ export interface ResumenDiaVentas {
   totalCobrado: number;
   totalFiado: number;
   cantidadVentas: number;
+  /** Lo que clientes de cuenta corriente pagaron ese día (plata que entró aunque
+   * no sea una venta de ese día). */
+  totalPagos: number;
+  cantidadPagos: number;
 }
 
 /** Para qué es el recordatorio (sólo para distinguirlos de un vistazo). */
@@ -412,9 +467,26 @@ export interface Cliente {
   saldo: number;
   /** Fecha de la última venta fiada, o null si nunca fio nada. */
   ultimoFiado: string | null;
+  /** Teléfono, tal como se anotó (opcional). */
+  telefono: string | null;
+  /** Desde cuándo debe: la fecha de lo más viejo que sigue sin cubrirse con sus
+   * pagos (los pagos se descuentan de lo más viejo primero). null si no debe. */
+  deudaDesde: string | null;
 }
 
-export type ClienteInput = Omit<Cliente, 'id' | 'activo' | 'saldo' | 'ultimoFiado'>;
+export type ClienteInput = Omit<Cliente, 'id' | 'activo' | 'saldo' | 'ultimoFiado' | 'deudaDesde'>;
+
+/** Un pago que recibió un cliente de cuenta corriente (para verlo en el día). */
+export interface PagoCuentaDelDia {
+  id: string;
+  fecha: string;
+  monto: number;
+  metodoPago: MetodoPago | null;
+  clienteId: string;
+  clienteNombre: string | null;
+  usuarioNombre: string | null;
+  nota: string | null;
+}
 
 /** Un movimiento en la cuenta corriente de un cliente: una compra fiada (suma
  * deuda) o un pago que hizo (la resta). */
@@ -491,6 +563,9 @@ export interface ReporteVentas {
   /** Lo que se anotó a cuenta corriente — no es plata cobrada. */
   totalFiado: number;
   cantidadVentas: number;
+  /** Pagos de cuentas corrientes recibidos en el período (plata que también entró). */
+  totalPagos: number;
+  cantidadPagos: number;
   ticketPromedio: number;
   porDia: ResumenDiaVentas[];
   topProductos: TopProducto[];

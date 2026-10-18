@@ -9,11 +9,14 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { armarPdfEstado, crearEnlaceEstado, nombreArchivoEstado, verificarEnlaceEstado } from '../estadoCuenta';
+import { aplicarCambioPrecios, aplicarCostos, deshacerLotePrecios, lotesDePrecios } from '../repositories/precios';
 import {
   MENSAJE_SIN_SESION,
   type ArticuloInput,
   type ArticulosFiltro,
+  type CambioPrecioItem,
   type ClienteInput,
+  type CostoItem,
   type DatosParaJuntar,
   type EstadoCuenta,
   type Genero,
@@ -83,6 +86,9 @@ import {
   eliminarPago,
   eliminarAjuste,
   estadoDeCuenta,
+  registrarAjuste,
+  actualizarCliente,
+  pagosDelDia,
 } from '../repositories/clientes';
 import {
   listRecordatorios,
@@ -597,6 +603,37 @@ export async function iniciarServidorWeb(
     })
   );
 
+  // --- Precios y costos masivos (sólo la administradora) ---
+  app.post(
+    '/api/precios/aplicar',
+    ruta((req) => {
+      const sesion = requiereAdmin(req);
+      const { items, descripcion, loteId } = req.body as { items: CambioPrecioItem[]; descripcion: string; loteId: string };
+      return aplicarCambioPrecios(items, descripcion, loteId, sesion.id);
+    })
+  );
+  app.get(
+    '/api/precios/lotes',
+    ruta((req) => {
+      requiereAdmin(req);
+      return lotesDePrecios();
+    })
+  );
+  app.post(
+    '/api/precios/lotes/:id/deshacer',
+    ruta((req) => {
+      const sesion = requiereAdmin(req);
+      return deshacerLotePrecios(req.params.id as string, sesion.id);
+    })
+  );
+  app.post(
+    '/api/precios/costos',
+    ruta((req) => {
+      const sesion = requiereAdmin(req);
+      return aplicarCostos((req.body as { items: CostoItem[] }).items, sesion.id);
+    })
+  );
+
   // --- Clientes / fiado ---
   app.get(
     '/api/clientes',
@@ -674,6 +711,30 @@ export async function iniciarServidorWeb(
       res.status(500).type('text/plain; charset=utf-8').send('No se pudo armar el estado de cuenta. Probá de nuevo en un rato.');
     }
   });
+  app.post(
+    '/api/clientes/:id/deuda',
+    ruta(async (req) => {
+      const sesion = requiereSesion(req);
+      const { monto, nota, fecha } = req.body as { monto: number; nota: string | null; fecha?: string };
+      await registrarAjuste(req.params.id as string, monto, nota ?? null, sesion.id, fecha);
+      return true;
+    })
+  );
+  app.put(
+    '/api/clientes/:id',
+    ruta(async (req) => {
+      requiereSesion(req);
+      await actualizarCliente(req.params.id as string, req.body as ClienteInput);
+      return true;
+    })
+  );
+  app.get(
+    '/api/clientes/pagos/dia/:fecha',
+    ruta((req) => {
+      requiereSesion(req);
+      return pagosDelDia(req.params.fecha as string);
+    })
+  );
   app.post(
     '/api/clientes/:id/activo',
     ruta(async (req) => {

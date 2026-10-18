@@ -136,8 +136,14 @@ export default function DashboardPage() {
             {ventasHoy ? (
               <>
                 <p className="mt-0.5 text-sm text-slate-500">
-                  {formatearMoneda(ventasHoy.totalCobrado)} cobrado en {ventasHoy.cantidadVentas} venta(s)
+                  {formatearMoneda(ventasHoy.totalCobrado + ventasHoy.totalPagos)} cobrado
+                  {ventasHoy.cantidadVentas > 0 ? ` en ${ventasHoy.cantidadVentas} venta(s)` : ''}
                 </p>
+                {ventasHoy.totalPagos > 0 && (
+                  <p className="mt-0.5 text-xs text-sky-600">
+                    incluye {formatearMoneda(ventasHoy.totalPagos)} de pagos de cuentas ({ventasHoy.cantidadPagos})
+                  </p>
+                )}
                 {ventasHoy.totalFiado > 0 && (
                   <p className="mt-0.5 text-xs text-amber-600">
                     + {formatearMoneda(ventasHoy.totalFiado)} fiado (todavía no cobrado)

@@ -71,6 +71,11 @@ npm run probar:azar -- 42   # cientos de operaciones al azar con apagones (semil
 npm run probar:servidor     # servidor sin ventana (Oracle)
 npm run probar:nube         # servidor en internet que no puede llamar a las PCs (Render)
 npm run probar:nube-pantalla  # "Conectar con el servidor de internet" desde la pantalla real
+npm run probar:inventario   # vender sin stock, conteo de inventario
+npm run probar:estado-cuenta  # enlace firmado y PDF de los fiados
+npm run probar:busqueda     # búsqueda tolerante de productos
+npm run probar:fiados       # deuda anotada a mano, pagos en lo cobrado, antigüedad, teléfono
+npm run probar:precios      # cambio masivo de precios con deshacer, costos
 ```
 
 ## Estructura
@@ -78,7 +83,7 @@ npm run probar:nube-pantalla  # "Conectar con el servidor de internet" desde la 
 ```
 electron/           proceso principal de Electron (ventana, IPC, acceso a datos)
   db/                conexión a MongoDB, índices, seed inicial
-  repositories/       consultas a cada colección (articulos, usuarios, catalogos, dashboard)
+  repositories/       consultas a cada colección (articulos, clientes, precios, ventas, reportes...)
   ipc/handlers.ts     expone las operaciones al renderer vía IPC, con control de permisos
   server/             servidor HTTP (celulares y otras PCs), sesiones, mDNS
   sync/               sincronización entre PCs (diario, reloj, motor, reglas, rutas)
@@ -90,8 +95,8 @@ build-assets/        ícono de la app
 
 ## Roles
 
-- **admin** (la jefa): acceso total, incluyendo precio de costo, eliminar artículos y gestionar usuarios.
-- **empleado**: puede cargar artículos y stock, pero no ve/edita precio de costo ni puede eliminar ni gestionar usuarios.
+- **admin** (la jefa): acceso total, incluyendo precio de costo, cambiar precios en masa, eliminar artículos y gestionar usuarios.
+- **empleado**: puede cargar artículos y stock, pero no ve/edita precio de costo ni puede eliminar, cambiar precios en masa ni gestionar usuarios.
 
 ## Recordatorios
 
@@ -107,12 +112,42 @@ Muchos productos están cargados con un stock que no es el real (o en cero). Par
 
 ## Estado de cuenta de los fiados (código QR)
 
-En **Clientes**, cada cliente tiene un botón con un código QR (en la lista y en su cuenta). Abre un cuadro con lo que debe y el **QR**: al escanearlo con el celular baja un **PDF** con el estado de cuenta (lo que quedó anotado sin pagar, los pagos que hizo y el total), listo para mandárselo. Desde el mismo cuadro se puede **descargar el PDF**, **mandarlo por WhatsApp** (abre WhatsApp con el mensaje y el enlace ya escritos; se elige a quién) o **copiar el enlace**. Se ve igual en la PC y en el celular.
+En **Clientes**, cada cliente tiene un botón con un código QR (en la lista y en su cuenta). Abre un cuadro con lo que debe y el **QR**: al escanearlo con el celular baja un **PDF** con el estado de cuenta (lo que quedó anotado sin pagar, los pagos que hizo y el total), listo para compartirlo y mandárselo. El mismo cuadro tiene un botón **Descargar PDF** para bajarlo desde la PC. Se ve igual en la PC y en el celular.
 
 - **El enlace** (`/estado/<cliente>/<vence>/<firma>`, en `electron/estadoCuenta.ts`) se abre **sin usuario ni contraseña** (quien escanea no tiene cuenta), así que lo protege una firma: sale de la clave de la red del negocio, no se puede armar el enlace de otro cliente, la fecha de vencimiento va firmada (**30 días**) y un enlace malo, vencido o de un cliente que ya no está dice siempre lo mismo. Siempre muestra lo que debe **en ese momento** (no una foto). Lo atiende el servidor de internet (`URL_SERVIDOR_INTERNET`), igual que el celular: si estaba dormido, la primera vez tarda hasta 1 minuto.
 - **Lo que cuenta:** lo anotado sin pagar (un fiado ya marcado como pagado no cuenta) + saldos iniciales y ajustes − pagos: el mismo saldo que muestra la lista.
 - **El PDF** lo arma `electron/pdfSimple.ts`, un generador mínimo sin librerías (texto Helvetica y rectángulos, varias páginas, tildes y ñ), así que no suma peso al instalador ni al servidor. Quien reciba el enlace puede ver el nombre y las compras fiadas de ese cliente hasta que venza: conviene mandarlo sólo a la persona.
 - Prueba: `npm run probar:estado-cuenta`.
+
+## Buscar productos
+
+La búsqueda (en Artículos, en "Armar cuenta", en el conteo y en la papelera) no exige escribir el nombre exacto: se escriben **varias palabras en cualquier orden** ("almibar pina" encuentra "PIÑA EN ALMÍBAR 800G"), da igual **mayúsculas, tildes y ñ**, y los decimales valen con punto o coma ("1.5" y "1,5"). Se muestran primero los que mejor coinciden (el código exacto, el nombre igual a lo escrito, los que empiezan con eso, los que tienen cada palabra al principio de alguna palabra, y después el resto). Está en `electron/repositories/articulos.ts` (`construirMatchBusqueda`, `puntajeDeBusqueda`). Prueba: `npm run probar:busqueda`.
+
+## Fiados: deuda a mano, pagos, antigüedad y teléfono
+
+- **Anotar deuda** (botón en la cuenta de cada cliente): para pasar lo que figura en el cuaderno o dejar anotado un fiado que no pasó por el mostrador. Lleva monto, nota y fecha (puede ser de hace semanas, y desde ahí cuenta cuánto hace que debe). Es un ajuste del cliente: aparece en su historial y en el estado de cuenta.
+- **Los pagos de cuentas cuentan como cobrado.** Lo que un cliente paga de su deuda entra en lo cobrado del día: Panel ("incluye $X de pagos de cuentas"), Calendario (el día muestra una sección "Pagos de cuentas recibidos" con quién pagó y quién lo recibió) y Reportes (tarjeta "Cobrado" y barra aparte de pagos). Un día en el que sólo hubo pagos también aparece.
+- **Desde cuándo debe.** Cada cuenta con saldo muestra "debe hace N días": se calcula pagando primero lo más viejo (los pagos y los ajustes que restan cubren primero las deudas más antiguas), así que lo que queda es lo que realmente sigue sin pagar. La lista se puede **ordenar** (más deben primero, deuda más vieja primero, por nombre) y **filtrar** por "+30 / +60 / +90 días".
+- **Teléfono** del cliente (opcional): se carga al crear o con **Editar**, se ve en la lista y se puede buscar por él.
+- Todo esto viaja entre las PCs y el celular como el resto de los datos (el teléfono y las deudas anotadas replican por campo; no hay colecciones nuevas). Prueba: `npm run probar:fiados` (y la sección 24 de `npm run probar:sync`).
+
+## Precios y costos
+
+Pantalla **Precios y costos** (sólo administradoras), con dos pestañas:
+
+- **Cambiar precios.** Se elige a qué productos (un rubro, y/o los que contengan unas palabras), se sube o baja un **porcentaje o un monto fijo**, y se **redondea** (a $1, $5, $10, $50 o $100). Antes de aplicar muestra cada producto con su precio de antes y de después, deja destildar los que no se quieren tocar y pide confirmación. Si alguien cambió el precio de un producto mientras tanto, ese producto se saltea y se avisa (no se pisa un cambio ajeno).
+- **Deshacer.** Cada cambio masivo queda en **Cambios anteriores**, con cuántos productos tocó y quién lo hizo, y se puede **deshacer** (también desde otra PC): cada producto vuelve a su precio de antes, salvo los que ya se cambiaron a mano después. Los cambios quedan en el historial de precios de cada producto, marcados con el cambio al que pertenecen.
+- **Cargar costos.** Planilla con todos los productos y una casilla de costo; al lado se ve la ganancia en pesos y en porcentaje, y se avisa en rojo si algún costo supera al precio. Tab o Enter pasa al siguiente; el filtro "Sin costo" deja sólo los que faltan cargar. Se guarda todo junto.
+
+Código en `shared/precios.ts` (la cuenta de redondeo) y `electron/repositories/precios.ts`; hasta 1000 productos por operación (la pantalla manda de a 300). Prueba: `npm run probar:precios`.
+
+## Cámara del celular como lectora
+
+En el celular y las tablets (no en la PC, donde está la lectora de códigos) aparece un botón de cámara en **Armar cuenta**, en **Contar inventario** y en **Artículos**. La cámara queda abierta y lee los códigos de barras uno tras otro: en la cuenta suma el producto, en el conteo suma 1 al contado, y si el código no está cargado se cierra sola y pregunta a qué producto pertenece. Un mismo código visto varias veces seguidas cuenta una sola vez.
+
+- Usa el lector que trae el celular (`BarcodeDetector`, Android) y, si no lo tiene (iPhone), la librería ZXing, que se descarga sólo en ese momento (no pesa para el resto).
+- El navegador sólo deja usar la cámara en una página segura: anda con la dirección https del servidor de internet, no con la dirección de la red local (http).
+- Está en `src/components/LectorCamara.tsx`. Se probó manejando Chrome con una cámara falsa que muestra un código de barras.
 
 ## Próximos módulos
 

@@ -59,6 +59,9 @@ import {
   eliminarPago,
   eliminarAjuste,
   estadoDeCuenta,
+  registrarAjuste,
+  actualizarCliente,
+  pagosDelDia,
 } from '../repositories/clientes';
 import {
   listRecordatorios,
@@ -68,8 +71,17 @@ import {
   marcarRecordatorioHecho,
   eliminarRecordatorio,
 } from '../repositories/recordatorios';
-import type { ClienteInput, EstadoCuenta, MetodoPago, RecordatorioInput, VentaInput } from '../../shared/types';
+import type {
+  CambioPrecioItem,
+  ClienteInput,
+  CostoItem,
+  EstadoCuenta,
+  MetodoPago,
+  RecordatorioInput,
+  VentaInput,
+} from '../../shared/types';
 import { armarPdfEstado, crearEnlaceEstado } from '../estadoCuenta';
+import { aplicarCambioPrecios, aplicarCostos, deshacerLotePrecios, lotesDePrecios } from '../repositories/precios';
 
 // El estado de cuenta de un cliente, o un error claro si ya no está en la lista.
 async function datosDelEstado(clienteId: string): Promise<EstadoCuenta> {
@@ -201,6 +213,32 @@ export function registrarHandlers(deps: DepsHandlers) {
     wrap(() => {
       const sesion = requiereSesion();
       return aplicarConteo(items, sesion.id);
+    })
+  );
+
+  // --- Precios y costos masivos (sólo la administradora) ---
+  ipcMain.handle(Channels.preciosAplicar, (_e, items: CambioPrecioItem[], descripcion: string, loteId: string) =>
+    wrap(() => {
+      const sesion = requiereAdmin();
+      return aplicarCambioPrecios(items, descripcion, loteId, sesion.id);
+    })
+  );
+  ipcMain.handle(Channels.preciosLotes, () =>
+    wrap(() => {
+      requiereAdmin();
+      return lotesDePrecios();
+    })
+  );
+  ipcMain.handle(Channels.preciosDeshacer, (_e, loteId: string) =>
+    wrap(() => {
+      const sesion = requiereAdmin();
+      return deshacerLotePrecios(loteId, sesion.id);
+    })
+  );
+  ipcMain.handle(Channels.preciosAplicarCostos, (_e, items: CostoItem[]) =>
+    wrap(() => {
+      const sesion = requiereAdmin();
+      return aplicarCostos(items, sesion.id);
     })
   );
 
@@ -427,6 +465,26 @@ export function registrarHandlers(deps: DepsHandlers) {
     wrap(() => {
       requiereSesion();
       return historialCliente(clienteId);
+    })
+  );
+  ipcMain.handle(Channels.clientesAnotarDeuda, (_e, clienteId: string, monto: number, nota: string | null, fecha?: string) =>
+    wrap(async () => {
+      const sesion = requiereSesion();
+      await registrarAjuste(clienteId, monto, nota ?? null, sesion.id, fecha);
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.clientesActualizar, (_e, id: string, input: ClienteInput) =>
+    wrap(async () => {
+      requiereSesion();
+      await actualizarCliente(id, input);
+      return true;
+    })
+  );
+  ipcMain.handle(Channels.clientesPagosDelDia, (_e, fechaYMD: string) =>
+    wrap(() => {
+      requiereSesion();
+      return pagosDelDia(fechaYMD);
     })
   );
   ipcMain.handle(Channels.clientesEstado, (_e, clienteId: string) =>

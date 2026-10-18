@@ -150,7 +150,7 @@ export default function ReportesPage() {
         <div className="flex items-center justify-center py-24 text-slate-400">
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
-      ) : !reporte || reporte.cantidadVentas === 0 ? (
+      ) : !reporte || (reporte.cantidadVentas === 0 && reporte.totalPagos === 0) ? (
         <div className="card flex flex-col items-center gap-2 px-6 py-16 text-center text-slate-400">
           <BarChart3 className="h-8 w-8" />
           <p className="text-sm">No hay ventas registradas en este período.</p>
@@ -158,7 +158,16 @@ export default function ReportesPage() {
       ) : (
         <>
           <div data-tour="rep-stats" className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard icono={DollarSign} etiqueta="Cobrado" valor={formatearMoneda(reporte.totalCobrado)} />
+            <StatCard
+              icono={DollarSign}
+              etiqueta="Cobrado"
+              valor={formatearMoneda(reporte.totalCobrado + reporte.totalPagos)}
+              detalle={
+                reporte.totalPagos > 0
+                  ? `incluye ${formatearMoneda(reporte.totalPagos)} de pagos de cuentas (${reporte.cantidadPagos})`
+                  : undefined
+              }
+            />
             <StatCard
               icono={HandCoins}
               etiqueta="Fiado (no cobrado)"
@@ -176,6 +185,10 @@ export default function ReportesPage() {
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLOR_BARRA }} />
                   Cobrado
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  Pagos de cuentas
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-amber-400" />
@@ -200,6 +213,7 @@ export default function ReportesPage() {
                   contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
                 />
                 <Bar dataKey="totalCobrado" name="Cobrado" stackId="dia" fill={COLOR_BARRA} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="totalPagos" name="Pagos de cuentas" stackId="dia" fill="#14b8a6" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="totalFiado" name="Fiado" stackId="dia" fill="#f59e0b" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -300,11 +314,14 @@ function StatCard({
   icono: Icono,
   etiqueta,
   valor,
+  detalle,
   color = 'brand',
 }: {
   icono: React.ComponentType<{ className?: string }>;
   etiqueta: string;
   valor: string;
+  /** Una línea chica abajo del número (ej. "incluye $X de ..."). */
+  detalle?: string;
   color?: 'brand' | 'amber';
 }) {
   const colores = color === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-brand-50 text-brand-600';
@@ -316,6 +333,7 @@ function StatCard({
       <div>
         <p className="text-xs text-slate-400">{etiqueta}</p>
         <p className="text-lg font-semibold text-slate-800">{valor}</p>
+        {detalle && <p className="text-xs text-sky-600">{detalle}</p>}
       </div>
     </div>
   );

@@ -192,6 +192,12 @@ export function crearWebApiClient(): Api {
       sugerirRubro: (descripcion) => req('POST', '/api/articulos/sugerir-rubro', { descripcion }),
       movimientosStock: (articuloId) => req('GET', `/api/articulos/${articuloId}/movimientos-stock`),
     },
+    precios: {
+      aplicar: (items, descripcion, loteId) => req('POST', '/api/precios/aplicar', { items, descripcion, loteId }),
+      lotes: () => req('GET', '/api/precios/lotes'),
+      deshacer: (loteId) => req('POST', `/api/precios/lotes/${loteId}/deshacer`),
+      aplicarCostos: (items) => req('POST', '/api/precios/costos', { items }),
+    },
     familias: {
       list: () => req('GET', '/api/familias'),
       crear: (nombre) => req('POST', '/api/familias', { nombre }),
@@ -234,6 +240,9 @@ export function crearWebApiClient(): Api {
       estadoPdf: (clienteId) => req('GET', `/api/clientes/${clienteId}/estado-pdf`),
       registrarPago: (clienteId, monto, nota, metodoPago) =>
         req('POST', `/api/clientes/${clienteId}/pago`, { monto, nota, metodoPago }),
+      anotarDeuda: (clienteId, monto, nota, fecha) => req('POST', `/api/clientes/${clienteId}/deuda`, { monto, nota, fecha }),
+      actualizar: (id, input: ClienteInput) => req('PUT', `/api/clientes/${id}`, input),
+      pagosDelDia: (fechaYMD) => req('GET', `/api/clientes/pagos/dia/${fechaYMD}`),
       eliminarMovimiento: (tipo, id) => req('DELETE', `/api/clientes/movimientos/${tipo}/${id}`),
     },
     recordatorios: {

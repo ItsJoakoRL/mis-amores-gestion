@@ -21,6 +21,7 @@ import {
   Settings,
   BellRing,
   ClipboardList,
+  Tags,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
@@ -29,7 +30,7 @@ import IndicadorRed from './IndicadorRed';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
-type AcentoNav = 'brand' | 'sky' | 'teal' | 'emerald' | 'violet' | 'amber' | 'orange' | 'rose' | 'slate';
+type AcentoNav = 'brand' | 'sky' | 'teal' | 'cyan' | 'emerald' | 'violet' | 'amber' | 'orange' | 'rose' | 'slate';
 
 // Mismos productos de almacén que en el login, pero bien tenues sobre fondo
 // claro — para que las pantallas con poco contenido (ej. el Panel) no se
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Panel', icon: LayoutDashboard, color: 'brand' },
   { to: '/articulos', label: 'Artículos y stock', icon: Package, color: 'sky' },
   { to: '/inventario', label: 'Contar inventario', icon: ClipboardList, color: 'teal' },
+  { to: '/precios', label: 'Precios y costos', icon: Tags, color: 'cyan', soloAdmin: true },
   { to: '/ventas', label: 'Calendario', icon: Calendar, color: 'emerald' },
   { to: '/reportes', label: 'Reportes', icon: BarChart3, color: 'violet' },
   { to: '/clientes', label: 'Clientes (fiado)', icon: Contact, color: 'amber' },
@@ -74,6 +76,7 @@ const NAV_ACTIVO: Record<AcentoNav, string> = {
   brand: 'bg-brand-50 text-brand-700',
   sky: 'bg-sky-50 text-sky-700',
   teal: 'bg-teal-50 text-teal-700',
+  cyan: 'bg-cyan-50 text-cyan-700',
   emerald: 'bg-emerald-50 text-emerald-700',
   violet: 'bg-violet-50 text-violet-700',
   amber: 'bg-amber-50 text-amber-700',
@@ -85,6 +88,7 @@ const NAV_ICONO: Record<AcentoNav, string> = {
   brand: 'text-brand-500',
   sky: 'text-sky-500',
   teal: 'text-teal-500',
+  cyan: 'text-cyan-500',
   emerald: 'text-emerald-500',
   violet: 'text-violet-500',
   amber: 'text-amber-500',
