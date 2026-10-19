@@ -453,6 +453,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
               {puedeUsarCamara() && (
                 <button
                   type="button"
+                  data-tour="cuenta-camara"
                   onClick={() => setCamaraAbierta(true)}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-brand-600 hover:bg-brand-50"
                   title="Escanear con la cámara del celular"
@@ -480,7 +481,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           )}
         </div>
 
-        <div className="w-24">
+        <div data-tour="cuenta-cantidad" className="w-24">
           <label className="label">Cantidad</label>
           <input
             className="input"
@@ -502,7 +503,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
       {/* La cuenta que se le va armando al cliente — cada producto que se
           agrega suma acá, para tener a la vista cuánto va llevando antes de
           cobrar todo junto. */}
-      <div className="mt-4 rounded-lg border border-slate-200">
+      <div data-tour="cuenta-lista" className="mt-4 rounded-lg border border-slate-200">
         <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
           <ShoppingCart className="h-4 w-4 text-slate-400" />
           <p className="flex-1 text-sm font-medium text-slate-600">
@@ -566,7 +567,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <div className="w-40">
+        <div data-tour="cuenta-pago" className="w-40">
           <label className="label">Forma de pago</label>
           <select
             className="input"
@@ -585,7 +586,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         </div>
 
         {hayFiado && (
-          <div className="w-48">
+          <div data-tour="cuenta-cliente" className="w-48">
             <label className="label">Cliente (fiado)</label>
             <select className="input" value={clienteId ?? ''} onChange={(e) => setClienteId(e.target.value || null)}>
               <option value="">Elegir...</option>
@@ -627,6 +628,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         )}
 
         <button
+          data-tour="cuenta-cobrar"
           className="btn-primary"
           onClick={cobrar}
           disabled={carrito.length === 0 || registrando || (hayFiado && !clienteId)}

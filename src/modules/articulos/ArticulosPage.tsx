@@ -483,7 +483,7 @@ export default function ArticulosPage() {
                 <ClipboardList className="h-4 w-4" />
                 Contar inventario
               </button>
-              <button className="btn-secondary" onClick={() => setMostrandoArmarCuenta(true)}>
+              <button data-tour="art-armar-cuenta" className="btn-secondary" onClick={() => setMostrandoArmarCuenta(true)}>
                 <ShoppingCart className="h-4 w-4" />
                 Armar cuenta
               </button>
@@ -535,7 +535,7 @@ export default function ArticulosPage() {
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[240px] flex-1">
+        <div data-tour="art-buscar" className="relative min-w-[240px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             className="input pl-9"

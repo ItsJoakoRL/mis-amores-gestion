@@ -17,6 +17,7 @@ import {
 import type { Articulo, ArticulosFiltro, Familia, ItemConteo, ResultadoConteo } from '@shared/types';
 import { formatearCantidad, limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
+import BotonAyuda from '../../components/BotonAyuda';
 import CartelExito from '../../components/CartelExito';
 import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
 import { esTactil } from '../../utils/dispositivo';
@@ -385,6 +386,7 @@ export default function InventarioPage() {
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-800">
           <ClipboardList className="h-6 w-6 text-teal-500" />
           Contar inventario
+          <BotonAyuda seccion="Contar inventario" />
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           Contás lo que hay de verdad en la góndola o el depósito y el sistema corrige el stock a ese número. Se cuenta
@@ -413,7 +415,7 @@ export default function InventarioPage() {
         )}
 
         <h2 className="mt-8 text-sm font-medium text-slate-600">¿Qué querés contar?</h2>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div data-tour="inv-rubros" className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {paraRevisar > 0 && (
             <button
               onClick={() => empezar(REVISAR)}
@@ -456,6 +458,7 @@ export default function InventarioPage() {
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-800">
             <ClipboardList className="h-6 w-6 shrink-0 text-teal-500" />
             <span className="break-words">{nombreDe(seleccion)}</span>
+            <BotonAyuda seccion="Contar inventario (contando)" />
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             {cargando
@@ -667,7 +670,12 @@ export default function InventarioPage() {
               </>
             )}
           </p>
-          <button className="btn-primary" onClick={corregirStock} disabled={resumen.aCorregir.length === 0 || aplicando}>
+          <button
+            data-tour="inv-corregir"
+            className="btn-primary"
+            onClick={corregirStock}
+            disabled={resumen.aCorregir.length === 0 || aplicando}
+          >
             {aplicando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {aplicando ? 'Corrigiendo...' : `Corregir el stock (${resumen.aCorregir.length})`}
           </button>

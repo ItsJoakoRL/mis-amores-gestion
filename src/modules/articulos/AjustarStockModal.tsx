@@ -64,7 +64,7 @@ export default function AjustarStockModal({ articulo, onCerrar, onGuardado }: Pr
 
           <div>
             <label className="label">Tipo de movimiento</label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div data-tour="stock-tipo" className="grid grid-cols-3 gap-1.5">
               {(['ingreso', 'egreso', 'ajuste'] as Tipo[]).map((t) => (
                 <button
                   key={t}
@@ -119,7 +119,7 @@ export default function AjustarStockModal({ articulo, onCerrar, onGuardado }: Pr
             <button type="button" className="btn-secondary" onClick={onCerrar}>
               Cancelar
             </button>
-            <button type="submit" className="btn-primary" disabled={guardando}>
+            <button data-tour="stock-confirmar" type="submit" className="btn-primary" disabled={guardando}>
               {guardando ? 'Guardando...' : 'Confirmar'}
             </button>
           </div>

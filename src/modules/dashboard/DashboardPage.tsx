@@ -18,6 +18,7 @@ import { formatearMoneda } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import AccesoCelularModal from './AccesoCelularModal';
 import BotonAyuda from '../../components/BotonAyuda';
+import TarjetaBienvenida from '../../components/TarjetaBienvenida';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
 
 
@@ -63,6 +64,8 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      <TarjetaBienvenida />
 
       {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 

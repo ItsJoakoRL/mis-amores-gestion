@@ -1,26 +1,23 @@
-import { useState } from 'react';
 import { HelpCircle } from 'lucide-react';
-import RecorridoAyuda from './RecorridoAyuda';
-import { RECORRIDOS } from './recorridos';
+import { useAyuda } from './AyudaContext';
 
-// Botón chiquito para poner al lado del título de cada pantalla — arranca un
-// recorrido guiado que va señalando, uno por uno, los botones y partes de
-// esta pantalla en particular (ver RecorridoAyuda y recorridos.ts).
+// El botón "Ayuda" que va al lado del título de cada pantalla. Abre el centro de ayuda
+// mostrando primero lo de esta pantalla: una guía que señala sus partes y las cosas que más
+// se hacen acá, paso a paso (ver CentroDeAyuda). Es un botón con texto y color a propósito:
+// quien recién empieza tiene que verlo y saber qué es.
 export default function BotonAyuda({ seccion }: { seccion: string }) {
-  const [abierto, setAbierto] = useState(false);
-  const pasos = RECORRIDOS[seccion] ?? [];
+  const { abrirCentro } = useAyuda();
 
   return (
-    <>
-      <button
-        onClick={() => setAbierto(true)}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-slate-100 hover:text-violet-500"
-        title={`Ayuda: ${seccion}`}
-        aria-label={`Ayuda sobre ${seccion}`}
-      >
-        <HelpCircle className="h-5 w-5" />
-      </button>
-      <RecorridoAyuda pasos={pasos} activo={abierto} onCerrar={() => setAbierto(false)} />
-    </>
+    <button
+      onClick={() => abrirCentro(seccion)}
+      data-boton-ayuda
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
+      title="Ayuda: te explico cómo se usa esta pantalla y cómo hacer lo que más se hace"
+      aria-label={`Ayuda sobre ${seccion}`}
+    >
+      <HelpCircle className="h-4 w-4" />
+      Ayuda
+    </button>
   );
 }

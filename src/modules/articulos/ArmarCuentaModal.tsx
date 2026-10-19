@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import ArmarCuenta from '../ventas/ArmarCuenta';
+import BotonAyuda from '../../components/BotonAyuda';
 
 interface Props {
   onCerrar: () => void;
@@ -15,7 +16,10 @@ export default function ArmarCuentaModal({ onCerrar, onVentaRegistrada }: Props)
     <div className="fixed inset-0 z-50 flex animate-fade-in items-start justify-center overflow-y-auto bg-slate-900/40 p-4 py-10">
       <div className="w-full max-w-2xl animate-scale-in rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-800">Armar cuenta</h2>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+            Armar cuenta
+            <BotonAyuda seccion="Armar cuenta" />
+          </h2>
           <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
             <X className="h-5 w-5" />
           </button>

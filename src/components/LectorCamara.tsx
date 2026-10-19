@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Check, Flashlight, FlashlightOff, Loader2, Sun, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { esTactil } from '../utils/dispositivo';
 
 /** Lo que la pantalla le contesta al lector después de cada código leído. */
@@ -102,6 +102,29 @@ async function crearMotor(): Promise<Motor> {
   };
 }
 
+// Lo que la cámara de este celular deja controlar. La linterna (el flash) y el zoom sólo
+// aparecen si el celular los ofrece: en los Android con Chrome suele andar; el iPhone no
+// deja prender la linterna desde una página de internet.
+interface Controles {
+  linterna: boolean;
+  zoom: { min: number; max: number; step: number } | null;
+}
+const SIN_CONTROLES: Controles = { linterna: false, zoom: null };
+const CLAVE_LINTERNA = 'misAmores.linterna';
+
+function leerControles(pista: MediaStreamTrack): Controles {
+  try {
+    const c = (pista.getCapabilities?.() ?? {}) as { torch?: boolean; zoom?: { min: number; max: number; step?: number } };
+    const zoom = c.zoom && Number.isFinite(c.zoom.min) && Number.isFinite(c.zoom.max) && c.zoom.max > c.zoom.min ? c.zoom : null;
+    return {
+      linterna: c.torch === true,
+      zoom: zoom ? { min: zoom.min, max: zoom.max, step: zoom.step && zoom.step > 0 ? zoom.step : (zoom.max - zoom.min) / 20 } : null,
+    };
+  } catch {
+    return SIN_CONTROLES;
+  }
+}
+
 function explicarError(err: unknown): string {
   const nombre = err instanceof Error ? err.name : '';
   if (nombre === 'NotAllowedError' || nombre === 'SecurityError') {
@@ -120,6 +143,44 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
   const [motor, setMotor] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<RespuestaDeCodigo | null>(null);
+  const pistaRef = useRef<MediaStreamTrack | null>(null);
+  const [controles, setControles] = useState<Controles>(SIN_CONTROLES);
+  const [linterna, setLinterna] = useState(false);
+  const [zoom, setZoom] = useState<number | null>(null);
+  // Si lo que ve la cámara está muy oscuro (para avisar que prenda la linterna o busque luz).
+  const [oscuro, setOscuro] = useState(false);
+  const [mensajeControl, setMensajeControl] = useState<string | null>(null);
+
+  async function aplicarARestricciones(restriccion: Record<string, unknown>): Promise<boolean> {
+    const pista = pistaRef.current;
+    if (!pista) return false;
+    try {
+      await pista.applyConstraints({ advanced: [restriccion as MediaTrackConstraintSet] });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function cambiarLinterna() {
+    const nueva = !linterna;
+    if (await aplicarARestricciones({ torch: nueva })) {
+      setLinterna(nueva);
+      try {
+        sessionStorage.setItem(CLAVE_LINTERNA, nueva ? '1' : '0');
+      } catch {
+        /* sin memoria del navegador: no pasa nada */
+      }
+    } else {
+      setMensajeControl('Este celular no dejó prender la linterna');
+      setTimeout(() => setMensajeControl(null), 2800);
+    }
+  }
+
+  async function cambiarZoom(valor: number) {
+    setZoom(valor);
+    await aplicarARestricciones({ zoom: valor });
+  }
 
   // Siempre la última versión de lo que hace la pantalla con el código.
   const alLeerRef = useRef(alLeer);
@@ -133,6 +194,30 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
     let temporizador: ReturnType<typeof setTimeout> | undefined;
     let apagarAviso: ReturnType<typeof setTimeout> | undefined;
     let ultimo = { codigo: '', cuando: 0 };
+
+    // Cada tanto se mira qué tan clara es la imagen: si está oscura varias veces seguidas se
+    // avisa (con una imagen oscura el código casi no se lee).
+    const lienzoLuz = document.createElement('canvas');
+    lienzoLuz.width = 24;
+    lienzoLuz.height = 16;
+    const contextoLuz = lienzoLuz.getContext('2d', { willReadFrequently: true });
+    let seguidasOscuras = 0;
+    let vuelta = 0;
+    function medirLuz(video: HTMLVideoElement) {
+      if (!contextoLuz || !video.videoWidth) return;
+      try {
+        contextoLuz.drawImage(video, 0, 0, 24, 16);
+        const d = contextoLuz.getImageData(0, 0, 24, 16).data;
+        let suma = 0;
+        for (let i = 0; i < d.length; i += 4) suma += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+        const brillo = suma / (d.length / 4);
+        seguidasOscuras = brillo < 55 ? seguidasOscuras + 1 : 0;
+        if (seguidasOscuras >= 3) setOscuro(true);
+        else if (brillo > 80) setOscuro(false);
+      } catch {
+        /* si no se puede medir, simplemente no se avisa nada */
+      }
+    }
 
     async function recibir(codigo: string) {
       // El mismo código seguido (el celular lo ve varias veces mientras se apunta) cuenta una sola vez.
@@ -174,11 +259,27 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
         if (!video) return;
         video.srcObject = flujo;
         await video.play();
+        const pista = flujo.getVideoTracks()[0];
+        pistaRef.current = pista;
         // Enfoque continuo, si el celular lo permite (si no, sigue igual).
         try {
-          await flujo.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] });
+          await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] });
         } catch {
           /* no todos los celulares lo dejan cambiar */
+        }
+        // Linterna y zoom, si el celular los ofrece. Si la linterna estaba prendida la última
+        // vez que se usó la cámara, vuelve a prenderse (se escanea de a muchos seguidos).
+        const ofrece = leerControles(pista);
+        setControles(ofrece);
+        if (ofrece.zoom) setZoom(ofrece.zoom.min);
+        if (ofrece.linterna) {
+          let estabaPrendida = false;
+          try {
+            estabaPrendida = sessionStorage.getItem(CLAVE_LINTERNA) === '1';
+          } catch {
+            /* nada */
+          }
+          if (estabaPrendida && (await aplicarARestricciones({ torch: true }))) setLinterna(true);
         }
         const elegido = await crearMotor();
         if (!vivo) return;
@@ -186,6 +287,8 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
         setEstado('leyendo');
         const paso = async () => {
           if (!vivo) return;
+          vuelta += 1;
+          if (vuelta % 8 === 1) medirLuz(video);
           let codigo: string | null = null;
           try {
             codigo = await elegido.leer(video);
@@ -212,7 +315,13 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
   }, []);
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex flex-col bg-black" data-lector-camara data-estado={estado} data-motor={motor}>
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black"
+      data-lector-camara
+      data-estado={estado}
+      data-motor={motor}
+      data-linterna={linterna ? 'prendida' : controles.linterna ? 'apagada' : 'no-hay'}
+    >
       <div className="flex items-center justify-between gap-3 px-4 py-3 text-white">
         <p className="min-w-0 truncate text-sm font-medium">{titulo}</p>
         <button
@@ -248,6 +357,26 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
             </p>
           </div>
         )}
+        {estado === 'leyendo' && oscuro && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-4">
+            <p
+              data-aviso-oscuro
+              className="flex max-w-md items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-sm font-medium text-white shadow-lg"
+            >
+              <Sun className="h-4 w-4 shrink-0" />
+              {controles.linterna && !linterna
+                ? 'Se ve oscuro: prendé la linterna (el botón de abajo)'
+                : linterna
+                  ? 'Sigue oscuro: acercá el código a una luz'
+                  : 'Se ve oscuro: buscá más luz o acercate a una lámpara'}
+            </p>
+          </div>
+        )}
+        {mensajeControl && (
+          <div className="absolute inset-x-0 top-14 flex justify-center px-4">
+            <p className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-lg">{mensajeControl}</p>
+          </div>
+        )}
         {aviso?.mensaje && (
           <div className="absolute inset-x-0 bottom-6 flex justify-center px-4">
             <p
@@ -263,8 +392,45 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
         )}
       </div>
 
+      {estado === 'leyendo' && (controles.linterna || controles.zoom) && (
+        <div className="flex items-center gap-3 px-4 pt-3 text-white">
+          {controles.linterna && (
+            <button
+              type="button"
+              onClick={cambiarLinterna}
+              aria-pressed={linterna}
+              data-boton-linterna
+              title={linterna ? 'Apagar la linterna' : 'Prender la linterna'}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
+                linterna ? 'bg-amber-400 text-slate-900' : 'bg-white/15 hover:bg-white/25'
+              }`}
+            >
+              {linterna ? <Flashlight className="h-5 w-5" /> : <FlashlightOff className="h-5 w-5" />}
+            </button>
+          )}
+          {controles.zoom && zoom !== null && (
+            <label className="flex min-w-0 flex-1 items-center gap-2 text-white/80">
+              <ZoomOut className="h-4 w-4 shrink-0" />
+              <input
+                type="range"
+                data-zoom-camara
+                aria-label="Zoom de la cámara"
+                min={controles.zoom.min}
+                max={controles.zoom.max}
+                step={controles.zoom.step}
+                value={zoom}
+                onChange={(e) => cambiarZoom(Number(e.target.value))}
+                className="h-2 min-w-0 flex-1 accent-white"
+              />
+              <ZoomIn className="h-4 w-4 shrink-0" />
+            </label>
+          )}
+        </div>
+      )}
+
       <p className="px-4 py-3 text-center text-xs text-white/70">
         Apuntá al código de barras: se lee solo. Podés ir escaneando uno tras otro.
+        {controles.zoom || controles.linterna ? ' Si no lo lee, probá con la linterna o el zoom.' : ''}
       </p>
     </div>,
     document.body

@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
@@ -22,11 +22,13 @@ import {
   BellRing,
   ClipboardList,
   Tags,
+  HelpCircle,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
 import IndicadorRed from './IndicadorRed';
+import { AyudaProvider, useAyuda } from './AyudaContext';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
@@ -97,8 +99,35 @@ const NAV_ICONO: Record<AcentoNav, string> = {
   slate: 'text-slate-500',
 };
 
+// A qué pantalla de la ayuda corresponde cada dirección: el botón "Ayuda" del menú abre el
+// centro de ayuda mostrando primero lo de la pantalla en la que se está.
+const SECCION_POR_RUTA: Record<string, string> = {
+  '/': 'Panel',
+  '/articulos': 'Artículos y stock',
+  '/inventario': 'Contar inventario',
+  '/precios': 'Precios y costos',
+  '/ventas': 'Calendario',
+  '/reportes': 'Reportes',
+  '/clientes': 'Clientes (fiado)',
+  '/recordatorios': 'Recordatorios',
+  '/usuarios': 'Usuarios',
+  '/configuracion': 'Configuración',
+};
+
+// El Layout trae el proveedor de la ayuda: así el centro de ayuda y la guía paso a paso están
+// disponibles desde cualquier pantalla, y la guía puede llevar de una a otra.
 export default function Layout() {
+  return (
+    <AyudaProvider>
+      <LayoutInterno />
+    </AyudaProvider>
+  );
+}
+
+function LayoutInterno() {
   const { sesion, logout, esAdmin } = useAuth();
+  const { abrirCentro } = useAyuda();
+  const ubicacion = useLocation();
   // En el celular la barra lateral no entra fija en la pantalla — arranca
   // escondida y se abre como un panel encima de todo con el botón de arriba.
   // En la PC (pantallas grandes) sigue fija como siempre.
@@ -232,6 +261,22 @@ export default function Layout() {
         </nav>
 
         <div className="border-t border-slate-200 p-3">
+          {/* Siempre a la vista (también en el celular): quien recién empieza tiene que
+              encontrar la ayuda sin buscarla. */}
+          <button
+            onClick={() => {
+              setMenuAbierto(false);
+              abrirCentro(SECCION_POR_RUTA[ubicacion.pathname]);
+            }}
+            data-menu-ayuda
+            className="mb-2 flex w-full items-center gap-3 rounded-lg bg-violet-50 px-3 py-2.5 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+          >
+            <HelpCircle className="h-4 w-4 text-violet-500" />
+            <span className="flex-1 text-left">Ayuda</span>
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-600">
+              ¿Cómo se hace?
+            </span>
+          </button>
           {window.escritorio && <IndicadorRed />}
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">

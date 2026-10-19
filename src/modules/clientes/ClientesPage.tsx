@@ -694,7 +694,7 @@ function NuevoClienteModal({
             )}
           </div>
           {conProductos ? (
-            <div>
+            <div data-tour="cli-form-debe">
               <label className="label">Qué productos debe (opcional)</label>
               <EditorDeProductos filas={filas} onChange={setFilas} />
               <p className="mt-1 text-xs text-slate-400">
@@ -709,7 +709,7 @@ function NuevoClienteModal({
               </button>
             </div>
           ) : (
-            <div>
+            <div data-tour="cli-form-debe">
               <label className="label">Debe (opcional)</label>
               <input
                 className="input"
@@ -949,6 +949,7 @@ function ClienteDetalleModal({
               Editar
             </button>
             <button
+              data-tour="cli-anotar-deuda"
               className="btn-secondary"
               onClick={() => setMostrarDeuda(true)}
               title="Anotar una deuda a mano (por ejemplo, algo que estaba en el cuaderno)"
@@ -957,6 +958,7 @@ function ClienteDetalleModal({
               Anotar deuda
             </button>
             <button
+              data-tour="cli-pago"
               className="btn-primary"
               onClick={() => {
                 setSugerido(null);
@@ -1218,7 +1220,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
           )}
 
           {estado && estado.pendientes.length > 0 && (
-            <div>
+            <div data-tour="estado-lista">
               <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Lo que tiene que pagar</p>
               <ul className="max-h-52 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm">
                 {estado.pendientes.map((l, i) => {
@@ -1252,7 +1254,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
             </div>
           )}
 
-          <div className="text-center">
+          <div data-tour="estado-qr" className="text-center">
             {errorEnlace ? (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-left text-sm text-amber-700">
                 {errorEnlace} Igual podés descargar el PDF con el botón de abajo.
@@ -1287,7 +1289,12 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
             </p>
           )}
 
-          <button className="btn-primary w-full justify-center" onClick={descargarPdf} disabled={descargando || !!errorEstado}>
+          <button
+            data-tour="estado-pdf"
+            className="btn-primary w-full justify-center"
+            onClick={descargarPdf}
+            disabled={descargando || !!errorEstado}
+          >
             {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Descargar PDF
           </button>
@@ -1592,7 +1599,7 @@ function RegistrarPagoModal({
           <p className="text-xs text-slate-400">{textoDeSaldo(saldo)}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
-          <div>
+          <div data-tour="pago-monto">
             <div className="flex items-center justify-between">
               <label className="label !mb-0">Monto que paga</label>
               {saldo > 0 && (
@@ -1625,7 +1632,7 @@ function RegistrarPagoModal({
             {sugerido?.aviso && <p className="mt-1 text-xs text-amber-600">{sugerido.aviso}</p>}
             <p className="mt-1 text-xs text-slate-400">Lo que paga se descuenta de lo más viejo primero.</p>
           </div>
-          <div>
+          <div data-tour="pago-metodo">
             <label className="label">Con qué paga</label>
             <div className="grid grid-cols-3 gap-1.5">
               {METODOS_PAGO_CUENTA.map((m) => (

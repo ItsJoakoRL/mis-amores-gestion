@@ -207,7 +207,7 @@ export default function CambioMasivo() {
   return (
     <div className="space-y-5 pb-28">
       <div className="card space-y-4 p-4 sm:p-5">
-        <div>
+        <div data-tour="precios-productos">
           <h2 className="text-sm font-semibold text-slate-700">1. ¿A qué productos?</h2>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <select className="input w-auto" value={familiaId} onChange={(e) => setFamiliaId(e.target.value)}>
@@ -235,7 +235,7 @@ export default function CambioMasivo() {
           </p>
         </div>
 
-        <div>
+        <div data-tour="precios-cuanto">
           <h2 className="text-sm font-semibold text-slate-700">2. ¿Cuánto?</h2>
           <div className="mt-2 flex flex-wrap items-end gap-3">
             <div className="flex overflow-hidden rounded-lg border border-slate-300">
@@ -333,7 +333,7 @@ export default function CambioMasivo() {
         </div>
       )}
 
-      <div className="card overflow-hidden">
+      <div data-tour="precios-vista" className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-700">3. Así quedarían los precios</h2>
           {operacion && !cargando && (
@@ -452,7 +452,12 @@ export default function CambioMasivo() {
                 'No se cambia ningún precio hasta que lo confirmes.'
               )}
             </p>
-            <button className="btn-primary" onClick={aplicar} disabled={!operacion || aCambiar.length === 0 || aplicando}>
+            <button
+              data-tour="precios-aplicar"
+              className="btn-primary"
+              onClick={aplicar}
+              disabled={!operacion || aCambiar.length === 0 || aplicando}
+            >
               {aplicando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {aplicando ? 'Cambiando...' : `Cambiar los precios (${aCambiar.length})`}
             </button>

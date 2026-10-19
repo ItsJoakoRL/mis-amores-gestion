@@ -148,8 +148,20 @@ Código en `shared/precios.ts` (la cuenta de redondeo) y `electron/repositories/
 En el celular y las tablets (no en la PC, donde está la lectora de códigos) aparece un botón de cámara en **Armar cuenta**, en **Contar inventario** y en **Artículos**. La cámara queda abierta y lee los códigos de barras uno tras otro: en la cuenta suma el producto, en el conteo suma 1 al contado, y si el código no está cargado se cierra sola y pregunta a qué producto pertenece. Un mismo código visto varias veces seguidas cuenta una sola vez.
 
 - Usa el lector que trae el celular (`BarcodeDetector`, Android) y, si no lo tiene (iPhone), la librería ZXing, que se descarga sólo en ese momento (no pesa para el resto).
+- **Linterna y zoom.** Si el celular los ofrece (los Android con Chrome suelen; el iPhone **no deja prender la linterna desde una página de internet**), debajo de la imagen aparecen un botón de linterna y un zoom de 1x en adelante, para etiquetas chicas o con poca luz. La linterna se acuerda mientras dure la sesión (se escanean muchos productos seguidos). Si la imagen se ve oscura varias veces seguidas, avisa "Se ve oscuro" y sugiere prender la linterna, o buscar más luz si no hay. Si no hay linterna ni zoom, no aparece ningún botón que no ande.
 - El navegador sólo deja usar la cámara en una página segura: anda con la dirección https del servidor de internet, no con la dirección de la red local (http).
 - Está en `src/components/LectorCamara.tsx`. Se probó manejando Chrome con una cámara falsa que muestra un código de barras.
+
+## Ayuda para quien recién empieza
+
+El programa es nuevo para quienes lo usan, así que la ayuda está pensada para guiar **qué se quiere hacer**, no para explicar botones sueltos:
+
+- **Botón "Ayuda"** violeta, con texto, al lado del título de cada pantalla (antes era un "?" chiquito y gris), y otro siempre a la vista en el menú de la izquierda (también en el celular).
+- Abre el **centro de ayuda** (`src/components/CentroDeAyuda.tsx`): "¿Qué querés hacer?" con guías por tarea en palabras de todos los días (cobrar una venta, anotar un fiado, cargar un producto, sumar mercadería, contar el inventario, cobrarle a un cliente, mandarle lo que debe en PDF/QR, subir precios, anular una venta, etc.), un **buscador** (da igual mayúsculas y tildes, y busca por palabras como "plata" o "cuaderno"), "¿qué hay en cada parte del menú?" y "¿qué significa cada palabra?" (stock, fiado, rubro...). Primero se muestra lo de la pantalla en la que se está. A las empleadas no se les muestran las guías de administradora.
+- **"Mostrame paso a paso"** (`RecorridoAyuda.tsx`): la guía lleva sola a la pantalla correcta, espera a que se abra el cuadro, marca lo que hay que tocar con letra grande y, cuando dice "Tocá lo que está marcado", **sigue sola al tocarlo** (se aprende haciendo). El resto de la pantalla queda bloqueado para no tocar otra cosa por error; Escape o la X la cierran, y "Seguir sin tocar" evita quedarse trabada.
+- **"Mostrame esta pantalla"**: la guía de cada pantalla señala para qué sirve cada parte (también "Armar cuenta" y "Contar inventario", que antes no tenían ayuda).
+- **Tarjeta de bienvenida** en el Panel con "Cómo cobrar una venta", "Cómo anotar un fiado" y "Cómo cargar un producto"; cada persona la saca con "Ya sé usarlo" (se acuerda por usuario en ese aparato).
+- El contenido está en `src/components/guias.ts` (por tarea) y `recorridos.ts` (por pantalla); lo que se señala son atributos `data-tour` puestos en cada pantalla (o un `id`). Para sumar una guía alcanza con agregarla a `GUIAS`.
 
 ## Próximos módulos
 
