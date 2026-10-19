@@ -92,7 +92,10 @@ export type ArticuloInput = Omit<
 export interface ArticulosFiltro {
   busqueda?: string;
   familiaId?: string | null;
+  /** Quedan pocos pero hay: más que cero y hasta el stock mínimo (igual que "Con stock bajo" del Panel). */
   soloStockBajo?: boolean;
+  /** Ya no queda (stock en cero o menos). */
+  soloSinStock?: boolean;
   incluirInactivos?: boolean;
   /** Papelera: sólo artículos dados de baja, para poder revisarlos y restaurarlos. */
   soloInactivos?: boolean;
@@ -387,6 +390,8 @@ export interface Venta {
   /** Sólo tiene sentido cuando metodoPago es 'fiado' — si ya lo pagó, deja
    * de contar para la deuda del cliente aunque siga en el historial. */
   pagado: boolean;
+  /** El ticket (la compra) al que pertenece; null en ventas de antes de que existiera. */
+  ticketId: string | null;
   /** Sólo en la lista de últimos fiados: cuánto falta pagar de este fiado, con los pagos
    * del cliente descontados de lo más viejo a lo más nuevo (0 = ya quedó cubierto). */
   resta?: number;
@@ -398,6 +403,9 @@ export interface VentaInput {
   metodoPago: MetodoPago;
   /** Obligatorio cuando metodoPago es 'fiado' — a quién se le anota la deuda. */
   clienteId?: string | null;
+  /** Número que comparten todos los productos de una misma cuenta cobrada de una vez (24
+   * letras/números): así se cuentan compras y no productos sueltos. Sin él, la venta cuenta sola. */
+  ticketId?: string | null;
 }
 
 /** Totales de un día puntual, para pintar el calendario sin traer cada venta.

@@ -94,10 +94,24 @@ async function buscarClientePorNombre(nombreBuscado: string) {
 // Frase de ventas que separa lo cobrado (efectivo/tarjeta/transferencia) de
 // lo fiado — nunca hay que sumarlos como si fuera la misma plata: un fiado
 // es una deuda, no algo que entró en la caja.
-function frasearVentas(cobrado: number, fiado: number, cantidad: number): string {
-  if (fiado === 0) return `${formatearMoneda(cobrado)} cobrado en ${cantidad} venta(s)`;
-  return `${formatearMoneda(cobrado)} cobrado y ${formatearMoneda(fiado)} fiado (sin cobrar) en ${cantidad} venta(s)`;
+function frasearVentas(cobrado: number, fiado: number, cantidad: number, pagos = 0): string {
+  const base =
+    fiado === 0
+      ? `${formatearMoneda(cobrado)} cobrado en ${cantidad} venta(s)`
+      : `${formatearMoneda(cobrado)} cobrado y ${formatearMoneda(fiado)} fiado (sin cobrar) en ${cantidad} venta(s)`;
+  // Lo que los clientes pagaron de su cuenta también entró a la caja (el Panel lo cuenta aparte).
+  return pagos > 0 ? `${base}, y recibiste ${formatearMoneda(pagos)} de pagos de cuentas` : base;
 }
+
+// Cuando no hubo ventas pero sí pagos de cuentas, se aclara.
+const avisoPagos = (pagos: number) => (pagos > 0 ? ` (igual recibiste ${formatearMoneda(pagos)} de pagos de cuentas)` : '');
+
+// Las formas en que se pregunta por lo que entró: "vendí", "cobré", "entró", "facturé", "hice", "la caja"...
+const DICE_VENTAS = '(?:vend|cobr|entr(?:o|aron)|factur|hice|recaud|caja)';
+const RE_VENTAS_HOY = new RegExp(`${DICE_VENTAS}.*hoy|hoy.*${DICE_VENTAS}|ventas de hoy|caja de hoy`);
+const RE_VENTAS_AYER = new RegExp(`${DICE_VENTAS}.*ayer|ayer.*${DICE_VENTAS}`);
+const RE_VENTAS_SEMANA = new RegExp(`${DICE_VENTAS}.*semana|semana.*${DICE_VENTAS}`);
+const RE_VENTAS_MES = new RegExp(`${DICE_VENTAS}.*mes|mes.*${DICE_VENTAS}`);
 
 async function contarFiadosHoy(): Promise<number> {
   const { desde, hasta } = limitesDiaLocal(0);
@@ -126,7 +140,9 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
     if (/como (estuvo|viene|va) el dia|resumen del dia|resumen de hoy/.test(pregunta)) {
       const [r, stats] = await Promise.all([resumenHoy(), getDashboardStats()]);
       const partes = [
-        r.cantidadVentas === 0 ? 'todavía no hay ventas hoy' : frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas),
+        r.cantidadVentas === 0
+          ? `todavía no hay ventas hoy${avisoPagos(r.totalPagos)}`
+          : frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas, r.totalPagos),
       ];
       if (stats.sinStockCount > 0) partes.push(`${stats.sinStockCount} artículo(s) sin stock`);
       if (stats.stockBajoCount > 0) partes.push(`${stats.stockBajoCount} con stock bajo`);
@@ -162,51 +178,13 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
       return { texto: `Hoy por método de pago — ${detalle}.`, reconocida: true };
     }
 
-    // Ventas de ayer
-    if (/vend.*ayer|ayer.*vend/.test(pregunta)) {
-      const { desde, hasta } = limitesDiaLocal(1);
-      const r = await getReporteVentas(desde, hasta);
-      if (r.cantidadVentas === 0) return { texto: 'Ayer no hubo ventas registradas.', reconocida: true };
-      return {
-        texto: `Ayer ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas)}.`,
-        reconocida: true,
-      };
-    }
-
-    // Ventas de hoy
-    if (/vend.*hoy|hoy.*vend|ventas de hoy/.test(pregunta)) {
-      const r = await resumenHoy();
-      if (r.cantidadVentas === 0) return { texto: 'Todavía no hay ventas registradas hoy.', reconocida: true };
-      return {
-        texto: `Hoy ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas)}.`,
-        reconocida: true,
-      };
-    }
-
-    // Ventas de la semana
-    if (/vend.*semana|semana.*vend/.test(pregunta)) {
-      const { desde, hasta } = limitesUltimosDiasLocal(7);
-      const r = await getReporteVentas(desde, hasta);
-      if (r.cantidadVentas === 0) return { texto: 'No hay ventas registradas en los últimos 7 días.', reconocida: true };
-      return {
-        texto: `En los últimos 7 días ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas)}. Ticket promedio: ${formatearMoneda(r.ticketPromedio)}.`,
-        reconocida: true,
-      };
-    }
-
-    // Ventas del mes
-    if (/vend.*mes|mes.*vend/.test(pregunta)) {
-      const { desde, hasta } = limitesUltimosDiasLocal(30);
-      const r = await getReporteVentas(desde, hasta);
-      if (r.cantidadVentas === 0) return { texto: 'No hay ventas registradas en los últimos 30 días.', reconocida: true };
-      return {
-        texto: `En los últimos 30 días ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas)}. Ticket promedio: ${formatearMoneda(r.ticketPromedio)}.`,
-        reconocida: true,
-      };
-    }
-
+    // (Estas dos van antes de las ventas por fecha: "el producto más vendido del mes" tiene que
+    // contestar el producto, no el total del mes.)
     // Producto más vendido
-    if (/mas vendid|top.*producto|que se vende mas|producto estrella/.test(pregunta)) {
+    if (
+      !/rubro|categoria/.test(pregunta) &&
+      /mas vendid|(producto|articulo).*vend\w* mas|que se vende mas|producto estrella|top.*producto/.test(pregunta)
+    ) {
       const { desde, hasta } = limitesUltimosDiasLocal(30);
       const r = await getReporteVentas(desde, hasta);
       if (r.topProductos.length === 0) {
@@ -220,7 +198,7 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
     }
 
     // Rubro que más vende
-    if (/rubro.*(mas vend|estrella)|que rubro vende mas|categoria.*mas vend/.test(pregunta)) {
+    if (/(rubro|categoria).*(mas vend|vend\w* mas|estrella)/.test(pregunta)) {
       const { desde, hasta } = limitesUltimosDiasLocal(30);
       const r = await getReporteVentas(desde, hasta);
       if (r.porRubro.length === 0) {
@@ -229,6 +207,55 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
       const top = r.porRubro[0];
       return {
         texto: `En los últimos 30 días, el rubro que más vendió fue "${top.familiaNombre}", con ${formatearMoneda(top.total)}.`,
+        reconocida: true,
+      };
+    }
+
+    // Ventas de ayer
+    if (RE_VENTAS_AYER.test(pregunta)) {
+      const { desde, hasta } = limitesDiaLocal(1);
+      const r = await getReporteVentas(desde, hasta);
+      if (r.cantidadVentas === 0) return { texto: `Ayer no hubo ventas registradas${avisoPagos(r.totalPagos)}.`, reconocida: true };
+      return {
+        texto: `Ayer ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas, r.totalPagos)}.`,
+        reconocida: true,
+      };
+    }
+
+    // Ventas de hoy
+    if (RE_VENTAS_HOY.test(pregunta)) {
+      const r = await resumenHoy();
+      if (r.cantidadVentas === 0) {
+        return { texto: `Todavía no hay ventas registradas hoy${avisoPagos(r.totalPagos)}.`, reconocida: true };
+      }
+      return {
+        texto: `Hoy ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas, r.totalPagos)}.`,
+        reconocida: true,
+      };
+    }
+
+    // Ventas de la semana
+    if (RE_VENTAS_SEMANA.test(pregunta)) {
+      const { desde, hasta } = limitesUltimosDiasLocal(7);
+      const r = await getReporteVentas(desde, hasta);
+      if (r.cantidadVentas === 0) {
+        return { texto: `No hay ventas registradas en los últimos 7 días${avisoPagos(r.totalPagos)}.`, reconocida: true };
+      }
+      return {
+        texto: `En los últimos 7 días ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas, r.totalPagos)}. Cada compra salió en promedio ${formatearMoneda(r.ticketPromedio)}.`,
+        reconocida: true,
+      };
+    }
+
+    // Ventas del mes
+    if (RE_VENTAS_MES.test(pregunta)) {
+      const { desde, hasta } = limitesUltimosDiasLocal(30);
+      const r = await getReporteVentas(desde, hasta);
+      if (r.cantidadVentas === 0) {
+        return { texto: `No hay ventas registradas en los últimos 30 días${avisoPagos(r.totalPagos)}.`, reconocida: true };
+      }
+      return {
+        texto: `En los últimos 30 días ${frasearVentas(r.totalCobrado, r.totalFiado, r.cantidadVentas, r.totalPagos)}. Cada compra salió en promedio ${formatearMoneda(r.ticketPromedio)}.`,
         reconocida: true,
       };
     }
@@ -256,7 +283,7 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
       const stats = await getDashboardStats();
       if (stats.sinStockCount === 0) return { texto: 'No hay ningún artículo sin stock ahora mismo. 🎉', reconocida: true };
       return {
-        texto: `Tenés ${stats.sinStockCount} artículo(s) sin stock. Fijate en Artículos y stock, filtrando por "Stock bajo".`,
+        texto: `Tenés ${stats.sinStockCount} artículo(s) sin stock. Los ves en Artículos y stock, con el botón "Sin stock".`,
         reconocida: true,
       };
     }
@@ -266,7 +293,7 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
       const stats = await getDashboardStats();
       if (stats.stockBajoCount === 0) return { texto: 'No hay artículos con stock bajo ahora mismo. 🎉', reconocida: true };
       return {
-        texto: `Tenés ${stats.stockBajoCount} artículo(s) con stock bajo o mínimo. Los podés ver en Artículos y stock, con el filtro "Stock bajo".`,
+        texto: `Tenés ${stats.stockBajoCount} artículo(s) con stock bajo (quedan pocos). Los podés ver en Artículos y stock, con el botón "Stock bajo".`,
         reconocida: true,
       };
     }

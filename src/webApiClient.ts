@@ -168,6 +168,7 @@ export function crearWebApiClient(): Api {
               busqueda: filtro?.busqueda,
               familiaId: filtro?.familiaId,
               soloStockBajo: filtro?.soloStockBajo,
+              soloSinStock: filtro?.soloSinStock,
               incluirInactivos: filtro?.incluirInactivos,
               soloInactivos: filtro?.soloInactivos,
               soloParaRevisar: filtro?.soloParaRevisar,
@@ -275,6 +276,8 @@ export function crearWebApiClient(): Api {
     },
     sistema: {
       infoRed: async () => null,
+      // En el navegador del celular los cuadros nativos no tienen este problema.
+      reenfocarVentana: () => {},
       // El servidor de la PC avisa por /api/eventos cuando alguien cambia algo.
       onDatosCambio: (callback: () => void) => {
         if (typeof EventSource === 'undefined') return () => {};

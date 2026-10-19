@@ -23,12 +23,14 @@ import {
   ClipboardList,
   Tags,
   HelpCircle,
+  KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
 import IndicadorRed from './IndicadorRed';
 import { AyudaProvider, useAyuda } from './AyudaContext';
+import CambiarClaveModal from '../modules/usuarios/CambiarClaveModal';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
@@ -132,6 +134,7 @@ function LayoutInterno() {
   // escondida y se abre como un panel encima de todo con el botón de arriba.
   // En la PC (pantallas grandes) sigue fija como siempre.
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [cambiandoClave, setCambiandoClave] = useState(false);
   // Vive acá (no en una pantalla en particular) para que el aviso de versión
   // nueva se vea desde cualquier parte de la app, no sólo desde el Panel.
   const infoActualizacion = useActualizacion();
@@ -286,6 +289,18 @@ function LayoutInterno() {
               <p className="truncate text-sm font-medium text-slate-700">{sesion?.nombre}</p>
               <p className="text-xs text-slate-400">{sesion && etiquetaRol(sesion.rol, sesion.genero)}</p>
             </div>
+            <button
+              data-tour="menu-cambiar-clave"
+              onClick={() => {
+                setMenuAbierto(false);
+                setCambiandoClave(true);
+              }}
+              className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+              title="Cambiar mi clave"
+              aria-label="Cambiar mi clave"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
           </div>
           <button onClick={() => logout()} className="btn-secondary w-full">
             <LogOut className="h-4 w-4" />
@@ -298,6 +313,8 @@ function LayoutInterno() {
         <CartelActualizacion info={infoActualizacion} />
         <Outlet />
       </main>
+
+      {cambiandoClave && <CambiarClaveModal onCerrar={() => setCambiandoClave(false)} />}
 
       <AsistenteChat />
     </div>

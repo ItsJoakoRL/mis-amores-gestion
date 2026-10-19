@@ -66,7 +66,7 @@ export const GUIAS: Guia[] = [
     id: 'cobrar-venta',
     grupo: 'Vender y cobrar',
     titulo: 'Cobrar una venta',
-    resumen: 'Armar lo que se lleva el cliente y cobrarlo (efectivo, tarjeta o transferencia).',
+    resumen: 'Armar lo que se lleva el cliente y cobrarlo (efectivo, tarjeta o transferencia; cada cosa puede pagarse distinto).',
     palabras: 'vender venta cobrar caja cuenta ticket mostrador efectivo tarjeta transferencia plata cliente se lleva',
     secciones: ['Artículos y stock', 'Armar cuenta', 'Panel'],
     pasos: [
@@ -79,12 +79,20 @@ export const GUIAS: Guia[] = [
         texto: 'Acá va quedando la cuenta, con el precio de cada cosa. Si te equivocás con algo, tocá el tachito de esa línea para sacarlo.',
       },
       {
+        selector: '[data-tour="cuenta-opciones-linea"]',
+        titulo: '¿Cómo paga cada cosa?',
+        texto:
+          'Cada producto dice cómo se paga: Efectivo, Tarjeta, Transferencia o Fiado. Si una parte va por transferencia y otra en efectivo, cambialo en esa línea. Si se lleva varias unidades y las paga distinto (2 en efectivo y 1 por transferencia), tocá "Dividir".',
+      },
+      {
         selector: '[data-tour="cuenta-pago"]',
-        titulo: '¿Cómo paga?',
-        texto: 'Elegí Efectivo, Tarjeta o Transferencia. (Si no paga ahora sino después, mirá la ayuda "Anotarle un fiado a un cliente".)',
+        titulo: 'O todo junto',
+        texto:
+          'Si todo se paga igual, elegí acá la forma de pago de toda la cuenta de una vez. Si dice "Varias formas de pago" es porque en algún producto elegiste una distinta. (Si no paga ahora sino después, mirá la ayuda "Anotarle un fiado a un cliente".)',
       },
       {
         selector: '[data-tour="cuenta-cobrar"]',
+        tocar: true,
         titulo: 'Cobrar',
         texto: 'Mirá que el total esté bien y tocá "Cobrar". Listo: la venta queda anotada y se descuenta del stock. Después la podés ver en el Calendario.',
       },
@@ -94,7 +102,7 @@ export const GUIAS: Guia[] = [
     id: 'vender-fiado',
     grupo: 'Vender y cobrar',
     titulo: 'Anotarle un fiado a un cliente',
-    resumen: 'El cliente se lleva la mercadería y paga después: queda anotado a su nombre.',
+    resumen: 'El cliente se lleva la mercadería y paga después: queda anotado a su nombre (todo o sólo una parte de la cuenta).',
     palabras: 'fiado fiar deuda debe cuenta corriente cuaderno anotar pagar despues se lleva sin pagar',
     secciones: ['Artículos y stock', 'Armar cuenta', 'Clientes (fiado)'],
     pasos: [
@@ -103,15 +111,18 @@ export const GUIAS: Guia[] = [
       {
         selector: '[data-tour="cuenta-pago"]',
         titulo: 'Elegí "Fiado"',
-        texto: 'En "Forma de pago" elegí "Fiado". Así, en vez de cobrar, todo lo que se llevó se anota como deuda.',
+        texto:
+          'En "Forma de pago" elegí "Fiado": todo lo que se llevó se anota como deuda. Si sólo una parte es fiado, dejá la forma de pago como está y cambiala en la línea de ese producto (con "Dividir" si es una parte de las unidades).',
       },
       {
         selector: '[data-tour="cuenta-cliente"]',
         titulo: '¿A quién se lo anotás?',
-        texto: 'Elegí el cliente. Si todavía no está en la lista, primero agregalo (mirá la ayuda "Agregar un cliente nuevo").',
+        texto:
+          'Elegí el cliente en la lista. Si todavía no está, tocá "Cliente nuevo": lo agregás ahí mismo, sin salir de la cuenta, y queda elegido.',
       },
       {
         selector: '[data-tour="cuenta-cobrar"]',
+        tocar: true,
         titulo: 'Tocá "Cobrar"',
         texto: 'No se cobra plata: queda anotado en la cuenta del cliente. Lo ves en "Clientes (fiado)" y se cuenta aparte de lo cobrado.',
       },
@@ -175,6 +186,7 @@ export const GUIAS: Guia[] = [
       },
       {
         selector: 'button[form="articulo-form"]',
+        tocar: true,
         titulo: 'Guardar',
         texto: 'Tocá "Guardar" y listo: ya lo podés vender.',
       },
@@ -202,12 +214,14 @@ export const GUIAS: Guia[] = [
       },
       {
         selector: '[data-tour="stock-tipo"]',
+        interactuar: true,
         titulo: '¿Qué pasó?',
         texto: '"Ingreso" si llegó mercadería (suma). "Egreso" si se rompió o se perdió (resta). "Ajuste" para dejar un número exacto.',
       },
       { selector: '#cantidad', titulo: 'La cantidad', texto: 'Escribí cuántas unidades son.' },
       {
         selector: '[data-tour="stock-confirmar"]',
+        tocar: true,
         titulo: 'Confirmar',
         texto: 'Tocá "Confirmar". El stock queda actualizado.',
       },
@@ -234,7 +248,7 @@ export const GUIAS: Guia[] = [
         texto: 'En la fila del producto, tocá el lápiz ("Editar").',
       },
       { selector: '#precioVenta', titulo: 'El precio nuevo', texto: 'Borrá el precio de antes y escribí el nuevo.' },
-      { selector: 'button[form="articulo-form"]', titulo: 'Guardar', texto: 'Tocá "Guardar". Desde ese momento se vende al precio nuevo.' },
+      { selector: 'button[form="articulo-form"]', tocar: true, titulo: 'Guardar', texto: 'Tocá "Guardar". Desde ese momento se vende al precio nuevo.' },
     ],
   },
   {
@@ -281,14 +295,14 @@ export const GUIAS: Guia[] = [
         ruta: '/',
         selector: '[data-tour="panel-stock-bajo"]',
         titulo: 'En el Panel',
-        texto: 'Acá ves cuántos productos tienen poco stock.',
+        texto: 'Acá ves cuántos productos tienen poco stock. Si tocás la tarjeta, te lleva directo a esos productos.',
       },
       {
         ruta: '/articulos',
         selector: '[data-tour="art-stock-bajo-filtro"]',
         tocar: true,
         titulo: 'Tocá "Stock bajo"',
-        texto: 'En "Artículos y stock", este botón deja sólo los productos que se están por terminar.',
+        texto: 'En "Artículos y stock", este botón deja sólo los productos que se están por terminar. Al lado hay otro, "Sin stock", para los que ya no quedan.',
       },
       {
         titulo: 'Esos son los que hay que reponer',
@@ -319,7 +333,7 @@ export const GUIAS: Guia[] = [
         titulo: 'Si ya te debe plata',
         texto: 'Si ya te debía algo de antes (por ejemplo, del cuaderno), poné el monto, o tocá "O anotá qué productos son" para anotarlos uno por uno. Si no debe nada, dejalo vacío.',
       },
-      { selector: 'form button[type="submit"]', titulo: 'Crear', texto: 'Tocá "Crear". El cliente queda en la lista y ya le podés anotar fiados.' },
+      { selector: 'form button[type="submit"]', tocar: true, titulo: 'Crear', texto: 'Tocá "Crear". El cliente queda en la lista y ya le podés anotar fiados.' },
     ],
   },
   {
@@ -354,7 +368,7 @@ export const GUIAS: Guia[] = [
         titulo: '¿Desde cuándo lo debe?',
         texto: 'Poné la fecha en que se lo llevó. Sirve para saber hace cuánto tiempo debe.',
       },
-      { selector: 'form button[type="submit"]', titulo: 'Anotar', texto: 'Tocá "Anotar". Queda en su cuenta y se suma a lo que debe.' },
+      { selector: 'form button[type="submit"]', tocar: true, titulo: 'Anotar', texto: 'Tocá "Anotar". Queda en su cuenta y se suma a lo que debe.' },
     ],
   },
   {
@@ -384,7 +398,7 @@ export const GUIAS: Guia[] = [
         texto: 'Escribí cuánto entrega. Si paga todo lo que debe, tocá "Paga todo". Lo que paga se descuenta primero de lo más viejo.',
       },
       { selector: '[data-tour="pago-metodo"]', titulo: '¿Con qué paga?', texto: 'Elegí Efectivo, Tarjeta o Transferencia.' },
-      { selector: 'form button[type="submit"]', titulo: 'Registrar', texto: 'Tocá "Registrar". Se descuenta de lo que debe y suma a lo cobrado del día.' },
+      { selector: 'form button[type="submit"]', tocar: true, titulo: 'Registrar', texto: 'Tocá "Registrar". Se descuenta de lo que debe y suma a lo cobrado del día.' },
     ],
   },
   {
@@ -436,6 +450,7 @@ export const GUIAS: Guia[] = [
       },
       {
         selector: 'button[title^="Borrar"]',
+        tocar: true,
         titulo: 'Buscá la línea y tocá el tachito',
         texto: 'Cada línea de la cuenta tiene un tachito a la derecha. Tocá el de la que está mal: se saca y el saldo se arregla solo. Ojo: borrar es definitivo.',
       },
@@ -459,6 +474,7 @@ export const GUIAS: Guia[] = [
       {
         ruta: '/precios',
         selector: '[data-tour="precios-pestanas"]',
+        interactuar: true,
         titulo: 'Precios y costos',
         texto: 'Acá hay dos herramientas: "Cambiar precios" (esta) y "Cargar costos". Elegí "Cambiar precios".',
       },
@@ -531,6 +547,7 @@ export const GUIAS: Guia[] = [
       },
       {
         selector: 'button[title="Anular venta"]',
+        tocar: true,
         titulo: 'Tocá el tachito de esa venta',
         texto: 'Buscá la venta en la lista y tocá el tachito de la derecha. Te pide que confirmes: al hacerlo, la venta se saca y el stock vuelve a sumarse.',
       },
@@ -565,6 +582,38 @@ export const GUIAS: Guia[] = [
   },
 
   // ------------------------------------------------------------------ Otras cosas
+  {
+    id: 'cambiar-clave',
+    grupo: 'Otras cosas',
+    titulo: 'Cambiar mi clave',
+    resumen: 'Poner una clave nueva para entrar al programa (cada una cambia la suya).',
+    palabras: 'clave contrasena password cambiar mia mi cuenta usuario entrar olvide',
+    secciones: [],
+    pasos: [
+      {
+        selector: '[data-tour="menu-cambiar-clave"]',
+        tocar: true,
+        titulo: 'Tocá la llavecita',
+        texto: 'Está abajo en el menú, al lado de tu nombre. (En el celular, primero abrí el menú con las tres rayitas de arriba.)',
+      },
+      {
+        selector: '[data-tour="clave-actual"]',
+        titulo: 'Tu clave de ahora',
+        texto: 'Escribí la clave con la que entrás hoy. Se la pide para estar segura de que sos vos.',
+      },
+      {
+        selector: '[data-tour="clave-nueva"]',
+        titulo: 'La clave nueva',
+        texto: 'Escribí la que quieras (mínimo 4 letras o números) y repetila abajo. Tocá el ojito para verla y comprobar que la escribiste bien. Anotala en un lugar seguro.',
+      },
+      {
+        selector: '[data-tour="clave-guardar"]',
+        tocar: true,
+        titulo: 'Guardar',
+        texto: 'Tocá "Cambiar mi clave". Desde ese momento entrás con la nueva.',
+      },
+    ],
+  },
   {
     id: 'usuario-nuevo',
     grupo: 'Otras cosas',

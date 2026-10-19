@@ -4,6 +4,7 @@ import { seleccionarImagen } from '../imagenes';
 import type { ApiResult, ArticuloInput, ArticulosFiltro, Genero, ItemConteo, Rol } from '../../shared/types';
 import { getSesion, requiereAdmin, requiereSesion, setSesion } from '../session';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
+import { mensajeParaLaPersona } from '../mensajesError';
 import {
   verificarCredenciales,
   listUsuarios,
@@ -97,7 +98,7 @@ async function wrap<T>(fn: () => Promise<T> | T): Promise<ApiResult<T>> {
     const data = await fn();
     return { ok: true, data };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Error desconocido' };
+    return { ok: false, error: mensajeParaLaPersona(err) };
   }
 }
 
@@ -569,6 +570,18 @@ export function registrarHandlers(deps: DepsHandlers) {
       return true;
     })
   );
+
+  // --- Foco de la ventana ---
+  // En Windows, después de un alert()/confirm() nativo la ventana de Electron queda sin el foco del
+  // teclado: se ve normal pero los campos de texto no aceptan lo que se escribe hasta hacer clic
+  // afuera o cambiar de ventana. Sacarle y devolverle el foco lo arregla.
+  ipcMain.on(Channels.sistemaReenfocarVentana, (e) => {
+    const ventana = BrowserWindow.fromWebContents(e.sender);
+    if (!ventana || ventana.isDestroyed()) return;
+    ventana.blur();
+    ventana.focus();
+    ventana.webContents.focus();
+  });
 
   // --- Imágenes ---
   ipcMain.handle(Channels.imagenesSeleccionar, () =>

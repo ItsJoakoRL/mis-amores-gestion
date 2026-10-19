@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Hand, Loader2, X } from 'lucide-react';
+import { Hand, Loader2, Pencil, X } from 'lucide-react';
 
 export interface PasoRecorrido {
   /** Selector CSS de lo que se señala. Si no aparece en pantalla, el paso se muestra igual
@@ -16,6 +16,9 @@ export interface PasoRecorrido {
   ruta?: string;
   /** El paso le pide a la persona que toque lo señalado: al tocarlo, la guía sigue sola. */
   tocar?: boolean;
+  /** Lo señalado se puede usar (tocar o elegir) aunque el paso no siga solo al tocarlo. Si lo
+   * señalado es un campo para escribir o elegir (o lo contiene), ya se puede usar sin marcarlo. */
+  interactuar?: boolean;
 }
 
 interface Props {
@@ -47,10 +50,35 @@ const aCaja = (r: DOMRect): Caja => ({
 });
 
 // Un elemento "se ve" si ocupa lugar en pantalla (los escondidos con display:none, como la
-// lista del celular cuando se está en la PC, no cuentan).
+// lista del celular cuando se está en la PC, no cuentan) y no está corrido afuera hacia un
+// costado (como el menú del celular, que está cerrado hasta que se abre). Arriba o abajo sí
+// puede estar: al marcarlo, la pantalla se desplaza hasta él.
 function seVe(el: Element): boolean {
   const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0;
+  return r.width > 0 && r.height > 0 && r.right > 1 && r.left < window.innerWidth - 1;
+}
+
+// Los campos donde se escribe o se elige. Si lo señalado es uno (o tiene uno adentro), la guía
+// tiene que dejar usarlo: no se puede decir "escribí el precio" y bloquear el cuadro del precio.
+const CAMPOS = 'input, textarea, select, [contenteditable="true"]';
+function tieneCampo(el: Element): boolean {
+  return el.matches(CAMPOS) || !!el.querySelector(CAMPOS);
+}
+
+// El recuadro de lo señalado incluye las listas que se despliegan de él (el buscador de productos
+// muestra los resultados debajo, fuera de su cuadro): llevan `data-desborda`.
+function cajaConDesbordes(el: Element): Caja {
+  let { left, top, right, bottom } = el.getBoundingClientRect();
+  el.querySelectorAll('[data-desborda]').forEach((d) => {
+    const r = d.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      left = Math.min(left, r.left);
+      top = Math.min(top, r.top);
+      right = Math.max(right, r.right);
+      bottom = Math.max(bottom, r.bottom);
+    }
+  });
+  return aCaja({ left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top, toJSON: () => ({}) } as DOMRect);
 }
 
 export function buscarVisible(selector: string): Element | null {
@@ -89,6 +117,8 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
   const location = useLocation();
   const [paso, setPaso] = useState(0);
   const [caja, setCaja] = useState<Caja | null>(null);
+  // Lo señalado es un campo (o tiene uno): se puede escribir o elegir ahí.
+  const [conCampo, setConCampo] = useState(false);
   const [alto, setAlto] = useState(200);
   const globoRef = useRef<HTMLDivElement>(null);
   const navegadoPara = useRef(-1);
@@ -121,8 +151,9 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
       const el = actual.selector ? buscarVisible(actual.selector) : null;
       if (el && el !== ultimoEncontrado) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
       ultimoEncontrado = el;
-      const nueva = el ? aCaja(el.getBoundingClientRect()) : null;
+      const nueva = el ? cajaConDesbordes(el) : null;
       setCaja((vieja) => (igualCaja(vieja, nueva) ? vieja : nueva));
+      setConCampo(!!el && tieneCampo(el));
     };
     medir();
     // Seguido (cada 120 ms), porque la pantalla se acomoda sola un instante después de
@@ -185,9 +216,11 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
       }
     : null;
   const esperando = !!actual.selector && !caja;
-  // En un paso de "tocá acá" el hueco deja pasar los toques; en los demás, no (para no apretar
-  // un botón por error mientras se lee).
-  const dejaTocar = !!actual.tocar && !!hueco;
+  // En un paso de "tocá acá" el hueco deja pasar los toques, y también cuando lo señalado es un
+  // campo para escribir o elegir (si no, la guía diría "escribí el precio" y no dejaría escribir).
+  // En los demás no, para no apretar un botón por error mientras se lee.
+  const sePuedeUsar = !!actual.interactuar || conCampo;
+  const dejaTocar = (!!actual.tocar || sePuedeUsar) && !!hueco;
 
   const estiloLuz: React.CSSProperties = hueco
     ? { ...hueco, boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.68)' }
@@ -250,6 +283,12 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
           <p className="relative mt-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
             <Hand className="h-5 w-5 shrink-0" />
             {caja ? 'Tocá lo que está marcado y seguimos.' : 'Cuando aparezca, tocá lo que está marcado.'}
+          </p>
+        )}
+        {!actual.tocar && sePuedeUsar && !!caja && (
+          <p className="relative mt-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+            <Pencil className="h-5 w-5 shrink-0" />
+            Probalo ahí mismo. Cuando termines, tocá "{esUltimo ? 'Listo' : 'Siguiente'}".
           </p>
         )}
         {esperando && !actual.tocar && (

@@ -1,6 +1,7 @@
 import { getDb } from '../db/database';
 import { DIA_LOCAL_EXPR } from '../fechaLocal';
 import { pagosPorDia } from './clientes';
+import { CLAVE_TICKET } from './ventas';
 import type { ReporteVentas, TopProducto, VentasPorMetodoPago, VentasPorRubro } from '../../shared/types';
 
 function coleccionVentas() {
@@ -18,7 +19,7 @@ const SUMA_FIADO = { $cond: [{ $eq: ['$metodoPago', 'fiado'] }, '$total', 0] };
 async function porDia(desde: string, hasta: string) {
   const pagos = await pagosPorDia(desde, hasta);
   const docs = await coleccionVentas()
-    .aggregate<{ _id: string; total: number; totalCobrado: number; totalFiado: number; cantidadVentas: number }>([
+    .aggregate<{ _id: string; total: number; totalCobrado: number; totalFiado: number; tickets: string[] }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
       {
         $group: {
@@ -26,7 +27,8 @@ async function porDia(desde: string, hasta: string) {
           total: { $sum: '$total' },
           totalCobrado: { $sum: SUMA_COBRADO },
           totalFiado: { $sum: SUMA_FIADO },
-          cantidadVentas: { $sum: 1 },
+          // Compras (tickets), no productos sueltos: ver CLAVE_TICKET en ventas.ts.
+          tickets: { $addToSet: CLAVE_TICKET },
         },
       },
       { $sort: { _id: 1 } },
@@ -40,7 +42,7 @@ async function porDia(desde: string, hasta: string) {
         total: d.total,
         totalCobrado: d.totalCobrado,
         totalFiado: d.totalFiado,
-        cantidadVentas: d.cantidadVentas,
+        cantidadVentas: d.tickets.length,
         totalPagos: pagos.get(d._id)?.total ?? 0,
         cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
       },
@@ -84,13 +86,13 @@ async function topProductos(desde: string, hasta: string, limite: number): Promi
 
 async function porMetodoPago(desde: string, hasta: string): Promise<VentasPorMetodoPago[]> {
   const docs = await coleccionVentas()
-    .aggregate<{ _id: VentasPorMetodoPago['metodoPago']; cantidad: number; total: number }>([
+    .aggregate<{ _id: VentasPorMetodoPago['metodoPago']; tickets: string[]; total: number }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
-      { $group: { _id: '$metodoPago', cantidad: { $sum: 1 }, total: { $sum: '$total' } } },
+      { $group: { _id: '$metodoPago', tickets: { $addToSet: CLAVE_TICKET }, total: { $sum: '$total' } } },
       { $sort: { total: -1 } },
     ])
     .toArray();
-  return docs.map((d) => ({ metodoPago: d._id, cantidad: d.cantidad, total: d.total }));
+  return docs.map((d) => ({ metodoPago: d._id, cantidad: d.tickets.length, total: d.total }));
 }
 
 // Junta cada venta con el artículo vendido y el rubro de ese artículo, para

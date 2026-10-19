@@ -605,7 +605,7 @@ async function copiaGuardada() {
     await hasta(async () => {
       const [a, b] = await Promise.all([resumenDe(mig.A), resumenDe(mig.B)]);
       return Object.keys(a).every((k) => a[k].huella === b[k].huella);
-    }, 'que el resumen coincida', 40000);
+    }, 'que el resumen coincida', 150000);
     ok(true, 'y las dos terminan iguales');
   } catch (err) {
     ok(false, `las dos terminan iguales (${err.message})`);

@@ -88,12 +88,14 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="cuenta-lista"]',
       titulo: 'Lo que lleva el cliente',
-      texto: 'Acá va quedando la cuenta. Para sacar algo que agregaste por error, tocá el tachito de esa línea.',
+      texto:
+        'Acá va quedando la cuenta. Cada producto dice cómo se paga (Efectivo, Tarjeta, Transferencia o Fiado) y lo podés cambiar en esa línea; si se lleva varias unidades y las paga distinto, tocá "Dividir". Para sacar algo que agregaste por error, tocá el tachito.',
     },
     {
       selector: '[data-tour="cuenta-pago"]',
-      titulo: 'Cómo paga',
-      texto: 'Efectivo, Tarjeta o Transferencia. Si se lo lleva sin pagar ahora, elegí "Fiado" y después el cliente: queda anotado como deuda.',
+      titulo: 'Cómo paga (todo junto)',
+      texto:
+        'Efectivo, Tarjeta o Transferencia para toda la cuenta de una vez. Si se lo lleva sin pagar ahora, elegí "Fiado": en cada línea fiada elegís el cliente (o tocás "Cliente nuevo") y queda anotado como deuda.',
     },
     {
       selector: '[data-tour="cuenta-cobrar"]',

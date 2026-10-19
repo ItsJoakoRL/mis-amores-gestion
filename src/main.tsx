@@ -13,6 +13,21 @@ if (!window.api) {
   window.api = crearWebApiClient();
 }
 
+// Los cuadros nativos (alert/confirm) dejan la ventana de escritorio sin el foco del teclado (los
+// campos no dejan escribir): después de cada uno se le devuelve el foco a la ventana.
+for (const nombre of ['alert', 'confirm'] as const) {
+  const original = window[nombre].bind(window) as (mensaje?: string) => boolean | void;
+  (window as unknown as Record<string, unknown>)[nombre] = (mensaje?: string) => {
+    const resultado = original(mensaje);
+    try {
+      window.api.sistema.reenfocarVentana();
+    } catch {
+      // sin ventana de escritorio (o una versión vieja del puente): no pasa nada
+    }
+    return resultado;
+  };
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <HashRouter>

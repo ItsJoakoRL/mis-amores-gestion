@@ -23,6 +23,8 @@ interface VentaDoc {
   /** Sólo se usa cuando metodoPago es 'fiado'. Ventas viejas no tienen este
    * campo guardado todavía — mapDoc las trata como no pagadas. */
   pagado?: boolean;
+  /** La compra a la que pertenece (ver CLAVE_TICKET). Las ventas viejas no lo tienen. */
+  ticketId?: string;
 }
 
 interface VentaDocConJoins extends VentaDoc {
@@ -49,8 +51,28 @@ function mapDoc(doc: VentaDocConJoins): Venta {
     usuarioNombre: doc.usuario?.[0]?.nombre ?? null,
     fecha: doc.fecha,
     pagado: doc.pagado ?? false,
+    ticketId: doc.ticketId ?? null,
   };
 }
+
+// Qué compra es cada venta. Cada producto de una cuenta se guarda como una venta, así que para
+// contar compras (y sacar el ticket promedio) se agrupan por el número de ticket que comparten.
+// Las ventas de antes, que no lo tienen, se agrupan por quién las hizo, a quién y el minuto:
+// los productos de una misma cuenta se cobran con segundos de diferencia.
+export const CLAVE_TICKET = {
+  $ifNull: [
+    '$ticketId',
+    {
+      $concat: [
+        { $toString: '$usuarioId' },
+        '|',
+        { $toString: { $ifNull: ['$clienteId', ''] } },
+        '|',
+        { $substrBytes: ['$fecha', 0, 16] },
+      ],
+    },
+  ],
+};
 
 const JOIN_USUARIO = { $lookup: { from: 'usuarios', localField: 'usuarioId', foreignField: '_id', as: 'usuario' } };
 const JOIN_CLIENTE = { $lookup: { from: 'clientes', localField: 'clienteId', foreignField: '_id', as: 'cliente' } };
@@ -78,6 +100,10 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
   if (!articulo) {
     throw new Error('El artículo no existe');
   }
+  // Sin precio se vendería a $0 sin que nadie se dé cuenta (y se descontaría del stock).
+  if (!(articulo.precioVenta > 0)) {
+    throw new Error(`"${articulo.descripcion}" no tiene precio cargado: cargalo en Artículos y stock antes de venderlo`);
+  }
   // Un artículo en la papelera conserva su código de barras: sin esta
   // revisión se lo podía escanear y vender como si siguiera activo.
   if (!articulo.activo) {
@@ -87,6 +113,9 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
     throw new Error(`"${articulo.descripcion}" se vende por unidad: la cantidad tiene que ser un número entero`);
   }
   const cantidad = redondearCantidad(input.cantidad);
+  // El número de la compra (si viene bien armado); si no, la venta cuenta sola.
+  const ticketId =
+    typeof input.ticketId === 'string' && /^[0-9a-f]{24}$/i.test(input.ticketId) ? input.ticketId.toLowerCase() : null;
 
   // El descuento de stock va primero, así nunca se registra una venta de algo
   // que no se pudo descontar. Si el sistema dice que no queda stock se vende
@@ -104,6 +133,7 @@ export async function crearVenta(input: VentaInput, usuarioId: string): Promise<
     clienteId: input.clienteId ? new ObjectId(input.clienteId) : null,
     usuarioId: new ObjectId(usuarioId),
     fecha: new Date().toISOString(),
+    ...(ticketId ? { ticketId } : {}),
   };
 
   try {
@@ -194,7 +224,7 @@ export async function resumenMes(anio: number, mesIndiceCero: number): Promise<R
   const pagos = await pagosPorDia(desde, hasta);
 
   const docs = await coleccion()
-    .aggregate<{ _id: string; total: number; totalCobrado: number; totalFiado: number; cantidadVentas: number }>([
+    .aggregate<{ _id: string; total: number; totalCobrado: number; totalFiado: number; tickets: string[] }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
       {
         $group: {
@@ -202,7 +232,7 @@ export async function resumenMes(anio: number, mesIndiceCero: number): Promise<R
           total: { $sum: '$total' },
           totalCobrado: { $sum: SUMA_COBRADO },
           totalFiado: { $sum: SUMA_FIADO },
-          cantidadVentas: { $sum: 1 },
+          tickets: { $addToSet: CLAVE_TICKET },
         },
       },
       { $sort: { _id: 1 } },
@@ -217,7 +247,7 @@ export async function resumenMes(anio: number, mesIndiceCero: number): Promise<R
         total: d.total,
         totalCobrado: d.totalCobrado,
         totalFiado: d.totalFiado,
-        cantidadVentas: d.cantidadVentas,
+        cantidadVentas: d.tickets.length,
         totalPagos: pagos.get(d._id)?.total ?? 0,
         cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
       },
@@ -261,7 +291,7 @@ export async function resumenHoy(): Promise<ResumenDiaVentas> {
     { total: 0, cantidad: 0 }
   );
   const docs = await coleccion()
-    .aggregate<{ total: number; totalCobrado: number; totalFiado: number; cantidadVentas: number }>([
+    .aggregate<{ total: number; totalCobrado: number; totalFiado: number; tickets: string[] }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
       {
         $group: {
@@ -269,7 +299,7 @@ export async function resumenHoy(): Promise<ResumenDiaVentas> {
           total: { $sum: '$total' },
           totalCobrado: { $sum: SUMA_COBRADO },
           totalFiado: { $sum: SUMA_FIADO },
-          cantidadVentas: { $sum: 1 },
+          tickets: { $addToSet: CLAVE_TICKET },
         },
       },
     ])
@@ -279,7 +309,7 @@ export async function resumenHoy(): Promise<ResumenDiaVentas> {
     total: docs[0]?.total ?? 0,
     totalCobrado: docs[0]?.totalCobrado ?? 0,
     totalFiado: docs[0]?.totalFiado ?? 0,
-    cantidadVentas: docs[0]?.cantidadVentas ?? 0,
+    cantidadVentas: docs[0]?.tickets.length ?? 0,
     totalPagos: pagos.total,
     cantidadPagos: pagos.cantidad,
   };

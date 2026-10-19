@@ -79,6 +79,7 @@ export default function DashboardPage() {
         />
         <StatCard
           tourId="panel-stock-bajo"
+          to="/articulos?stock=bajo"
           icon={AlertTriangle}
           label="Con stock bajo"
           value={stats ? stats.stockBajoCount.toString() : '—'}
@@ -86,6 +87,7 @@ export default function DashboardPage() {
           delay={60}
         />
         <StatCard
+          to="/articulos?stock=sin"
           icon={PackageX}
           label="Sin stock"
           value={stats ? stats.sinStockCount.toString() : '—'}
@@ -216,6 +218,7 @@ function StatCard({
   color,
   delay,
   tourId,
+  to,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -223,6 +226,8 @@ function StatCard({
   color: 'brand' | 'amber' | 'red' | 'green';
   delay: number;
   tourId?: string;
+  /** Si se indica, la tarjeta es un enlace (lleva a la lista de lo que cuenta). */
+  to?: string;
 }) {
   const colors: Record<string, string> = {
     brand: 'bg-gradient-to-br from-brand-400 to-brand-600 shadow-brand-500/30',
@@ -230,10 +235,12 @@ function StatCard({
     red: 'bg-gradient-to-br from-red-400 to-red-600 shadow-red-500/30',
     green: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/30',
   };
-  return (
+  const tarjeta = (
     <div
       data-tour={tourId}
-      className="card flex animate-slide-up items-center gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      className={`card flex animate-slide-up items-center gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+        to ? 'cursor-pointer' : ''
+      }`}
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className={`flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm ${colors[color]}`}>
@@ -244,5 +251,12 @@ function StatCard({
         <p className="text-xl font-semibold text-slate-800">{value}</p>
       </div>
     </div>
+  );
+  return to ? (
+    <Link to={to} className="block" title="Ver la lista">
+      {tarjeta}
+    </Link>
+  ) : (
+    tarjeta
   );
 }

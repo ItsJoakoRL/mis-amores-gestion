@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   ClipboardList,
   Camera,
+  PackageX,
 } from 'lucide-react';
 import type { Articulo, Familia } from '@shared/types';
 import { formatearCantidad, formatearMoneda } from '@shared/formato';
@@ -41,9 +42,12 @@ export default function ArticulosPage() {
   const [familias, setFamilias] = useState<Familia[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [familiaId, setFamiliaId] = useState<string | null>(null);
-  const [soloStockBajo, setSoloStockBajo] = useState(false);
-  // Los que se vendieron sin stock registrado (stock en negativo): para contar.
-  const [soloParaRevisar, setSoloParaRevisar] = useState(false);
+  // Un solo filtro de stock a la vez: "bajo" (quedan pocos), "sin" (ya no quedan) o "revisar"
+  // (se vendieron sin stock registrado: stock en negativo, para contar).
+  const [filtroStock, setFiltroStock] = useState<'bajo' | 'sin' | 'revisar' | null>(null);
+  const soloStockBajo = filtroStock === 'bajo';
+  const soloSinStock = filtroStock === 'sin';
+  const soloParaRevisar = filtroStock === 'revisar';
   const [mostrandoPapelera, setMostrandoPapelera] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,13 +95,15 @@ export default function ArticulosPage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo abrir el producto'));
   }, [params, setParams]);
 
-  // El Panel manda acá con ?revisar=1 para ver los que se vendieron sin stock.
+  // El Panel manda acá con ?revisar=1 (los que se vendieron sin stock) o con ?stock=bajo / ?stock=sin.
   useEffect(() => {
-    if (!params.has('revisar')) return;
-    setSoloParaRevisar(true);
+    const pedido = params.has('revisar') ? 'revisar' : params.get('stock');
+    if (pedido !== 'revisar' && pedido !== 'bajo' && pedido !== 'sin') return;
+    setFiltroStock(pedido);
     setParams((actuales) => {
       const siguientes = new URLSearchParams(actuales);
       siguientes.delete('revisar');
+      siguientes.delete('stock');
       return siguientes;
     }, { replace: true });
   }, [params, setParams]);
@@ -177,10 +183,11 @@ export default function ArticulosPage() {
       busqueda: busqueda || undefined,
       familiaId,
       soloStockBajo: mostrandoPapelera ? false : soloStockBajo,
+      soloSinStock: mostrandoPapelera ? false : soloSinStock,
       soloParaRevisar: mostrandoPapelera ? false : soloParaRevisar,
       soloInactivos: mostrandoPapelera,
     }),
-    [busqueda, familiaId, soloStockBajo, soloParaRevisar, mostrandoPapelera]
+    [busqueda, familiaId, soloStockBajo, soloSinStock, soloParaRevisar, mostrandoPapelera]
   );
 
   // Si se escribe rápido o se cambia de filtro, pueden volver respuestas fuera de
@@ -230,17 +237,17 @@ export default function ArticulosPage() {
     return () => clearTimeout(debounce);
   }, [cargar]);
 
-  const totalStockBajo = useMemo(
-    () => articulos.filter((a) => a.stock <= a.stockMinimo).length,
-    [articulos]
-  );
-  // Cuántos hay para revisar en TODO el negocio (no sólo en lo que muestra el
-  // filtro de ahora): se vuelve a pedir cada vez que se recarga la lista.
-  const [totalParaRevisar, setTotalParaRevisar] = useState(0);
+  // Cuántos hay de cada uno en TODO el negocio (no sólo en lo que muestra la pantalla con la
+  // búsqueda de ahora; son los mismos números que muestra el Panel): se vuelve a pedir cada
+  // vez que se recarga la lista.
+  const [conteos, setConteos] = useState({ bajo: 0, sin: 0, revisar: 0 });
+  const totalStockBajo = conteos.bajo;
+  const totalSinStock = conteos.sin;
+  const totalParaRevisar = conteos.revisar;
   useEffect(() => {
     window.api.dashboard
       .stats()
-      .then((s) => setTotalParaRevisar(s.paraRevisarCount))
+      .then((s) => setConteos({ bajo: s.stockBajoCount, sin: s.sinStockCount, revisar: s.paraRevisarCount }))
       .catch(() => {});
   }, [articulos]);
 
@@ -562,17 +569,30 @@ export default function ArticulosPage() {
           <button
             data-tour="art-stock-bajo-filtro"
             className={`btn ${soloStockBajo ? 'bg-amber-100 text-amber-700' : 'btn-secondary'}`}
-            onClick={() => setSoloStockBajo((v) => !v)}
+            onClick={() => setFiltroStock((v) => (v === 'bajo' ? null : 'bajo'))}
+            title="Los que se están por terminar: quedan pocos (hasta el stock mínimo)"
           >
             <AlertTriangle className="h-4 w-4" />
             Stock bajo{totalStockBajo > 0 ? ` (${totalStockBajo})` : ''}
           </button>
         )}
 
+        {!mostrandoPapelera && (soloSinStock || totalSinStock > 0) && (
+          <button
+            data-tour="art-sin-stock-filtro"
+            className={`btn ${soloSinStock ? 'bg-red-100 text-red-700' : 'btn-secondary'}`}
+            onClick={() => setFiltroStock((v) => (v === 'sin' ? null : 'sin'))}
+            title="Los que ya no quedan (o que nunca se les cargó el stock)"
+          >
+            <PackageX className="h-4 w-4" />
+            Sin stock{totalSinStock > 0 ? ` (${totalSinStock})` : ''}
+          </button>
+        )}
+
         {!mostrandoPapelera && (soloParaRevisar || totalParaRevisar > 0) && (
           <button
             className={`btn ${soloParaRevisar ? 'bg-red-100 text-red-700' : 'btn-secondary'}`}
-            onClick={() => setSoloParaRevisar((v) => !v)}
+            onClick={() => setFiltroStock((v) => (v === 'revisar' ? null : 'revisar'))}
             title="Productos que se vendieron sin stock registrado: hay que contarlos"
           >
             <ClipboardList className="h-4 w-4" />
@@ -718,6 +738,7 @@ export default function ArticulosPage() {
         <ArticuloFormModal
           articulo={editando === 'nuevo' ? null : editando}
           codigoInicial={codigoParaNuevo}
+          onCambioDeStock={cargar}
           onCerrar={() => {
             setEditando(null);
             setCodigoParaNuevo(undefined);

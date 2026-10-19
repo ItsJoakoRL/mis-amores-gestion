@@ -1,6 +1,18 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Camera, Plus, ReceiptText, Search, ShoppingCart, Trash2, X, RotateCcw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Camera,
+  Plus,
+  ReceiptText,
+  RotateCcw,
+  Search,
+  ShoppingCart,
+  Split,
+  Trash2,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import type { Articulo, Cliente, MetodoPago } from '@shared/types';
 import {
   formatearCantidad,
@@ -13,8 +25,10 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import CartelExito from '../../components/CartelExito';
 import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
+import { nuevoIdTicket } from '../../utils/ticket';
 import AsignarCodigoModal from '../articulos/AsignarCodigoModal';
 import ArticuloFormModal from '../articulos/ArticuloFormModal';
+import NuevoClienteRapido from './NuevoClienteRapido';
 import { esTactil } from '../../utils/dispositivo';
 
 const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
@@ -24,20 +38,29 @@ const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
   { valor: 'fiado', etiqueta: 'Fiado' },
 ];
 
+const esMetodo = (m: unknown): m is MetodoPago => METODOS_PAGO.some((x) => x.valor === m);
+
+// Un renglón de la cuenta: un producto, cuántos y CÓMO SE PAGA. Un mismo producto puede estar en
+// varios renglones (por ejemplo 3 gaseosas: 2 en efectivo y 1 por transferencia), y cada renglón
+// fiado lleva su propio cliente. Al cobrar, cada renglón es una venta.
 interface LineaCarrito {
+  id: string;
   producto: Articulo;
   cantidad: number;
-  // Permite anotar sólo ALGUNOS productos de la cuenta a un cliente,
-  // aunque el resto se pague en efectivo/tarjeta/transferencia — para
-  // cuando alguien paga casi todo pero pide "esto ponelo en mi cuenta".
-  fiado: boolean;
+  metodo: MetodoPago;
+  /** A quién se le anota (sólo cuando el renglón es fiado). */
+  clienteId: string | null;
 }
 
 interface CuentaGuardada {
+  version: 2;
   carrito: LineaCarrito[];
+  /** La forma de pago con la que arrancan los productos que se agregan. */
   metodoPago: MetodoPago;
-  clienteId: string | null;
+  ultimoClienteId: string | null;
 }
+
+const nuevoIdLinea = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 // Guardamos la cuenta que se está armando en localStorage — así, si la app
 // se reinicia sola a mitad de camino (ej. se instaló una actualización
@@ -49,16 +72,66 @@ function claveGuardado(usuarioId: string): string {
   return `mis-amores:armar-cuenta:${usuarioId}`;
 }
 
+// Lee lo guardado. Hasta la 0.8.17 se guardaba una sola forma de pago para toda la cuenta y los
+// productos "fiados" marcados aparte (con un solo cliente): se pasa al formato nuevo.
 function cargarGuardado(usuarioId: string | undefined): CuentaGuardada | null {
   if (!usuarioId) return null;
   try {
     const crudo = localStorage.getItem(claveGuardado(usuarioId));
     if (!crudo) return null;
-    const datos = JSON.parse(crudo) as CuentaGuardada;
-    return Array.isArray(datos.carrito) && datos.carrito.length > 0 ? datos : null;
+    const datos = JSON.parse(crudo) as {
+      carrito?: Array<{ id?: string; producto: Articulo; cantidad: number; metodo?: unknown; clienteId?: string | null; fiado?: boolean }>;
+      metodoPago?: unknown;
+      clienteId?: string | null;
+      ultimoClienteId?: string | null;
+    };
+    if (!Array.isArray(datos.carrito) || datos.carrito.length === 0) return null;
+    const general: MetodoPago = esMetodo(datos.metodoPago) ? datos.metodoPago : 'efectivo';
+    const carrito: LineaCarrito[] = datos.carrito
+      .filter((l) => l && l.producto && typeof l.cantidad === 'number')
+      .map((l) => {
+        if (esMetodo(l.metodo)) {
+          return {
+            id: l.id ?? nuevoIdLinea(),
+            producto: l.producto,
+            cantidad: l.cantidad,
+            metodo: l.metodo,
+            clienteId: l.metodo === 'fiado' ? l.clienteId ?? null : null,
+          };
+        }
+        const fiado = general === 'fiado' || l.fiado === true;
+        return {
+          id: nuevoIdLinea(),
+          producto: l.producto,
+          cantidad: l.cantidad,
+          metodo: fiado ? 'fiado' : general,
+          clienteId: fiado ? datos.clienteId ?? null : null,
+        };
+      });
+    if (carrito.length === 0) return null;
+    return {
+      version: 2,
+      carrito,
+      metodoPago: general,
+      ultimoClienteId: datos.ultimoClienteId ?? datos.clienteId ?? null,
+    };
   } catch {
     return null;
   }
+}
+
+// Si dos renglones quedaron iguales (mismo producto, misma forma de pago y mismo cliente), se
+// juntan en uno: así no queda "2 gaseosas en efectivo" y "1 gaseosa en efectivo" por separado.
+function unificar(lineas: LineaCarrito[]): LineaCarrito[] {
+  const resultado: LineaCarrito[] = [];
+  for (const l of lineas) {
+    const igual = resultado.find(
+      (r) => r.producto.id === l.producto.id && r.metodo === l.metodo && r.clienteId === l.clienteId
+    );
+    if (igual) igual.cantidad = redondearCantidad(igual.cantidad + l.cantidad);
+    else resultado.push({ ...l });
+  }
+  return resultado;
 }
 
 // La cuenta de un cliente en el mostrador: se van agregando productos (por
@@ -80,9 +153,17 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   const [producto, setProducto] = useState<Articulo | null>(null);
   const [cantidad, setCantidad] = useState('1');
   const [carrito, setCarrito] = useState<LineaCarrito[]>(() => guardado?.carrito ?? []);
+  // Cómo se paga lo que se agregue de ahora en más (y lo que muestra el selector "de todo").
   const [metodoPago, setMetodoPago] = useState<MetodoPago>(() => guardado?.metodoPago ?? 'efectivo');
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clienteId, setClienteId] = useState<string | null>(() => guardado?.clienteId ?? null);
+  // El último cliente elegido para un fiado: los demás productos fiados de la cuenta arrancan con él.
+  const [ultimoCliente, setUltimoCliente] = useState<string | null>(() => guardado?.ultimoClienteId ?? null);
+  const [nuevoClientePara, setNuevoClientePara] = useState<string | null>(null);
+  // Dividir un renglón: "de estas N, ¿cuántas se pagan de otra forma?"
+  const [dividiendoId, setDividiendoId] = useState<string | null>(null);
+  const [divCantidad, setDivCantidad] = useState('');
+  const [divMetodo, setDivMetodo] = useState<MetodoPago>('transferencia');
+  const [divError, setDivError] = useState<string | null>(null);
   const [registrando, setRegistrando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cartelExito, setCartelExito] = useState<string | null>(null);
@@ -101,7 +182,9 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   // La cámara del celular como lectora de códigos (se va escaneando producto tras producto).
   const [camaraAbierta, setCamaraAbierta] = useState(false);
 
-  const hayFiado = metodoPago === 'fiado' || carrito.some((l) => l.fiado);
+  const hayFiado = carrito.some((l) => l.metodo === 'fiado');
+  const faltaCliente = carrito.some((l) => l.metodo === 'fiado' && !l.clienteId);
+  const variasFormas = new Set(carrito.map((l) => l.metodo)).size > 1;
 
   // La cuenta recuperada trae los productos como estaban cuando se guardó
   // (puede ser de ayer): se actualizan precio y stock con lo que hay ahora en
@@ -110,29 +193,28 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   useEffect(() => {
     if (!guardado) return;
     let vigente = true;
-    Promise.all(guardado.carrito.map((l) => window.api.articulos.get(l.producto.id).catch(() => undefined))).then(
-      (actualizados) => {
-        if (!vigente) return;
-        const actualizadosPorId = new Map<string, Articulo>();
-        const quitar = new Set<string>();
-        guardado.carrito.forEach((l, i) => {
-          const actualizado = actualizados[i];
-          // null: ya no existe; undefined: no se pudo consultar (queda como estaba).
-          // Uno que se mandó a la papelera tampoco se puede vender: se saca igual.
-          if (actualizado === null || (actualizado && !actualizado.activo)) quitar.add(l.producto.id);
-          else if (actualizado) actualizadosPorId.set(l.producto.id, actualizado);
-        });
-        setCarrito((actual) =>
-          actual
-            .filter((l) => !quitar.has(l.producto.id))
-            .map((l) => {
-              const actualizado = actualizadosPorId.get(l.producto.id);
-              return actualizado ? { ...l, producto: actualizado } : l;
-            })
-        );
-        setQuitadosAlRecuperar(quitar.size);
-      }
-    );
+    const ids = [...new Set(guardado.carrito.map((l) => l.producto.id))];
+    Promise.all(ids.map((id) => window.api.articulos.get(id).catch(() => undefined))).then((actualizados) => {
+      if (!vigente) return;
+      const actualizadosPorId = new Map<string, Articulo>();
+      const quitar = new Set<string>();
+      ids.forEach((id, i) => {
+        const actualizado = actualizados[i];
+        // null: ya no existe; undefined: no se pudo consultar (queda como estaba).
+        // Uno que se mandó a la papelera tampoco se puede vender: se saca igual.
+        if (actualizado === null || (actualizado && !actualizado.activo)) quitar.add(id);
+        else if (actualizado) actualizadosPorId.set(id, actualizado);
+      });
+      setCarrito((actual) =>
+        actual
+          .filter((l) => !quitar.has(l.producto.id))
+          .map((l) => {
+            const actualizado = actualizadosPorId.get(l.producto.id);
+            return actualizado ? { ...l, producto: actualizado } : l;
+          })
+      );
+      setQuitadosAlRecuperar(quitar.size);
+    });
     return () => {
       vigente = false;
     };
@@ -148,19 +230,20 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         localStorage.removeItem(claveGuardado(sesion.id));
         return;
       }
-      const datos: CuentaGuardada = { carrito, metodoPago, clienteId };
+      const datos: CuentaGuardada = { version: 2, carrito, metodoPago, ultimoClienteId: ultimoCliente };
       localStorage.setItem(claveGuardado(sesion.id), JSON.stringify(datos));
     } catch {
       // Sin lugar donde guardarla (modo privado, o el celular lo bloquea): la
       // cuenta sigue andando, sólo que no se recupera si se cierra la página.
     }
-  }, [sesion, carrito, metodoPago, clienteId]);
+  }, [sesion, carrito, metodoPago, ultimoCliente]);
 
   function vaciarCuenta() {
     if (!confirm('¿Vaciar la cuenta que estás armando? Se pierden los productos ya agregados.')) return;
     setCarrito([]);
-    setClienteId(null);
+    setUltimoCliente(null);
     setMetodoPago('efectivo');
+    setDividiendoId(null);
   }
 
   useEffect(() => {
@@ -207,31 +290,120 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     if (a.unidad !== 'peso' && !Number.isInteger(numeroDeDecimal(cantidad))) setCantidad('1');
   }
 
-  // Suma un producto a la cuenta — si ya estaba en la lista (se escaneó el
-  // mismo código dos veces), suma la cantidad en el mismo renglón en vez de
-  // duplicarlo.
+  // Suma un producto a la cuenta — si ya estaba en la lista con la misma forma de pago (se
+  // escaneó el mismo código dos veces), suma la cantidad en el mismo renglón en vez de duplicarlo.
   function sumarAlCarrito(prod: Articulo, cant: number) {
+    const cliente = metodoPago === 'fiado' ? ultimoCliente : null;
     setCarrito((actual) => {
-      const yaEsta = actual.find((l) => l.producto.id === prod.id);
+      const yaEsta = actual.find((l) => l.producto.id === prod.id && l.metodo === metodoPago && l.clienteId === cliente);
       if (yaEsta) {
         return actual.map((l) =>
-          l.producto.id === prod.id ? { ...l, cantidad: redondearCantidad(l.cantidad + cant) } : l
+          l.id === yaEsta.id ? { ...l, cantidad: redondearCantidad(l.cantidad + cant) } : l
         );
       }
-      return [...actual, { producto: prod, cantidad: cant, fiado: false }];
+      return [...actual, { id: nuevoIdLinea(), producto: prod, cantidad: cant, metodo: metodoPago, clienteId: cliente }];
     });
   }
 
-  // Marca/desmarca un producto puntual para que quede anotado en la cuenta
-  // corriente del cliente en vez de cobrarse ahora — independiente de la
-  // forma de pago general, para poder mezclar "esto lo pago, esto me lo fías".
-  function toggleFiadoLinea(articuloId: string) {
-    setCarrito((actual) => actual.map((l) => (l.producto.id === articuloId ? { ...l, fiado: !l.fiado } : l)));
+  // Cambia cómo se paga UN renglón (por ejemplo "esto va por transferencia y el resto en efectivo").
+  function cambiarMetodoDeLinea(id: string, metodo: MetodoPago) {
+    setCarrito((actual) =>
+      unificar(
+        actual.map((l) =>
+          l.id !== id ? l : { ...l, metodo, clienteId: metodo === 'fiado' ? l.clienteId ?? ultimoCliente : null }
+        )
+      )
+    );
   }
+
+  // Cambia cómo se paga TODA la cuenta, y es la forma de pago con la que arrancan los productos que se agreguen.
+  function cambiarMetodoGeneral(metodo: MetodoPago) {
+    setMetodoPago(metodo);
+    setDividiendoId(null);
+    setCarrito((actual) =>
+      unificar(actual.map((l) => ({ ...l, metodo, clienteId: metodo === 'fiado' ? l.clienteId ?? ultimoCliente : null })))
+    );
+  }
+
+  // Elige a quién se le anota un renglón fiado. Los otros fiados que todavía no tienen cliente
+  // arrancan con el mismo (lo normal es que sea una sola persona).
+  function elegirClienteDeLinea(id: string, clienteId: string | null) {
+    if (clienteId) setUltimoCliente(clienteId);
+    setCarrito((actual) =>
+      unificar(
+        actual.map((l) => {
+          if (l.id === id) return { ...l, clienteId };
+          if (clienteId && l.metodo === 'fiado' && !l.clienteId) return { ...l, clienteId };
+          return l;
+        })
+      )
+    );
+  }
+
+  function clienteCreado(c: Cliente) {
+    setClientes((actual) => [...actual, c].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+    if (nuevoClientePara) elegirClienteDeLinea(nuevoClientePara, c.id);
+    setNuevoClientePara(null);
+  }
+
+  function abrirDividir(l: LineaCarrito) {
+    setDividiendoId(l.id);
+    setDivCantidad(l.producto.unidad === 'peso' ? '' : '1');
+    // Lo más común: la mitad va por otra forma de pago distinta de la del renglón.
+    setDivMetodo(l.metodo === 'efectivo' ? 'transferencia' : 'efectivo');
+    setDivError(null);
+  }
+
+  function cambiarDivCantidad(l: LineaCarrito, valor: string) {
+    setDivCantidad(l.producto.unidad === 'peso' ? limpiarDecimal(valor) : valor.replace(/[^0-9]/g, ''));
+  }
+
+  // "De estas N, M se pagan de otra forma": el renglón queda con N-M y aparece uno nuevo con M.
+  function confirmarDividir(l: LineaCarrito) {
+    const cuantas = redondearCantidad(numeroDeDecimal(divCantidad));
+    if (!(cuantas > 0) || cuantas >= l.cantidad) {
+      setDivError(`Poné un número mayor que 0 y menor que ${formatearCantidad(l.cantidad)}.`);
+      return;
+    }
+    // Dividir hacia la misma forma de pago no cambia nada (volverían a juntarse), salvo con fiado: ahí
+    // sirve para anotar una parte a otro cliente.
+    if (divMetodo === l.metodo && divMetodo !== 'fiado') {
+      setDivError(`Elegí una forma de pago distinta de ${l.metodo === 'efectivo' ? 'Efectivo' : l.metodo === 'tarjeta' ? 'Tarjeta' : 'Transferencia'}.`);
+      return;
+    }
+    setCarrito((actual) => {
+      const i = actual.findIndex((x) => x.id === l.id);
+      if (i < 0) return actual;
+      const copia = [...actual];
+      copia[i] = { ...actual[i], cantidad: redondearCantidad(actual[i].cantidad - cuantas) };
+      copia.splice(i + 1, 0, {
+        id: nuevoIdLinea(),
+        producto: l.producto,
+        cantidad: cuantas,
+        metodo: divMetodo,
+        // Un fiado que sale de otro fiado arranca sin cliente (se divide para anotarlo a otra persona).
+        clienteId: divMetodo === 'fiado' ? (l.metodo === 'fiado' ? null : ultimoCliente) : null,
+      });
+      return unificar(copia);
+    });
+    setDividiendoId(null);
+    setDivError(null);
+  }
+
+  // Un producto sin precio cargado se vendería a $0 sin que nadie se dé cuenta.
+  const sinPrecio = (a: Articulo) => !(a.precioVenta > 0);
+  const avisoSinPrecio = (a: Articulo) =>
+    `"${a.descripcion}" no tiene precio cargado: cargalo en Artículos y stock antes de venderlo.`;
 
   // Un producto que se encontró por su código (escaneado, o recién asignado).
   function agregarEscaneado(a: Articulo) {
     setVendidosSinStock([]);
+    if (sinPrecio(a)) {
+      setError(avisoSinPrecio(a));
+      setTermino('');
+      setResultados([]);
+      return;
+    }
     if (a.unidad === 'peso') {
       // Se vende por peso: no hay forma de saber cuántos kg son con sólo
       // el código, así que igual pide confirmar la cantidad a mano.
@@ -272,6 +444,9 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     const encontrado = await window.api.articulos.buscarPorCodigo(codigo);
     if (encontrado && !encontrado.activo) {
       return { mensaje: `"${encontrado.descripcion}" está en la papelera: no se puede vender`, tipo: 'error' };
+    }
+    if (encontrado && sinPrecio(encontrado)) {
+      return { mensaje: `"${encontrado.descripcion}" no tiene precio cargado`, tipo: 'error' };
     }
     if (encontrado) {
       agregarEscaneado(encontrado);
@@ -329,17 +504,19 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   }
 
   const cantidadNum = redondearCantidad(numeroDeDecimal(cantidad));
-  const totalCarrito = carrito.reduce((acc, l) => acc + l.producto.precioVenta * l.cantidad, 0);
-  // Si la forma de pago general ya es "Fiado", da igual lo que diga cada
-  // renglón — total y viceversa. Si no, sólo cuentan como fiado los
-  // renglones marcados uno por uno.
-  const totalFiado = metodoPago === 'fiado'
-    ? totalCarrito
-    : carrito.filter((l) => l.fiado).reduce((acc, l) => acc + l.producto.precioVenta * l.cantidad, 0);
+  const subtotalDe = (l: LineaCarrito) => l.producto.precioVenta * l.cantidad;
+  const totalCarrito = carrito.reduce((acc, l) => acc + subtotalDe(l), 0);
+  const totalDe = (m: MetodoPago) => carrito.filter((l) => l.metodo === m).reduce((acc, l) => acc + subtotalDe(l), 0);
+  const totalFiado = totalDe('fiado');
   const totalCobrarAhora = totalCarrito - totalFiado;
+  // Cuántas unidades de cada producto hay en total en la cuenta (puede estar en varios renglones).
+  const cantidadPorProducto = new Map<string, number>();
+  for (const l of carrito) cantidadPorProducto.set(l.producto.id, (cantidadPorProducto.get(l.producto.id) ?? 0) + l.cantidad);
+  // El selector de "forma de pago de todo": la que tienen todos, o "varias".
+  const metodoGeneral: MetodoPago | '' = carrito.length === 0 ? metodoPago : variasFormas ? '' : carrito[0].metodo;
 
   function agregarAlCarrito() {
-    if (!producto || cantidadNum <= 0) return;
+    if (!producto || cantidadNum <= 0 || sinPrecio(producto)) return;
     setVendidosSinStock([]);
     sumarAlCarrito(producto, cantidadNum);
     setProducto(null);
@@ -348,45 +525,55 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     busquedaRef.current?.focus();
   }
 
-  function quitarDelCarrito(articuloId: string) {
-    setCarrito((actual) => actual.filter((l) => l.producto.id !== articuloId));
+  function quitarDelCarrito(lineaId: string) {
+    setCarrito((actual) => actual.filter((l) => l.id !== lineaId));
+    if (dividiendoId === lineaId) setDividiendoId(null);
   }
 
   async function cobrar() {
     if (carrito.length === 0) return;
-    if (hayFiado && !clienteId) {
+    if (faltaCliente) {
       setError('Elegí a qué cliente se le anota lo fiado');
       return;
     }
     setRegistrando(true);
     setError(null);
     const pendientes = [...carrito];
+    // Todos los productos de esta cuenta comparten un número: así se cuenta una compra, no varias.
+    const ticketId = nuevoIdTicket();
     // El total del cartel sale de lo que de verdad quedó registrado (el
     // precio lo pone la base al guardar), no de lo que mostraba la cuenta.
     let totalRegistrado = 0;
+    let fiadoRegistrado = 0;
     try {
       for (const linea of pendientes) {
-        const esFiado = metodoPago === 'fiado' || linea.fiado;
+        const esFiado = linea.metodo === 'fiado';
         const venta = await window.api.ventas.crear({
           articuloId: linea.producto.id,
           cantidad: linea.cantidad,
-          metodoPago: esFiado ? 'fiado' : metodoPago,
-          clienteId: esFiado ? clienteId : null,
+          metodoPago: linea.metodo,
+          clienteId: esFiado ? linea.clienteId : null,
+          ticketId,
         });
         totalRegistrado += venta.total;
+        if (esFiado) fiadoRegistrado += venta.total;
         // Se saca de a uno a medida que se confirma — si algo falla a mitad
         // de camino, lo ya cobrado no se vuelve a intentar de nuevo.
-        setCarrito((actual) => actual.filter((l) => l.producto.id !== linea.producto.id));
+        setCarrito((actual) => actual.filter((l) => l.id !== linea.id));
       }
-      setCartelExito(`Venta registrada: ${formatearMoneda(totalRegistrado)} en ${pendientes.length} producto(s)`);
+      const productos = new Set(pendientes.map((l) => l.producto.id)).size;
+      setCartelExito(
+        `Venta registrada: ${formatearMoneda(totalRegistrado)} en ${productos} producto(s)` +
+          (fiadoRegistrado > 0 && fiadoRegistrado < totalRegistrado ? ` (${formatearMoneda(fiadoRegistrado)} quedaron fiados)` : '')
+      );
       // Se mira cómo quedó el stock de verdad (no lo que mostraba la cuenta, que
       // puede estar viejo): los que quedaron en negativo hay que contarlos.
-      const despues = await Promise.all(
-        pendientes.map((l) => window.api.articulos.get(l.producto.id).catch(() => null))
-      );
+      const ids = [...new Set(pendientes.map((l) => l.producto.id))];
+      const despues = await Promise.all(ids.map((id) => window.api.articulos.get(id).catch(() => null)));
       setVendidosSinStock(despues.filter((a): a is Articulo => !!a && a.stock < 0).map((a) => a.descripcion));
-      setClienteId(null);
+      setUltimoCliente(null);
       setMetodoPago('efectivo');
+      setDividiendoId(null);
       onVentaRegistrada();
       // En el celular enfocar el campo abriría el teclado justo después de cobrar.
       if (!esTactil()) busquedaRef.current?.focus();
@@ -399,6 +586,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
       setRegistrando(false);
     }
   }
+
+  const clasePago = (m: MetodoPago) => (m === 'fiado' ? 'border-amber-300 bg-amber-50 text-amber-800' : '');
 
   return (
     <div className="card p-4">
@@ -424,6 +613,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-600">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
                     Figura sin stock: se puede vender igual y queda para revisar.
+                  </p>
+                )}
+                {sinPrecio(producto) && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-red-600">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    No tiene precio cargado: cargalo en Artículos y stock antes de venderlo.
                   </p>
                 )}
               </div>
@@ -462,7 +657,10 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                 </button>
               )}
               {(resultados.length > 0 || buscando) && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                <div
+                  data-desborda
+                  className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                >
                   {buscando && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
                   {!buscando &&
                     resultados.map((a) => (
@@ -481,33 +679,43 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           )}
         </div>
 
-        <div data-tour="cuenta-cantidad" className="w-24">
-          <label className="label">Cantidad</label>
-          <input
-            className="input"
-            inputMode="decimal"
-            value={cantidad}
-            onChange={(e) => cambiarCantidad(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') agregarAlCarrito();
-            }}
-          />
-        </div>
+        <div data-tour="cuenta-cantidad" className="flex items-end gap-3">
+          <div className="w-24">
+            <label className="label">Cantidad</label>
+            <input
+              className="input"
+              inputMode="decimal"
+              value={cantidad}
+              onChange={(e) => cambiarCantidad(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') agregarAlCarrito();
+              }}
+            />
+          </div>
 
-        <button className="btn-secondary" onClick={agregarAlCarrito} disabled={!producto || cantidadNum <= 0}>
-          <Plus className="h-4 w-4" />
-          Agregar
-        </button>
+          <button
+            data-tour="cuenta-agregar"
+            className="btn-secondary"
+            onClick={agregarAlCarrito}
+            disabled={!producto || cantidadNum <= 0 || sinPrecio(producto)}
+          >
+            <Plus className="h-4 w-4" />
+            Agregar
+          </button>
+        </div>
       </div>
 
       {/* La cuenta que se le va armando al cliente — cada producto que se
           agrega suma acá, para tener a la vista cuánto va llevando antes de
-          cobrar todo junto. */}
+          cobrar todo junto. Cada renglón dice cómo se paga. */}
       <div data-tour="cuenta-lista" className="mt-4 rounded-lg border border-slate-200">
         <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
           <ShoppingCart className="h-4 w-4 text-slate-400" />
           <p className="flex-1 text-sm font-medium text-slate-600">
-            {carrito.length === 0 ? 'Todavía no agregaste nada' : `${carrito.length} producto(s) en la cuenta`}
+            {carrito.length === 0
+              ? 'Todavía no agregaste nada'
+              : `${cantidadPorProducto.size} producto(s) en la cuenta` +
+                (carrito.length > cantidadPorProducto.size ? ` · ${carrito.length} renglones, según cómo se paga cada uno` : '')}
           </p>
           {carrito.length > 0 && (
             <button
@@ -521,62 +729,162 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         </div>
         {carrito.length > 0 && (
           <div className="divide-y divide-slate-100">
-            {carrito.map((linea) => (
-              <div key={linea.producto.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-slate-800">{linea.producto.descripcion}</p>
-                  <p className="text-xs text-slate-400">
-                    {formatearCantidad(linea.cantidad)} {linea.producto.unidad === 'peso' ? 'kg' : 'un.'} ×{' '}
-                    {formatearMoneda(linea.producto.precioVenta)}
-                  </p>
-                  {linea.cantidad > linea.producto.stock && (
-                    <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-600">
-                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                      {linea.producto.stock > 0 ? `Figuran ${formatearCantidad(linea.producto.stock)}` : 'Figura sin stock'}:
-                      se vende igual y queda para revisar
-                    </p>
+            {carrito.map((linea) => {
+              const esFiado = linea.metodo === 'fiado';
+              const enLaCuenta = cantidadPorProducto.get(linea.producto.id) ?? linea.cantidad;
+              const sePuedeDividir = linea.producto.unidad === 'peso' ? linea.cantidad > 0.01 : linea.cantidad >= 2;
+              return (
+                <div key={linea.id} data-linea className={`px-3 py-2 ${esFiado ? 'bg-amber-50/50' : ''}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-slate-800">{linea.producto.descripcion}</p>
+                      <p className="text-xs text-slate-400">
+                        {formatearCantidad(linea.cantidad)} {linea.producto.unidad === 'peso' ? 'kg' : 'un.'} ×{' '}
+                        {formatearMoneda(linea.producto.precioVenta)}
+                      </p>
+                      {enLaCuenta > linea.producto.stock && (
+                        <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-600">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          {linea.producto.stock > 0 ? `Figuran ${formatearCantidad(linea.producto.stock)}` : 'Figura sin stock'}:
+                          se vende igual y queda para revisar
+                        </p>
+                      )}
+                    </div>
+                    <p className="shrink-0 font-medium text-slate-700">{formatearMoneda(subtotalDe(linea))}</p>
+                    <button
+                      onClick={() => quitarDelCarrito(linea.id)}
+                      className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600"
+                      title="Sacar de la cuenta"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div data-tour="cuenta-opciones-linea" className="mt-2 flex flex-wrap items-center gap-2">
+                    <div data-tour="cuenta-metodo-linea">
+                      <select
+                        aria-label={`Forma de pago de ${linea.producto.descripcion}`}
+                        className={`input w-auto py-1 text-sm ${clasePago(linea.metodo)}`}
+                        value={linea.metodo}
+                        onChange={(e) => cambiarMetodoDeLinea(linea.id, e.target.value as MetodoPago)}
+                      >
+                        {METODOS_PAGO.map((m) => (
+                          <option key={m.valor} value={m.valor}>
+                            {m.etiqueta}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {sePuedeDividir && (
+                      <button
+                        type="button"
+                        data-tour="cuenta-dividir"
+                        onClick={() => (dividiendoId === linea.id ? setDividiendoId(null) : abrirDividir(linea))}
+                        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                        title="Pagar una parte de este producto de otra forma (por ejemplo 2 en efectivo y 1 por transferencia)"
+                      >
+                        <Split className="h-3.5 w-3.5" />
+                        Dividir
+                      </button>
+                    )}
+
+                    {esFiado && (
+                      <div data-tour="cuenta-cliente" className="flex flex-wrap items-center gap-2">
+                        <select
+                          aria-label={`Cliente de ${linea.producto.descripcion}`}
+                          className={`input w-auto max-w-[14rem] py-1 text-sm ${
+                            linea.clienteId ? '' : 'border-amber-400 bg-white'
+                          }`}
+                          value={linea.clienteId ?? ''}
+                          onChange={(e) => elegirClienteDeLinea(linea.id, e.target.value || null)}
+                        >
+                          <option value="">¿A quién? Elegir cliente...</option>
+                          {clientes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          data-tour="cuenta-cliente-nuevo"
+                          onClick={() => setNuevoClientePara(linea.id)}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                          title="Agregar un cliente nuevo a la lista, sin salir de la cuenta"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                          Cliente nuevo
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {dividiendoId === linea.id && (
+                    <div data-dividir className="mt-2 rounded-lg border border-brand-200 bg-brand-50/60 p-2.5">
+                      <p className="text-xs font-medium text-slate-600">
+                        De {formatearCantidad(linea.cantidad)} {linea.producto.unidad === 'peso' ? 'kg' : 'un.'}, ¿cuántas se pagan de otra forma?
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-end gap-2">
+                        <div className="w-20">
+                          <label className="label">Cuántas</label>
+                          <input
+                            data-dividir-cantidad
+                            className="input py-1 text-sm"
+                            inputMode="decimal"
+                            value={divCantidad}
+                            onChange={(e) => cambiarDivCantidad(linea, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') confirmarDividir(linea);
+                            }}
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Se pagan con</label>
+                          <select
+                            data-dividir-metodo
+                            className="input w-auto py-1 text-sm"
+                            value={divMetodo}
+                            onChange={(e) => setDivMetodo(e.target.value as MetodoPago)}
+                          >
+                            {METODOS_PAGO.map((m) => (
+                              <option key={m.valor} value={m.valor}>
+                                {m.etiqueta}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <button type="button" data-dividir-ok className="btn-primary py-1 text-sm" onClick={() => confirmarDividir(linea)}>
+                          Dividir
+                        </button>
+                        <button type="button" className="btn-secondary py-1 text-sm" onClick={() => setDividiendoId(null)}>
+                          Cancelar
+                        </button>
+                      </div>
+                      {divError && <p className="mt-1.5 text-xs text-red-600">{divError}</p>}
+                    </div>
                   )}
                 </div>
-                <p className="shrink-0 font-medium text-slate-700">
-                  {formatearMoneda(linea.producto.precioVenta * linea.cantidad)}
-                </p>
-                {metodoPago !== 'fiado' && (
-                  <button
-                    onClick={() => toggleFiadoLinea(linea.producto.id)}
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                      linea.fiado
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                    title="Anotar este producto en la cuenta del cliente en vez de cobrarlo ahora"
-                  >
-                    {linea.fiado ? 'Fiado' : 'Fiar'}
-                  </button>
-                )}
-                <button
-                  onClick={() => quitarDelCarrito(linea.producto.id)}
-                  className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600"
-                  title="Sacar de la cuenta"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <div data-tour="cuenta-pago" className="w-40">
-          <label className="label">Forma de pago</label>
+        <div data-tour="cuenta-pago" className="w-48">
+          <label className="label">{carrito.length > 1 ? 'Forma de pago de todo' : 'Forma de pago'}</label>
           <select
             className="input"
-            value={metodoPago}
-            onChange={(e) => {
-              setMetodoPago(e.target.value as MetodoPago);
-              setClienteId(null);
-            }}
+            value={metodoGeneral}
+            onChange={(e) => cambiarMetodoGeneral(e.target.value as MetodoPago)}
           >
+            {metodoGeneral === '' && (
+              <option value="" disabled>
+                Varias formas de pago
+              </option>
+            )}
             {METODOS_PAGO.map((m) => (
               <option key={m.valor} value={m.valor}>
                 {m.etiqueta}
@@ -584,20 +892,6 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
             ))}
           </select>
         </div>
-
-        {hayFiado && (
-          <div data-tour="cuenta-cliente" className="w-48">
-            <label className="label">Cliente (fiado)</label>
-            <select className="input" value={clienteId ?? ''} onChange={(e) => setClienteId(e.target.value || null)}>
-              <option value="">Elegir...</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         {hayFiado && totalCobrarAhora > 0 ? (
           <>
@@ -631,17 +925,30 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           data-tour="cuenta-cobrar"
           className="btn-primary"
           onClick={cobrar}
-          disabled={carrito.length === 0 || registrando || (hayFiado && !clienteId)}
+          disabled={carrito.length === 0 || registrando || faltaCliente}
         >
           <ReceiptText className="h-4 w-4" />
           {registrando ? 'Cobrando...' : 'Cobrar'}
         </button>
       </div>
 
+      {variasFormas && (
+        <p data-detalle-pagos className="mt-3 text-sm text-slate-600">
+          <span className="font-medium">Se paga así:</span>{' '}
+          {METODOS_PAGO.filter((m) => totalDe(m.valor) > 0)
+            .map((m) => `${m.etiqueta} ${formatearMoneda(totalDe(m.valor))}`)
+            .join(' · ')}
+        </p>
+      )}
       {hayFiado && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {faltaCliente && (
+            <>
+              <strong>Falta elegir a quién se le anota lo fiado</strong> (en el renglón marcado en amarillo).{' '}
+            </>
+          )}
           {totalCobrarAhora > 0
-            ? 'Lo marcado como "Fiado" se anota a la cuenta del cliente; el resto se cobra ahora.'
+            ? 'Lo que está como "Fiado" se anota a la cuenta de cada cliente; el resto se cobra ahora.'
             : 'Esto se anota a la cuenta del cliente — no se cuenta como plata cobrada hasta que la pague.'}{' '}
           Lo vas a ver separado en el Panel, el calendario de Ventas y en Reportes.
         </p>
@@ -671,6 +978,14 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           titulo="Escaneá los productos de la cuenta"
           alLeer={procesarCodigoDeCamara}
           onCerrar={() => setCamaraAbierta(false)}
+        />
+      )}
+
+      {nuevoClientePara && (
+        <NuevoClienteRapido
+          clientesExistentes={clientes}
+          onCerrar={() => setNuevoClientePara(null)}
+          onCreado={clienteCreado}
         />
       )}
 

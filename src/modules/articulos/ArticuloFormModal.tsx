@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ImagePlus, Barcode, Sparkles } from 'lucide-react';
 import type { Articulo, ArticuloInput, Familia, Marca, SugerenciaRubro, UnidadVenta } from '@shared/types';
-import { limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
+import { formatearCantidad, formatearMoneda, limpiarDecimal, numeroDeDecimal, redondearCantidad } from '@shared/formato';
 import { useAuth } from '../auth/AuthContext';
 import SelectConCrear from '../../components/SelectConCrear';
+import AjustarStockModal from './AjustarStockModal';
 import { urlImagen } from '../../urlImagen';
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   codigoInicial?: string;
   onCerrar: () => void;
   onGuardado: () => void;
+  /** Se cambió el stock desde el formulario (con "Cambiar el stock"): la lista de atrás tiene que recargarse. */
+  onCambioDeStock?: () => void;
 }
 
 const VACIO: ArticuloInput = {
@@ -35,7 +38,7 @@ const VACIO: ArticuloInput = {
   nota: '',
 };
 
-export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, onGuardado }: Props) {
+export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, onGuardado, onCambioDeStock }: Props) {
   const { esAdmin } = useAuth();
   const [form, setForm] = useState<ArticuloInput>(
     articulo ? articuloAInput(articulo) : { ...VACIO, codigoBarras: codigoInicial ?? '' }
@@ -47,6 +50,10 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
   const [error, setError] = useState<string | null>(null);
   const [avisoCodigoDuplicado, setAvisoCodigoDuplicado] = useState<string | null>(null);
   const [sugerenciaRubro, setSugerenciaRubro] = useState<SugerenciaRubro | null>(null);
+  // El stock de un artículo que ya existe no se escribe en este formulario (se corrige con un
+  // movimiento que queda en su historial): se ve acá y se cambia con el botón de al lado.
+  const [stockActual, setStockActual] = useState(articulo?.stock ?? 0);
+  const [ajustandoStock, setAjustandoStock] = useState(false);
 
   const descripcionRef = useRef<HTMLInputElement>(null);
   const codigoBarrasRef = useRef<HTMLInputElement>(null);
@@ -121,19 +128,16 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
     setForm((f) => ({ ...f, [campo]: valor }));
   }
 
-  // Mientras el valor sea 0 (el default con el que arranca un artículo nuevo)
-  // mostramos el cuadro vacío en vez de un "0" que hay que borrar antes de
-  // poder escribir. En cuanto tipean algo, se ve el número real.
-  function vacioSiCero(valor: number): number | string {
-    return valor === 0 ? '' : valor;
-  }
-
-  // Campos de precio: número con decimales.
-  function actualizarPrecio<K extends 'precioCosto' | 'precioVenta' | 'precioLista2' | 'precioLista3'>(
-    campo: K,
-    valorTexto: string
-  ) {
-    actualizarCampo(campo, (valorTexto === '' ? 0 : Number(valorTexto)) as ArticuloInput[K]);
+  async function stockAjustado() {
+    setAjustandoStock(false);
+    if (!articulo) return;
+    try {
+      const actualizado = await window.api.articulos.get(articulo.id);
+      if (actualizado) setStockActual(actualizado.stock);
+    } catch {
+      // Se cambió igual: se va a ver bien al cerrar y volver a abrir.
+    }
+    onCambioDeStock?.();
   }
 
   function cambiarUnidad(unidad: UnidadVenta) {
@@ -175,6 +179,10 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
       setError('La descripción es obligatoria');
       return;
     }
+    if (!(form.precioVenta > 0)) {
+      setError('Poné el precio de venta (no puede ser 0).');
+      return;
+    }
     setError(null);
     setGuardando(true);
 
@@ -203,7 +211,9 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
     }
   }
 
-  return createPortal(
+  return (
+    <>
+    {createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
       <div className="flex max-h-[90dvh] w-full max-w-3xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
@@ -346,15 +356,10 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
               <label className="label" htmlFor="precioCosto">
                 Precio de costo {!esAdmin && <span className="text-slate-300">(solo jefa)</span>}
               </label>
-              <input
+              <CampoPrecio
                 id="precioCosto"
-                type="number"
-                step="0.01"
-                min="0"
-                className="input disabled:bg-slate-50"
-                value={vacioSiCero(form.precioCosto)}
-                onChange={(e) => actualizarPrecio('precioCosto', e.target.value)}
-                placeholder="0"
+                valor={form.precioCosto}
+                onCambiar={(n) => actualizarCampo('precioCosto', n)}
                 disabled={!esAdmin}
               />
             </div>
@@ -362,15 +367,10 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
               <label className="label" htmlFor="precioVenta">
                 Precio de venta *
               </label>
-              <input
+              <CampoPrecio
                 id="precioVenta"
-                type="number"
-                step="0.01"
-                min="0"
-                className="input"
-                value={vacioSiCero(form.precioVenta)}
-                onChange={(e) => actualizarPrecio('precioVenta', e.target.value)}
-                placeholder="0"
+                valor={form.precioVenta}
+                onCambiar={(n) => actualizarCampo('precioVenta', n)}
                 required
               />
             </div>
@@ -383,39 +383,30 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
             </div>
           </div>
 
-          <button
-            type="button"
-            className="mt-3 text-xs font-medium text-brand-600 hover:underline"
-            onClick={() => setMostrarPrecios23((v) => !v)}
-          >
-            {mostrarPrecios23 ? 'Ocultar' : 'Agregar'} listas de precios 2 y 3
-          </button>
+          {/* Las listas 2 y 3 no se usan al vender (siempre se cobra el precio de venta): se dejan
+              ver sólo si el producto ya las tiene cargadas, para no hacer creer que sirven. */}
+          {(form.precioLista2 > 0 || form.precioLista3 > 0) && (
+            <button
+              type="button"
+              className="mt-3 text-xs font-medium text-slate-500 hover:underline"
+              onClick={() => setMostrarPrecios23((v) => !v)}
+            >
+              {mostrarPrecios23 ? 'Ocultar' : 'Ver'} las listas de precios 2 y 3 que tenía cargadas
+            </button>
+          )}
 
           {mostrarPrecios23 && (
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 sm:col-span-2">
+                Estos precios todavía no se usan al vender: al cobrar siempre se usa el precio de venta.
+              </p>
               <div>
                 <label className="label">Precio lista 2</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="input"
-                  value={vacioSiCero(form.precioLista2)}
-                  onChange={(e) => actualizarPrecio('precioLista2', e.target.value)}
-                  placeholder="0"
-                />
+                <CampoPrecio id="precioLista2" valor={form.precioLista2} onCambiar={(n) => actualizarCampo('precioLista2', n)} />
               </div>
               <div>
                 <label className="label">Precio lista 3</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="input"
-                  value={vacioSiCero(form.precioLista3)}
-                  onChange={(e) => actualizarPrecio('precioLista3', e.target.value)}
-                  placeholder="0"
-                />
+                <CampoPrecio id="precioLista3" valor={form.precioLista3} onCambiar={(n) => actualizarCampo('precioLista3', n)} />
               </div>
             </div>
           )}
@@ -427,14 +418,29 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
               <label className="label" htmlFor="stock">
                 Stock actual {porPeso && '(kg)'}
               </label>
-              <CampoStock
-                id="stock"
-                valor={form.stock}
-                porPeso={porPeso}
-                onCambiar={(n) => actualizarCampo('stock', n)}
-                disabled={!!articulo}
-                title={articulo ? 'Para modificar el stock existente usá "Ajustar stock" en el listado' : undefined}
-              />
+              {articulo ? (
+                <div className="flex items-center gap-2">
+                  <p id="stock" className="input flex-1 bg-slate-50 font-semibold text-slate-700">
+                    {formatearCantidad(stockActual)} {porPeso ? 'kg' : 'un.'}
+                  </p>
+                  <button
+                    type="button"
+                    data-tour="art-form-cambiar-stock"
+                    className="btn-secondary shrink-0 px-2.5 text-xs"
+                    onClick={() => setAjustandoStock(true)}
+                    title="Sumar mercadería, restar lo que se rompió o dejar un número exacto"
+                  >
+                    Cambiar el stock
+                  </button>
+                </div>
+              ) : (
+                <CampoStock
+                  id="stock"
+                  valor={form.stock}
+                  porPeso={porPeso}
+                  onCambiar={(n) => actualizarCampo('stock', n)}
+                />
+              )}
             </div>
             <div>
               <label className="label" htmlFor="stockMinimo">
@@ -487,6 +493,66 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
       </div>
     </div>,
     document.body
+    )}
+    {ajustandoStock && articulo && (
+      <AjustarStockModal articulo={{ ...articulo, stock: stockActual }} onCerrar={() => setAjustandoStock(false)} onGuardado={stockAjustado} />
+    )}
+    </>
+  );
+}
+
+function textoDePrecio(valor: number): string {
+  return valor === 0 ? '' : String(valor).replace('.', ',');
+}
+
+// Campo de precio: se escribe como se escribe acá ("1500", "1500,50" o "1500.50"). Guarda el texto
+// tal cual se tipea (si guardara sólo el número, "0," perdería el cero y la coma antes de poder
+// poner los decimales) y avisa cuando "1.500" se va a leer como un peso y medio.
+function CampoPrecio({
+  id,
+  valor,
+  onCambiar,
+  disabled,
+  required,
+}: {
+  id: string;
+  valor: number;
+  onCambiar: (valor: number) => void;
+  disabled?: boolean;
+  required?: boolean;
+}) {
+  const [texto, setTexto] = useState(() => textoDePrecio(valor));
+
+  useEffect(() => {
+    setTexto((actual) => (numeroDeDecimal(actual) === valor ? actual : textoDePrecio(valor)));
+  }, [valor]);
+
+  // "1.500" o "1,500" casi seguro es mil quinientos, pero se lee como 1,5.
+  const parecidoAMiles = /^\d{1,3}[.,]\d{3}$/.test(texto);
+
+  return (
+    <>
+      <input
+        id={id}
+        inputMode="decimal"
+        className="input disabled:bg-slate-50"
+        value={texto}
+        onChange={(e) => {
+          const limpio = limpiarDecimal(e.target.value);
+          setTexto(limpio);
+          onCambiar(Math.round(numeroDeDecimal(limpio) * 100) / 100);
+        }}
+        placeholder="0"
+        disabled={disabled}
+        required={required}
+      />
+      {parecidoAMiles && (
+        <p className="mt-1 text-xs text-amber-600">
+          Ojo: esto se lee como {formatearMoneda(numeroDeDecimal(texto))}. Si es {formatearMoneda(Number(texto.replace(/[.,]/g, '')))},
+          escribilo sin punto ni coma.
+        </p>
+      )}
+    </>
   );
 }
 

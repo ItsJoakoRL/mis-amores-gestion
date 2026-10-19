@@ -163,6 +163,35 @@ El programa es nuevo para quienes lo usan, así que la ayuda está pensada para 
 - **Tarjeta de bienvenida** en el Panel con "Cómo cobrar una venta", "Cómo anotar un fiado" y "Cómo cargar un producto"; cada persona la saca con "Ya sé usarlo" (se acuerda por usuario en ese aparato).
 - El contenido está en `src/components/guias.ts` (por tarea) y `recorridos.ts` (por pantalla); lo que se señala son atributos `data-tour` puestos en cada pantalla (o un `id`). Para sumar una guía alcanza con agregarla a `GUIAS`.
 
+## Armar cuenta: cada producto con su forma de pago
+
+En "Armar cuenta" (caja y celular) cada renglón dice **cómo se paga**: Efectivo, Tarjeta, Transferencia o Fiado (selector al lado del producto). Sirve para el cliente que paga una parte de una forma y el resto de otra.
+
+- **Dividir un mismo producto.** Con 2 o más unidades (o cualquier peso) aparece **"Dividir"**: "de 3 unidades, ¿cuántas se pagan de otra forma?" → el renglón queda con las que quedan y aparece otro con las que se separaron (se puede dividir por kilos también). Si dos renglones quedan iguales (mismo producto, misma forma de pago y mismo cliente) se juntan solos.
+- **Fiado con su cliente.** Cuando un renglón pasa a Fiado, en ese mismo renglón aparece la lista de clientes y **"Cliente nuevo"** (abre un cuadro con nombre y teléfono, lo crea y lo deja elegido, sin salir de la cuenta; `NuevoClienteRapido.tsx`). Cada renglón fiado tiene su cliente (se puede anotar una parte a Marta y otra a Pedro); el cliente que se elige primero se copia a los otros fiados que todavía no tenían. Un fiado que sale de dividir otro fiado arranca sin cliente. Mientras falte algún cliente, "Cobrar" queda apagado y lo avisa.
+- **"Forma de pago de todo"** (abajo) cambia todos los renglones de una vez y es con la que arrancan los productos que se agreguen después; si hay formas distintas dice "Varias formas de pago". Abajo se lee el detalle ("Efectivo $ 5.000 · Transferencia $ 2.500") y, si hay fiado, cuánto se cobra ahora y cuánto queda fiado.
+- Al cobrar, **cada renglón es una venta** con su forma de pago y su cliente, y todas comparten el mismo número de compra (`ticketId`): el Panel y los Reportes la cuentan como **una** compra. La cuenta a medias se guarda por usuario y se recupera al recargar; la que quedó guardada con el formato anterior (una sola forma de pago para todo) se entiende sola.
+- No cambió nada en el servidor ni en la sincronización: `ventas.crear` ya recibía forma de pago y cliente por venta.
+
+## Revisión general (0.8.18): cuentas, stock y mensajes
+
+Lo que salió de revisar toda la aplicación (con pruebas que arman una base aparte y la maltratan: `npm run probar:ventas`):
+
+- **Una compra es una compra.** Cada producto de una cuenta se guarda como una venta aparte, así que "cuántas ventas hubo" y el ticket promedio contaban de más. Ahora cada cobro lleva un número de compra (`ticketId`, que arma `src/utils/ticket.ts` y que comparten todos los productos de ese cobro) y el Panel, los Reportes, el Calendario y el asistente cuentan **compras**. Las ventas de antes, que no tienen número, se agrupan por persona, cliente y minuto (`CLAVE_TICKET` en `electron/repositories/ventas.ts`). La plata no cambia: sólo cuánto es "una venta". Un número mal armado se ignora (la venta se hace igual).
+- **Un producto sin precio no se vende.** El mostrador no lo deja agregar ("No tiene precio cargado") y el servidor tampoco (antes quedaba una venta de $0 que ensuciaba los totales). El formulario del producto ya no ofrece las listas de precio 2 y 3 si no tenían valores, porque todavía no se usan al vender.
+- **Stock bajo, Sin stock y Para revisar dicen lo mismo en todos lados.** "Stock bajo" = quedan pocos pero hay (más de 0 y hasta el mínimo), "Sin stock" = 0 o menos, "Para revisar" = negativo. Las tarjetas del Panel ahora se tocan y llevan al filtro correspondiente (`/articulos?stock=bajo`, `?stock=sin`, `?revisar=1`), y el asistente manda al botón que corresponde. Antes el Panel y el filtro daban números distintos.
+- **El asistente entiende más formas de preguntar** ("cuánto entró", "facturé", "la caja de hoy"), aclara los pagos de cuentas que se recibieron y contesta "el producto más vendido del mes" con el producto (antes contestaba el total del mes).
+- **Cada persona cambia su propia clave** (botón de la llave en el cuadro del usuario, abajo en el menú), pidiendo la actual. Antes sólo podía una administradora.
+- **Los errores se entienden.** Un pedido con datos mal armados, un número inventado o un error técnico se traduce a una frase clara (`electron/mensajesError.ts`); el servidor contesta con un mensaje (y no con una página de error) si le llega un JSON roto.
+- La guía paso a paso ya no se confunde con el menú del celular cuando está cerrado (se ignoran los elementos que están fuera de la pantalla).
+- **"No me deja escribir" con la ayuda abierta (era un defecto de la 0.8.17).** La guía paso a paso oscurecía y bloqueaba todo menos lo marcado en los pasos de "tocá acá", así que en los pasos que dicen "Escribí el precio / cuántas unidades son / el nombre" el campo marcado estaba tapado. Ahora, si lo señalado es un campo (o tiene uno adentro) se puede escribir ahí, el paso lo avisa ("Probalo ahí mismo") y se sigue con "Siguiente"; los pasos que dicen "Tocá Guardar / Confirmar / Crear / Cobrar..." dejan tocar el botón de verdad y la guía sigue sola (`tocar: true`), y los que usan botones sin campos pueden marcarse `interactuar: true`. El recuadro de lo señalado incluye las listas desplegables (`data-desborda`: la lista de resultados del buscador).
+- **Formulario del artículo.** Los precios ahora son campos de texto que se ven como se escriben ("0,75" ya no pierde el cero: antes quedaba ",75"), con aviso si se escribe "1.500" (se lee como 1,5). El stock actual de un artículo ya cargado dejó de ser un cuadro gris sin explicación: se ve el número con un botón **"Cambiar el stock"** (abre el mismo cuadro de Ajustar stock sin perder lo que se estaba editando). El precio de venta no puede quedar en 0.
+- **Foco de la ventana de la PC.** En Windows, después de un cuadro nativo (`confirm`/`alert`: dar de baja, anular, vaciar...) Electron deja la ventana sin el foco del teclado y los campos dejan de aceptar texto hasta hacer clic afuera. Después de cada uno se le devuelve el foco (`window.confirm`/`alert` se envuelven en `src/main.tsx` y le piden al proceso principal `blur()`+`focus()`).
+- El cartel verde de "Venta registrada" ya no bloquea los clics de lo que tiene debajo (duraba 2 segundos tapando el centro de la pantalla).
+- Una dirección `/api/...` que no existe contesta un mensaje en JSON (404) en vez de la página de la aplicación.
+
+Quedó sin cambiar a propósito, para decidirlo con calma: cualquier empleada puede anular una venta o borrar un pago; no hay forma de recuperar un cliente que se sacó de la lista; los rubros y las marcas no se pueden renombrar ni borrar.
+
 ## Próximos módulos
 
 Proveedores/Compras — pendiente de implementar sobre esta misma base de datos.
