@@ -68,6 +68,8 @@ exports.Channels = {
     usuariosEliminar: 'usuarios:eliminar',
     imagenesSeleccionar: 'imagenes:seleccionar',
     sistemaInfoRed: 'sistema:infoRed',
+    // La pantalla le pide a la ventana que recupere el foco del teclado (después de un alert/confirm nativo).
+    sistemaReenfocarVentana: 'sistema:reenfocarVentana',
     sistemaBuscarActualizaciones: 'sistema:buscarActualizaciones',
     sistemaEstadoActualizacion: 'sistema:estadoActualizacion',
     sistemaDescargarActualizacion: 'sistema:descargarActualizacion',

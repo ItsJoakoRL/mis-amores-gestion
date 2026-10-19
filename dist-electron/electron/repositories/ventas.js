@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.CLAVE_TICKET = void 0;
 exports.crearVenta = crearVenta;
 exports.marcarFiadoPagado = marcarFiadoPagado;
 exports.eliminarVenta = eliminarVenta;
@@ -36,8 +37,27 @@ function mapDoc(doc) {
         usuarioNombre: doc.usuario?.[0]?.nombre ?? null,
         fecha: doc.fecha,
         pagado: doc.pagado ?? false,
+        ticketId: doc.ticketId ?? null,
     };
 }
+// Qué compra es cada venta. Cada producto de una cuenta se guarda como una venta, así que para
+// contar compras (y sacar el ticket promedio) se agrupan por el número de ticket que comparten.
+// Las ventas de antes, que no lo tienen, se agrupan por quién las hizo, a quién y el minuto:
+// los productos de una misma cuenta se cobran con segundos de diferencia.
+exports.CLAVE_TICKET = {
+    $ifNull: [
+        '$ticketId',
+        {
+            $concat: [
+                { $toString: '$usuarioId' },
+                '|',
+                { $toString: { $ifNull: ['$clienteId', ''] } },
+                '|',
+                { $substrBytes: ['$fecha', 0, 16] },
+            ],
+        },
+    ],
+};
 const JOIN_USUARIO = { $lookup: { from: 'usuarios', localField: 'usuarioId', foreignField: '_id', as: 'usuario' } };
 const JOIN_CLIENTE = { $lookup: { from: 'clientes', localField: 'clienteId', foreignField: '_id', as: 'cliente' } };
 // Registrar una venta descuenta el stock del artículo (como un egreso más, así
@@ -63,6 +83,10 @@ async function crearVenta(input, usuarioId) {
     if (!articulo) {
         throw new Error('El artículo no existe');
     }
+    // Sin precio se vendería a $0 sin que nadie se dé cuenta (y se descontaría del stock).
+    if (!(articulo.precioVenta > 0)) {
+        throw new Error(`"${articulo.descripcion}" no tiene precio cargado: cargalo en Artículos y stock antes de venderlo`);
+    }
     // Un artículo en la papelera conserva su código de barras: sin esta
     // revisión se lo podía escanear y vender como si siguiera activo.
     if (!articulo.activo) {
@@ -72,6 +96,8 @@ async function crearVenta(input, usuarioId) {
         throw new Error(`"${articulo.descripcion}" se vende por unidad: la cantidad tiene que ser un número entero`);
     }
     const cantidad = (0, formato_1.redondearCantidad)(input.cantidad);
+    // El número de la compra (si viene bien armado); si no, la venta cuenta sola.
+    const ticketId = typeof input.ticketId === 'string' && /^[0-9a-f]{24}$/i.test(input.ticketId) ? input.ticketId.toLowerCase() : null;
     // El descuento de stock va primero, así nunca se registra una venta de algo
     // que no se pudo descontar. Si el sistema dice que no queda stock se vende
     // igual (el producto está en la mano: el que se equivocó es el stock cargado):
@@ -87,6 +113,7 @@ async function crearVenta(input, usuarioId) {
         clienteId: input.clienteId ? new mongodb_1.ObjectId(input.clienteId) : null,
         usuarioId: new mongodb_1.ObjectId(usuarioId),
         fecha: new Date().toISOString(),
+        ...(ticketId ? { ticketId } : {}),
     };
     try {
         const result = await coleccion().insertOne(doc);
@@ -173,7 +200,7 @@ async function resumenMes(anio, mesIndiceCero) {
                 total: { $sum: '$total' },
                 totalCobrado: { $sum: SUMA_COBRADO },
                 totalFiado: { $sum: SUMA_FIADO },
-                cantidadVentas: { $sum: 1 },
+                tickets: { $addToSet: exports.CLAVE_TICKET },
             },
         },
         { $sort: { _id: 1 } },
@@ -186,7 +213,7 @@ async function resumenMes(anio, mesIndiceCero) {
             total: d.total,
             totalCobrado: d.totalCobrado,
             totalFiado: d.totalFiado,
-            cantidadVentas: d.cantidadVentas,
+            cantidadVentas: d.tickets.length,
             totalPagos: pagos.get(d._id)?.total ?? 0,
             cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
         },
@@ -232,7 +259,7 @@ async function resumenHoy() {
                 total: { $sum: '$total' },
                 totalCobrado: { $sum: SUMA_COBRADO },
                 totalFiado: { $sum: SUMA_FIADO },
-                cantidadVentas: { $sum: 1 },
+                tickets: { $addToSet: exports.CLAVE_TICKET },
             },
         },
     ])
@@ -242,7 +269,7 @@ async function resumenHoy() {
         total: docs[0]?.total ?? 0,
         totalCobrado: docs[0]?.totalCobrado ?? 0,
         totalFiado: docs[0]?.totalFiado ?? 0,
-        cantidadVentas: docs[0]?.cantidadVentas ?? 0,
+        cantidadVentas: docs[0]?.tickets.length ?? 0,
         totalPagos: pagos.total,
         cantidadPagos: pagos.cantidad,
     };

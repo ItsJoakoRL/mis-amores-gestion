@@ -184,13 +184,18 @@ async function listArticulos(filtro = {}) {
     else if (!filtro.incluirInactivos) {
         match.activo = true;
     }
-    if (filtro.soloStockBajo) {
-        match.$expr = { $lte: ['$stock', '$stockMinimo'] };
-    }
+    // Los filtros de stock. "Stock bajo" quiere decir lo mismo que en el Panel: quedan pocos
+    // pero todavía hay (los que ya no quedan tienen su propio filtro, "Sin stock").
+    const porStock = [];
+    if (filtro.soloStockBajo)
+        porStock.push({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$stockMinimo'] } });
+    if (filtro.soloSinStock)
+        porStock.push({ stock: { $lte: 0 } });
     // Se vendieron sin stock registrado: hay que contarlos y corregirlos.
-    if (filtro.soloParaRevisar) {
-        match.stock = { $lt: 0 };
-    }
+    if (filtro.soloParaRevisar)
+        porStock.push({ stock: { $lt: 0 } });
+    if (porStock.length > 0)
+        match.$and = [...(match.$and ?? []), ...porStock];
     const docs = await coleccion()
         .aggregate([{ $match: match }, ...JOIN_STAGES, { $sort: { descripcion: 1 } }])
         .toArray();

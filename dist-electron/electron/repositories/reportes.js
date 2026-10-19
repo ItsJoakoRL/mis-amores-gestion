@@ -4,6 +4,7 @@ exports.getReporteVentas = getReporteVentas;
 const database_1 = require("../db/database");
 const fechaLocal_1 = require("../fechaLocal");
 const clientes_1 = require("./clientes");
+const ventas_1 = require("./ventas");
 function coleccionVentas() {
     return (0, database_1.getDb)().collection('ventas');
 }
@@ -25,7 +26,8 @@ async function porDia(desde, hasta) {
                 total: { $sum: '$total' },
                 totalCobrado: { $sum: SUMA_COBRADO },
                 totalFiado: { $sum: SUMA_FIADO },
-                cantidadVentas: { $sum: 1 },
+                // Compras (tickets), no productos sueltos: ver CLAVE_TICKET en ventas.ts.
+                tickets: { $addToSet: ventas_1.CLAVE_TICKET },
             },
         },
         { $sort: { _id: 1 } },
@@ -38,7 +40,7 @@ async function porDia(desde, hasta) {
             total: d.total,
             totalCobrado: d.totalCobrado,
             totalFiado: d.totalFiado,
-            cantidadVentas: d.cantidadVentas,
+            cantidadVentas: d.tickets.length,
             totalPagos: pagos.get(d._id)?.total ?? 0,
             cantidadPagos: pagos.get(d._id)?.cantidad ?? 0,
         },
@@ -81,11 +83,11 @@ async function porMetodoPago(desde, hasta) {
     const docs = await coleccionVentas()
         .aggregate([
         { $match: { fecha: { $gte: desde, $lt: hasta } } },
-        { $group: { _id: '$metodoPago', cantidad: { $sum: 1 }, total: { $sum: '$total' } } },
+        { $group: { _id: '$metodoPago', tickets: { $addToSet: ventas_1.CLAVE_TICKET }, total: { $sum: '$total' } } },
         { $sort: { total: -1 } },
     ])
         .toArray();
-    return docs.map((d) => ({ metodoPago: d._id, cantidad: d.cantidad, total: d.total }));
+    return docs.map((d) => ({ metodoPago: d._id, cantidad: d.tickets.length, total: d.total }));
 }
 // Junta cada venta con el artículo vendido y el rubro de ese artículo, para
 // saber qué rubros venden más. Un artículo borrado o sin rubro cae en "Sin

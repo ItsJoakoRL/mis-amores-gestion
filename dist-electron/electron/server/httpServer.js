@@ -31,6 +31,7 @@ const limiteIntentos_1 = require("./limiteIntentos");
 const tokenSessions_1 = require("./tokenSessions");
 const mdns_1 = require("./mdns");
 const reglasRol_1 = require("../reglasRol");
+const mensajesError_1 = require("../mensajesError");
 const usuarios_1 = require("../repositories/usuarios");
 const articulos_1 = require("../repositories/articulos");
 const catalogos_1 = require("../repositories/catalogos");
@@ -76,6 +77,7 @@ function filtroDesdeQuery(query) {
         busqueda: typeof query.busqueda === 'string' && query.busqueda ? query.busqueda : undefined,
         familiaId: typeof query.familiaId === 'string' && query.familiaId ? query.familiaId : null,
         soloStockBajo: query.soloStockBajo === 'true',
+        soloSinStock: query.soloSinStock === 'true',
         incluirInactivos: query.incluirInactivos === 'true',
         soloInactivos: query.soloInactivos === 'true',
         soloParaRevisar: query.soloParaRevisar === 'true',
@@ -124,7 +126,7 @@ sync) {
                 res.json({ ok: true, data });
             }
             catch (err) {
-                res.json({ ok: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+                res.json({ ok: false, error: (0, mensajesError_1.mensajeParaLaPersona)(err) });
             }
         };
     }
@@ -171,6 +173,19 @@ sync) {
         }
     }));
     app.use(express_1.default.json());
+    // Un pedido mal armado (JSON roto) se contesta con un mensaje claro y no con una página de error.
+    app.use((err, _req, res, next) => {
+        if (res.headersSent)
+            return next(err);
+        res.status(400).json({ ok: false, error: 'El pedido no se entendió (datos mal armados).' });
+    });
+    // Un pedido sin cuerpo (o con uno que no es un objeto) se toma como vacío: así cada ruta dice
+    // qué dato falta en vez de dar un error técnico.
+    app.use((req, _res, next) => {
+        if (req.body === undefined || req.body === null || typeof req.body !== 'object')
+            req.body = {};
+        next();
+    });
     // --- Compatibilidad con la versión anterior (ver replica.ts) ---
     // Una PC que todavía no se actualizó se "conecta" a ésta y guarda una copia
     // de sus datos: se le sigue dando hasta que se actualice.
@@ -633,6 +648,11 @@ sync) {
     });
     // --- Sirve la app ya compilada para que el celular la abra como una
     // página web normal, en la misma dirección que la API. ---
+    // Una dirección de la API que no existe (por ejemplo con un dato vacío) contesta con un mensaje,
+    // no con la página de la aplicación (que el celular intentaría leer como datos).
+    app.use('/api', (_req, res) => {
+        res.status(404).json({ ok: false, error: 'No se encontró lo que se pidió: esa dirección no existe.' });
+    });
     app.use(express_1.default.static(distDir));
     // Express 5 exige que el comodín tenga nombre (ya no alcanza con '*' solo).
     app.get('/*splat', (_req, res) => {

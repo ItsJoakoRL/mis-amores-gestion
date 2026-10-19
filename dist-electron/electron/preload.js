@@ -117,6 +117,9 @@ const api = {
         // Este canal no pasa por invoke() porque no usa el wrapper { ok, data } —
         // ya viene con su propia forma que distingue éxito de error.
         infoRed: () => electron_1.ipcRenderer.invoke(channels_1.Channels.sistemaInfoRed),
+        // Después de un cuadro nativo (alert/confirm) Windows deja la ventana sin el foco del teclado: los
+        // campos no dejan escribir hasta hacer clic afuera. Se le devuelve el foco (ver src/main.tsx).
+        reenfocarVentana: () => electron_1.ipcRenderer.send(channels_1.Channels.sistemaReenfocarVentana),
         // Avisa cuando alguien (esta PC, otra PC o un celular) cambió datos.
         // Devuelve la función para dejar de escuchar.
         onDatosCambio: (callback) => {

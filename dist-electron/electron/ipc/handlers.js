@@ -6,6 +6,7 @@ const channels_1 = require("../../shared/channels");
 const imagenes_1 = require("../imagenes");
 const session_1 = require("../session");
 const reglasRol_1 = require("../reglasRol");
+const mensajesError_1 = require("../mensajesError");
 const usuarios_1 = require("../repositories/usuarios");
 const articulos_1 = require("../repositories/articulos");
 const catalogos_1 = require("../repositories/catalogos");
@@ -32,7 +33,7 @@ async function wrap(fn) {
         return { ok: true, data };
     }
     catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Error desconocido' };
+        return { ok: false, error: (0, mensajesError_1.mensajeParaLaPersona)(err) };
     }
 }
 function registrarHandlers(deps) {
@@ -343,6 +344,18 @@ function registrarHandlers(deps) {
         await (0, recordatorios_1.eliminarRecordatorio)(id, sesion.id, sesion.rol === 'admin');
         return true;
     }));
+    // --- Foco de la ventana ---
+    // En Windows, después de un alert()/confirm() nativo la ventana de Electron queda sin el foco del
+    // teclado: se ve normal pero los campos de texto no aceptan lo que se escribe hasta hacer clic
+    // afuera o cambiar de ventana. Sacarle y devolverle el foco lo arregla.
+    electron_1.ipcMain.on(channels_1.Channels.sistemaReenfocarVentana, (e) => {
+        const ventana = electron_1.BrowserWindow.fromWebContents(e.sender);
+        if (!ventana || ventana.isDestroyed())
+            return;
+        ventana.blur();
+        ventana.focus();
+        ventana.webContents.focus();
+    });
     // --- Imágenes ---
     electron_1.ipcMain.handle(channels_1.Channels.imagenesSeleccionar, () => wrap(() => {
         (0, session_1.requiereSesion)();
