@@ -14,7 +14,6 @@ import {
   Loader2,
   RotateCcw,
   ArrowLeft,
-  ShoppingCart,
   ClipboardList,
   Camera,
   PackageX,
@@ -25,7 +24,7 @@ import { useAuth } from '../auth/AuthContext';
 import ArticuloFormModal from './ArticuloFormModal';
 import AjustarStockModal from './AjustarStockModal';
 import AsignarCodigoModal from './AsignarCodigoModal';
-import ArmarCuentaModal from './ArmarCuentaModal';
+
 import CartelExito from '../../components/CartelExito';
 import LectorCamara, { puedeUsarCamara, type RespuestaDeCodigo } from '../../components/LectorCamara';
 import BotonAyuda from '../../components/BotonAyuda';
@@ -57,7 +56,7 @@ export default function ArticulosPage() {
   const [ajustandoStock, setAjustandoStock] = useState<Articulo | null>(null);
   const [codigoSinAsignar, setCodigoSinAsignar] = useState<string | null>(null);
   const [cartelExito, setCartelExito] = useState<string | null>(null);
-  const [mostrandoArmarCuenta, setMostrandoArmarCuenta] = useState(false);
+
 
   // Si se llegó desde un recordatorio ("ajustar el stock de tal producto"),
   // se abre directo la ventana que corresponde, y al terminar se pregunta si
@@ -490,10 +489,7 @@ export default function ArticulosPage() {
                 <ClipboardList className="h-4 w-4" />
                 Contar inventario
               </button>
-              <button data-tour="art-armar-cuenta" className="btn-secondary" onClick={() => setMostrandoArmarCuenta(true)}>
-                <ShoppingCart className="h-4 w-4" />
-                Armar cuenta
-              </button>
+
               <button
                 data-tour="art-nuevo"
                 className="btn-primary"
@@ -806,15 +802,7 @@ export default function ArticulosPage() {
         />
       )}
 
-      {mostrandoArmarCuenta && (
-        <ArmarCuentaModal
-          onCerrar={() => {
-            setMostrandoArmarCuenta(false);
-            enfocarScan();
-          }}
-          onVentaRegistrada={cargar}
-        />
-      )}
+
     </div>
   );
 }

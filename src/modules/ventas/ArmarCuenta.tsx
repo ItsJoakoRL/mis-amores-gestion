@@ -643,7 +643,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                 value={termino}
                 onChange={(e) => setTermino(e.target.value)}
                 onKeyDown={handleBusquedaKeyDown}
-                autoFocus
+                // En el celular enfocar el campo abre el teclado apenas se entra a la pantalla.
+                autoFocus={!esTactil()}
               />
               {puedeUsarCamara() && (
                 <button

@@ -37,11 +37,6 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
   ],
   'Artículos y stock': [
     {
-      selector: '[data-tour="art-armar-cuenta"]',
-      titulo: 'Acá se cobra: "Armar cuenta"',
-      texto: 'Para vender, tocá este botón. Ahí armás lo que se lleva el cliente y lo cobrás. Si no sabés cómo, mirá la ayuda "Cobrar una venta".',
-    },
-    {
       selector: '[data-tour="art-nuevo"]',
       titulo: 'Nuevo artículo',
       texto: 'Con este botón cargás un producto nuevo: nombre, precio, cuántos hay y a qué rubro pertenece.',

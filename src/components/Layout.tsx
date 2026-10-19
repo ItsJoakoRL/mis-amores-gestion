@@ -24,6 +24,7 @@ import {
   Tags,
   HelpCircle,
   KeyRound,
+  ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
@@ -34,7 +35,7 @@ import CambiarClaveModal from '../modules/usuarios/CambiarClaveModal';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
 import { etiquetaRol } from '@shared/types';
 
-type AcentoNav = 'brand' | 'sky' | 'teal' | 'cyan' | 'emerald' | 'violet' | 'amber' | 'orange' | 'rose' | 'slate';
+type AcentoNav = 'brand' | 'pink' | 'sky' | 'teal' | 'cyan' | 'emerald' | 'violet' | 'amber' | 'orange' | 'rose' | 'slate';
 
 // Mismos productos de almacén que en el login, pero bien tenues sobre fondo
 // claro — para que las pantallas con poco contenido (ej. el Panel) no se
@@ -57,12 +58,15 @@ interface NavItem {
   /** Sólo en las PCs (en el celular no aparece). */
   soloEscritorio?: boolean;
   proximamente?: boolean;
+  /** Para que la ayuda paso a paso pueda señalar este botón del menú. */
+  tour?: string;
 }
 
 // Cada sección tiene su propio color — así el menú se distingue de un
 // vistazo en vez de ser todo el mismo azul, y "llama más la atención".
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Panel', icon: LayoutDashboard, color: 'brand' },
+  { to: '/armar-cuenta', label: 'Armar cuenta', icon: ShoppingCart, color: 'pink', tour: 'menu-armar-cuenta' },
   { to: '/articulos', label: 'Artículos y stock', icon: Package, color: 'sky' },
   { to: '/inventario', label: 'Contar inventario', icon: ClipboardList, color: 'teal' },
   { to: '/precios', label: 'Precios y costos', icon: Tags, color: 'cyan', soloAdmin: true },
@@ -78,6 +82,7 @@ const NAV_ITEMS: NavItem[] = [
 // detecte al escanear el código y no las purgue del CSS final.
 const NAV_ACTIVO: Record<AcentoNav, string> = {
   brand: 'bg-brand-50 text-brand-700',
+  pink: 'bg-pink-50 text-pink-700',
   sky: 'bg-sky-50 text-sky-700',
   teal: 'bg-teal-50 text-teal-700',
   cyan: 'bg-cyan-50 text-cyan-700',
@@ -90,6 +95,7 @@ const NAV_ACTIVO: Record<AcentoNav, string> = {
 };
 const NAV_ICONO: Record<AcentoNav, string> = {
   brand: 'text-brand-500',
+  pink: 'text-pink-500',
   sky: 'text-sky-500',
   teal: 'text-teal-500',
   cyan: 'text-cyan-500',
@@ -105,6 +111,7 @@ const NAV_ICONO: Record<AcentoNav, string> = {
 // centro de ayuda mostrando primero lo de la pantalla en la que se está.
 const SECCION_POR_RUTA: Record<string, string> = {
   '/': 'Panel',
+  '/armar-cuenta': 'Armar cuenta',
   '/articulos': 'Artículos y stock',
   '/inventario': 'Contar inventario',
   '/precios': 'Precios y costos',
@@ -221,6 +228,7 @@ function LayoutInterno() {
             <NavLink
               key={item.to}
               to={item.to}
+              data-tour={item.tour}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   item.proximamente

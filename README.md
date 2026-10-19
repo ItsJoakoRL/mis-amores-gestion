@@ -165,6 +165,8 @@ El programa es nuevo para quienes lo usan, así que la ayuda está pensada para 
 
 ## Armar cuenta: cada producto con su forma de pago
 
+**Dónde está (0.8.19):** "Armar cuenta" es una parte del menú de la izquierda (`/armar-cuenta`, debajo de "Panel"), con su pantalla propia, igual que Artículos o Clientes; antes era un botón dentro de "Artículos y stock" que abría un cuadro. La ayuda paso a paso ("Cobrar una venta", "Anotarle un fiado", la de la cámara) ahora arranca marcando ese botón del menú (en el celular hay que abrir el menú primero), y en "Armar cuenta" el celular ya no abre el teclado solo al entrar.
+
 En "Armar cuenta" (caja y celular) cada renglón dice **cómo se paga**: Efectivo, Tarjeta, Transferencia o Fiado (selector al lado del producto). Sirve para el cliente que paga una parte de una forma y el resto de otra.
 
 - **Dividir un mismo producto.** Con 2 o más unidades (o cualquier peso) aparece **"Dividir"**: "de 3 unidades, ¿cuántas se pagan de otra forma?" → el renglón queda con las que quedan y aparece otro con las que se separaron (se puede dividir por kilos también). Si dos renglones quedan iguales (mismo producto, misma forma de pago y mismo cliente) se juntan solos.

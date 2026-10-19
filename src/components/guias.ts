@@ -39,11 +39,11 @@ export interface Guia {
 }
 
 const ARMAR_CUENTA: PasoRecorrido = {
-  ruta: '/articulos',
-  selector: '[data-tour="art-armar-cuenta"]',
+  selector: '[data-tour="menu-armar-cuenta"]',
   tocar: true,
   titulo: 'Entrá a "Armar cuenta"',
-  texto: 'Las ventas se hacen desde "Artículos y stock". Tocá el botón "Armar cuenta": ahí se arma lo que se lleva el cliente.',
+  texto:
+    'Las ventas se hacen desde "Armar cuenta", en el menú de la izquierda (arriba, debajo de "Panel"). Tocalo: ahí se arma lo que se lleva el cliente. (En el celular, primero abrí el menú con las tres rayitas de arriba.)',
 };
 
 const BUSCAR_PRODUCTO_EN_CUENTA: PasoRecorrido = {
@@ -137,7 +137,7 @@ export const GUIAS: Guia[] = [
     secciones: ['Armar cuenta'],
     paraCelular: true,
     pasos: [
-      { ...ARMAR_CUENTA, texto: 'Desde el celular, entrá a "Artículos y stock" y tocá "Armar cuenta".' },
+      { ...ARMAR_CUENTA, texto: 'Desde el celular, abrí el menú (las tres rayitas de arriba) y tocá "Armar cuenta".' },
       {
         selector: '[data-tour="cuenta-camara"]',
         tocar: true,
@@ -678,7 +678,8 @@ export const PALABRAS_DEL_PROGRAMA: Array<{ palabra: string; significa: string }
 /** Qué hay en cada parte del menú, en una frase. */
 export const PARTES_DEL_MENU: Array<{ nombre: string; ruta: string; sirve: string; soloAdmin?: boolean; soloEscritorio?: boolean }> = [
   { nombre: 'Panel', ruta: '/', sirve: 'El resumen del día: cuánto se vendió, qué se está por terminar, qué hay para hacer.' },
-  { nombre: 'Artículos y stock', ruta: '/articulos', sirve: 'Los productos y cuántos hay. Desde acá también se cobra ("Armar cuenta") y se cargan productos nuevos.' },
+  { nombre: 'Armar cuenta', ruta: '/armar-cuenta', sirve: 'Acá se vende: se arma lo que se lleva el cliente, se elige cómo paga (cada producto puede pagarse distinto) y se cobra.' },
+  { nombre: 'Artículos y stock', ruta: '/articulos', sirve: 'Los productos y cuántos hay. Desde acá se cargan productos nuevos, se cambia el precio y se suma mercadería.' },
   { nombre: 'Contar inventario', ruta: '/inventario', sirve: 'Contar lo que hay de verdad y corregir el stock.' },
   { nombre: 'Precios y costos', ruta: '/precios', sirve: 'Cambiar los precios de muchos productos juntos y cargar cuánto te cuesta cada uno.', soloAdmin: true },
   { nombre: 'Calendario', ruta: '/ventas', sirve: 'Lo que se vendió cada día. Desde acá se anula una venta.' },
