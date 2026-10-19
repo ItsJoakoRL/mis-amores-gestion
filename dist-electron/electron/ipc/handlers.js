@@ -258,9 +258,9 @@ function registrarHandlers(deps) {
         (0, session_1.requiereSesion)();
         return (0, clientes_1.listClientes)();
     }));
-    electron_1.ipcMain.handle(channels_1.Channels.clientesCrear, (_e, input, deudaInicial, fechaInicial) => wrap(() => {
+    electron_1.ipcMain.handle(channels_1.Channels.clientesCrear, (_e, input, deudaInicial, fechaInicial, items) => wrap(() => {
         const sesion = (0, session_1.requiereSesion)();
-        return (0, clientes_1.crearCliente)(input, deudaInicial, sesion.id, fechaInicial);
+        return (0, clientes_1.crearCliente)(input, deudaInicial, sesion.id, fechaInicial, items);
     }));
     electron_1.ipcMain.handle(channels_1.Channels.clientesSetActivo, (_e, id, activo) => wrap(async () => {
         (0, session_1.requiereAdmin)();
@@ -271,9 +271,9 @@ function registrarHandlers(deps) {
         (0, session_1.requiereSesion)();
         return (0, clientes_1.historialCliente)(clienteId);
     }));
-    electron_1.ipcMain.handle(channels_1.Channels.clientesAnotarDeuda, (_e, clienteId, monto, nota, fecha) => wrap(async () => {
+    electron_1.ipcMain.handle(channels_1.Channels.clientesAnotarDeuda, (_e, clienteId, monto, nota, fecha, items) => wrap(async () => {
         const sesion = (0, session_1.requiereSesion)();
-        await (0, clientes_1.registrarAjuste)(clienteId, monto, nota ?? null, sesion.id, fecha);
+        await (0, clientes_1.registrarAjuste)(clienteId, monto, nota ?? null, sesion.id, fecha, items);
         return true;
     }));
     electron_1.ipcMain.handle(channels_1.Channels.clientesActualizar, (_e, id, input) => wrap(async () => {

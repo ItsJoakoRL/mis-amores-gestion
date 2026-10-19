@@ -431,8 +431,8 @@ sync) {
     }));
     app.post('/api/clientes', ruta((req) => {
         const sesion = requiereSesion(req);
-        const { deudaInicial, fechaInicial, ...input } = req.body;
-        return (0, clientes_1.crearCliente)(input, deudaInicial, sesion.id, fechaInicial);
+        const { deudaInicial, fechaInicial, items, ...input } = req.body;
+        return (0, clientes_1.crearCliente)(input, deudaInicial, sesion.id, fechaInicial, items);
     }));
     app.get('/api/clientes/:id/historial', ruta((req) => {
         requiereSesion(req);
@@ -484,8 +484,8 @@ sync) {
     });
     app.post('/api/clientes/:id/deuda', ruta(async (req) => {
         const sesion = requiereSesion(req);
-        const { monto, nota, fecha } = req.body;
-        await (0, clientes_1.registrarAjuste)(req.params.id, monto, nota ?? null, sesion.id, fecha);
+        const { monto, nota, fecha, items } = req.body;
+        await (0, clientes_1.registrarAjuste)(req.params.id, monto, nota ?? null, sesion.id, fecha, items);
         return true;
     }));
     app.put('/api/clientes/:id', ruta(async (req) => {

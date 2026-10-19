@@ -211,7 +211,14 @@ async function listUltimosFiados(limite) {
         { $limit: limite },
     ])
         .toArray();
-    return docs.map(mapDoc);
+    // A cada fiado se le agrega cuánto falta pagar (con los pagos del cliente descontados de
+    // lo más viejo a lo más nuevo): uno que ya quedó cubierto figura como pagado.
+    const clientes = [...new Set(docs.map((d) => d.clienteId?.toHexString()).filter((id) => !!id))];
+    const restas = await (0, clientes_1.restasDeFiados)(clientes.map((id) => new mongodb_1.ObjectId(id)));
+    return docs.map((d) => {
+        const v = mapDoc(d);
+        return { ...v, resta: v.pagado ? 0 : restas.get(v.id) ?? v.total };
+    });
 }
 async function resumenHoy() {
     const { desde, hasta } = (0, fechaLocal_1.limitesDiaLocal)(0);

@@ -77,7 +77,8 @@ const api = {
     },
     clientes: {
         list: () => invoke(channels_1.Channels.clientesList),
-        crear: (input, deudaInicial, fechaInicial) => invoke(channels_1.Channels.clientesCrear, input, deudaInicial, fechaInicial),
+        // Si la deuda de entrada es una lista de productos, `items` los trae (y el monto es lo que suman).
+        crear: (input, deudaInicial, fechaInicial, items) => invoke(channels_1.Channels.clientesCrear, input, deudaInicial, fechaInicial, items),
         setActivo: (id, activo) => invoke(channels_1.Channels.clientesSetActivo, id, activo),
         historial: (clienteId) => invoke(channels_1.Channels.clientesHistorial, clienteId),
         // Estado de cuenta para mandárselo al cliente: los datos, el enlace firmado del
@@ -86,8 +87,8 @@ const api = {
         enlaceEstado: (clienteId) => invoke(channels_1.Channels.clientesEnlaceEstado, clienteId),
         estadoPdf: (clienteId) => invoke(channels_1.Channels.clientesEstadoPdf, clienteId),
         registrarPago: (clienteId, monto, nota, metodoPago) => invoke(channels_1.Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
-        // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe.
-        anotarDeuda: (clienteId, monto, nota, fecha) => invoke(channels_1.Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha),
+        // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe y `items`, qué productos son.
+        anotarDeuda: (clienteId, monto, nota, fecha, items) => invoke(channels_1.Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha, items),
         actualizar: (id, input) => invoke(channels_1.Channels.clientesActualizar, id, input),
         pagosDelDia: (fechaYMD) => invoke(channels_1.Channels.clientesPagosDelDia, fechaYMD),
         eliminarMovimiento: (tipo, id) => invoke(channels_1.Channels.clientesEliminarMovimiento, tipo, id),
