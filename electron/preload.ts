@@ -39,6 +39,7 @@ import type {
   EstadoServidorWeb,
   EstadoCuenta,
   EnlaceEstadoCuenta,
+  ItemDeuda,
   PagoCuentaDelDia,
   CambioPrecioItem,
   CostoItem,
@@ -134,8 +135,9 @@ const api = {
   },
   clientes: {
     list: () => invoke<Cliente[]>(Channels.clientesList),
-    crear: (input: ClienteInput, deudaInicial: number, fechaInicial?: string) =>
-      invoke<Cliente>(Channels.clientesCrear, input, deudaInicial, fechaInicial),
+    // Si la deuda de entrada es una lista de productos, `items` los trae (y el monto es lo que suman).
+    crear: (input: ClienteInput, deudaInicial: number, fechaInicial?: string, items?: ItemDeuda[]) =>
+      invoke<Cliente>(Channels.clientesCrear, input, deudaInicial, fechaInicial, items),
     setActivo: (id: string, activo: boolean) => invoke<boolean>(Channels.clientesSetActivo, id, activo),
     historial: (clienteId: string) => invoke<MovimientoCuenta[]>(Channels.clientesHistorial, clienteId),
     // Estado de cuenta para mandárselo al cliente: los datos, el enlace firmado del
@@ -145,9 +147,9 @@ const api = {
     estadoPdf: (clienteId: string) => invoke<string>(Channels.clientesEstadoPdf, clienteId),
     registrarPago: (clienteId: string, monto: number, nota: string | null, metodoPago: MetodoPago) =>
       invoke<boolean>(Channels.clientesRegistrarPago, clienteId, monto, nota, metodoPago),
-    // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe.
-    anotarDeuda: (clienteId: string, monto: number, nota: string | null, fecha?: string) =>
-      invoke<boolean>(Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha),
+    // Una deuda anotada a mano (ej. del cuaderno); `fecha` es desde cuándo debe y `items`, qué productos son.
+    anotarDeuda: (clienteId: string, monto: number, nota: string | null, fecha?: string, items?: ItemDeuda[]) =>
+      invoke<boolean>(Channels.clientesAnotarDeuda, clienteId, monto, nota, fecha, items),
     actualizar: (id: string, input: ClienteInput) => invoke<boolean>(Channels.clientesActualizar, id, input),
     pagosDelDia: (fechaYMD: string) => invoke<PagoCuentaDelDia[]>(Channels.clientesPagosDelDia, fechaYMD),
     eliminarMovimiento: (tipo: 'venta' | 'pago' | 'ajuste', id: string) =>

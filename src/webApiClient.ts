@@ -11,6 +11,7 @@ import {
   type ClienteInput,
   type CuentaPublica,
   type Genero,
+  type ItemDeuda,
   type Proveedor,
   type Rol,
   type VentaInput,
@@ -231,8 +232,8 @@ export function crearWebApiClient(): Api {
     },
     clientes: {
       list: () => req('GET', '/api/clientes'),
-      crear: (input: ClienteInput, deudaInicial: number, fechaInicial?: string) =>
-        req('POST', '/api/clientes', { ...input, deudaInicial, fechaInicial }),
+      crear: (input: ClienteInput, deudaInicial: number, fechaInicial?: string, items?: ItemDeuda[]) =>
+        req('POST', '/api/clientes', { ...input, deudaInicial, fechaInicial, items }),
       setActivo: (id, activo) => req('POST', `/api/clientes/${id}/activo`, { activo }),
       historial: (clienteId) => req('GET', `/api/clientes/${clienteId}/historial`),
       estado: (clienteId) => req('GET', `/api/clientes/${clienteId}/estado`),
@@ -240,7 +241,8 @@ export function crearWebApiClient(): Api {
       estadoPdf: (clienteId) => req('GET', `/api/clientes/${clienteId}/estado-pdf`),
       registrarPago: (clienteId, monto, nota, metodoPago) =>
         req('POST', `/api/clientes/${clienteId}/pago`, { monto, nota, metodoPago }),
-      anotarDeuda: (clienteId, monto, nota, fecha) => req('POST', `/api/clientes/${clienteId}/deuda`, { monto, nota, fecha }),
+      anotarDeuda: (clienteId, monto, nota, fecha, items) =>
+        req('POST', `/api/clientes/${clienteId}/deuda`, { monto, nota, fecha, items }),
       actualizar: (id, input: ClienteInput) => req('PUT', `/api/clientes/${id}`, input),
       pagosDelDia: (fechaYMD) => req('GET', `/api/clientes/pagos/dia/${fechaYMD}`),
       eliminarMovimiento: (tipo, id) => req('DELETE', `/api/clientes/movimientos/${tipo}/${id}`),

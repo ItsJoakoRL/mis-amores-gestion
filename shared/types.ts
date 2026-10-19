@@ -387,6 +387,9 @@ export interface Venta {
   /** Sólo tiene sentido cuando metodoPago es 'fiado' — si ya lo pagó, deja
    * de contar para la deuda del cliente aunque siga en el historial. */
   pagado: boolean;
+  /** Sólo en la lista de últimos fiados: cuánto falta pagar de este fiado, con los pagos
+   * del cliente descontados de lo más viejo a lo más nuevo (0 = ya quedó cubierto). */
+  resta?: number;
 }
 
 export interface VentaInput {
@@ -488,6 +491,14 @@ export interface PagoCuentaDelDia {
   nota: string | null;
 }
 
+/** Un producto de los que debe un cliente: lo que se anotó a mano (el cuaderno) o lo que
+ * salió de una venta fiada. El subtotal es cantidad por precio unitario. */
+export interface ItemDeuda {
+  descripcion: string;
+  cantidad: number;
+  precioUnitario: number;
+}
+
 /** Un movimiento en la cuenta corriente de un cliente: una compra fiada (suma
  * deuda) o un pago que hizo (la resta). */
 export interface MovimientoCuenta {
@@ -505,13 +516,25 @@ export interface MovimientoCuenta {
   /** Si ese fiado puntual ya se pagó — sólo tiene sentido para tipo 'venta';
    * null en 'pago' y 'ajuste'. */
   pagado: boolean | null;
+  /** Qué productos son (null en un pago, o en una deuda anotada sólo con un monto). */
+  items: ItemDeuda[] | null;
+  /** Cuánto falta pagar de esto, descontando los pagos del cliente de lo más viejo a lo
+   * más nuevo: 0 si ya quedó cubierto. null en un pago, en un fiado marcado como pagado
+   * a mano y en un descuento. */
+  resta: number | null;
 }
 
 /** Una línea del estado de cuenta (algo que quedó anotado, o un pago). */
 export interface LineaEstadoCuenta {
   fecha: string;
   descripcion: string;
+  /** Lo que valía en total (de un pago, lo que pagó). */
   monto: number;
+  /** Sólo en lo pendiente: lo que todavía falta pagar de esto (puede ser menos que
+   * `monto` si ya pagó una parte). */
+  resta?: number;
+  /** Qué productos son, si se sabe. */
+  items?: ItemDeuda[];
 }
 
 /** Lo que debe un cliente, listo para mostrar o armar el PDF: lo que quedó
@@ -523,8 +546,12 @@ export interface EstadoCuenta {
   fecha: string;
   /** Lo que debe hoy: lo pendiente menos lo que pagó (negativo = saldo a favor). */
   saldo: number;
+  /** Lo que todavía tiene que pagar, producto por producto (ya descontados sus pagos de
+   * lo más viejo a lo más nuevo). */
   pendientes: LineaEstadoCuenta[];
   pagos: LineaEstadoCuenta[];
+  /** Cuánto pagó en total. */
+  totalPagado: number;
 }
 
 /** El enlace para descargar el estado de cuenta (el que va en el código QR). */

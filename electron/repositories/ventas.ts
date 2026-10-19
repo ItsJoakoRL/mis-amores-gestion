@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { getArticulo, ajustarStock } from './articulos';
-import { existeClienteActivo, pagosPorDia } from './clientes';
+import { existeClienteActivo, pagosPorDia, restasDeFiados } from './clientes';
 import { DIA_LOCAL_EXPR, limitesDiaLocal, limitesDiaLocalYMD, limitesMesLocal, ymdLocal } from '../fechaLocal';
 import { redondearCantidad } from '../../shared/formato';
 import type { MetodoPago, ResumenDiaVentas, Venta, VentaInput } from '../../shared/types';
@@ -244,7 +244,14 @@ export async function listUltimosFiados(limite: number): Promise<Venta[]> {
       { $limit: limite },
     ])
     .toArray();
-  return docs.map(mapDoc);
+  // A cada fiado se le agrega cuánto falta pagar (con los pagos del cliente descontados de
+  // lo más viejo a lo más nuevo): uno que ya quedó cubierto figura como pagado.
+  const clientes = [...new Set(docs.map((d) => d.clienteId?.toHexString()).filter((id): id is string => !!id))];
+  const restas = await restasDeFiados(clientes.map((id) => new ObjectId(id)));
+  return docs.map((d) => {
+    const v = mapDoc(d);
+    return { ...v, resta: v.pagado ? 0 : restas.get(v.id) ?? v.total };
+  });
 }
 
 export async function resumenHoy(): Promise<ResumenDiaVentas> {

@@ -130,7 +130,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="cli-tabla"]',
       titulo: 'La cuenta de cada cliente',
-      texto: 'Tocá un cliente de la lista para ver su cuenta completa, registrarle un pago cuando te paga, anotarle una deuda a mano (por ejemplo, la del cuaderno) o editar sus datos y su teléfono.',
+      texto: 'Tocá un cliente de la lista para ver su cuenta completa. Ahí le registrás un pago cuando te paga (se descuenta de lo más viejo primero y cada deuda dice si está pagada, en parte o pendiente), le anotás una deuda a mano con sus productos (por ejemplo, la del cuaderno) o editás sus datos y su teléfono.',
     },
     {
       selector: '[data-tour="cli-ultimos-fiados"]',
@@ -141,7 +141,7 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
       selector: '[data-tour="cli-estado"]',
       titulo: 'Estado de cuenta con código QR',
       texto:
-        'Con este botón de cada cliente aparece un código QR: lo escaneás con el celular y baja un PDF con lo que debe, listo para compartirlo y mandárselo. También podés bajar el PDF directo desde ahí.',
+        'Con este botón de cada cliente aparece un código QR: lo escaneás con el celular y baja un PDF con los productos que tiene que pagar y lo que ya pagó, listo para compartirlo y mandárselo. También podés bajar el PDF directo desde ahí.',
     },
   ],
   Recordatorios: [

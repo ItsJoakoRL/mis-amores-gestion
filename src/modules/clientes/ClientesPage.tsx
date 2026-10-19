@@ -30,8 +30,10 @@ import {
   nombreArchivoEstadoCuenta,
   parsearMonto,
 } from '@shared/formato';
+import { aclaracionesDeLinea, compararAntiguedad } from '@shared/cuentaCorriente';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
+import EditorDeProductos, { filaNueva, resumenDeFilas, type FilaProducto } from './EditorDeProductos';
 import { useRecargarAlVolver } from '../../hooks/useRecargarAlVolver';
 
 // Pone en mayúscula sólo la primera letra — a diferencia de la clase CSS
@@ -101,6 +103,95 @@ function claseDeDeuda(dias: number): string {
 }
 
 const soloDigitos = (t: string) => t.replace(/\D/g, '');
+
+// Lo que le debe o tiene a favor un cliente, dicho como corresponde (un saldo negativo es
+// plata a favor: pagó de más).
+function textoDeSaldo(saldo: number): string {
+  return saldo < 0 ? `Tiene ${formatearMoneda(-saldo)} a favor` : `Debe ${formatearMoneda(saldo)}`;
+}
+
+// Cómo está un fiado de la lista de últimos fiados: cubierto del todo (por un pago o
+// marcado como pagado a mano), cubierto en parte, o sin pagar.
+function estadoDeFiado(v: Venta): { cubierto: boolean; parcial: boolean; resta: number } {
+  const resta = v.resta ?? v.total;
+  const cubierto = v.pagado || resta <= 0.005;
+  return { cubierto, parcial: !cubierto && resta < v.total - 0.005, resta };
+}
+
+// Una deuda (un fiado o algo anotado a mano) que ya está cubierta: por los pagos del cliente
+// o porque se marcó como pagada.
+function estaCubierto(m: MovimientoCuenta): boolean {
+  return m.tipo !== 'pago' && (m.pagado === true || (m.resta !== null && m.resta <= 0.005));
+}
+
+// Qué productos son: debajo del detalle de cada deuda (cuando se sabe).
+function DetalleDeMovimiento({ m }: { m: MovimientoCuenta }) {
+  if (m.tipo === 'pago') return null;
+  const lineas = aclaracionesDeLinea({ descripcion: m.descripcion, items: m.items ?? undefined });
+  if (lineas.length === 0) return null;
+  return (
+    <ul className="mt-0.5 space-y-0.5 text-xs font-normal text-slate-400">
+      {lineas.map((t, n) => (
+        <li key={n}>{t}</li>
+      ))}
+    </ul>
+  );
+}
+
+// El estado de una deuda en la cuenta: pagada, en parte, o pendiente. Lo que se pagó se
+// descuenta de lo más viejo primero, así que esto sale solo de los pagos. Tocar una pendiente
+// abre el pago; una marcada como pagada a mano (como se hacía antes) se puede volver a dejar
+// pendiente.
+function EstadoDeLinea({
+  m,
+  onCobrar,
+  onDesmarcar,
+}: {
+  m: MovimientoCuenta;
+  onCobrar: (m: MovimientoCuenta) => void;
+  onDesmarcar: (m: MovimientoCuenta) => void;
+}) {
+  const base = 'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors';
+  if (m.tipo === 'venta' && m.pagado) {
+    return (
+      <button
+        onClick={() => onDesmarcar(m)}
+        title="Estaba marcado como pagado a mano: tocá para volver a dejarlo pendiente"
+        className={`${base} bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Pagado
+      </button>
+    );
+  }
+  if (m.tipo === 'pago' || m.resta === null) return <span />;
+  if (m.resta <= 0.005) {
+    return (
+      <span title="Los pagos de este cliente ya cubren esto" className={`${base} bg-emerald-50 text-emerald-700`}>
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Pagado
+      </span>
+    );
+  }
+  const enParte = m.resta < m.monto - 0.005;
+  return (
+    <button
+      onClick={() => onCobrar(m)}
+      title="Registrar un pago"
+      className={`${base} bg-amber-50 text-amber-700 hover:bg-amber-100`}
+    >
+      <Circle className="h-3.5 w-3.5" />
+      {enParte ? `Resta ${formatearMoneda(m.resta)}` : 'Pendiente'}
+    </button>
+  );
+}
+
+/** Lo que el cuadro de pago trae ya escrito cuando se llega desde una deuda puntual. */
+interface SugerenciaDePago {
+  monto: number;
+  nota: string | null;
+  aviso: string | null;
+}
 
 // Para que buscar "jose" encuentre a "José" sin importar tildes. Se evita
 // escribir el rango Unicode de diacríticos como literal en el código (da
@@ -216,7 +307,11 @@ export default function ClientesPage() {
   }, [clientes, busqueda, soloConDeuda, antiguedadMin, orden]);
 
   async function handleEliminar(c: Cliente) {
-    if (!confirm(`¿Sacar a "${c.nombre}" de la lista de clientes? Su historial de fiados y pagos queda guardado.`))
+    const aviso =
+      c.saldo > 0
+        ? `\n\nOJO: todavía debe ${formatearMoneda(c.saldo)}. Si lo sacás de la lista, esa deuda deja de aparecer en el total y en los reportes.`
+        : '';
+    if (!confirm(`¿Sacar a "${c.nombre}" de la lista de clientes? Su historial de fiados y pagos queda guardado.${aviso}`))
       return;
     try {
       await window.api.clientes.setActivo(c.id, false);
@@ -226,13 +321,9 @@ export default function ClientesPage() {
     }
   }
 
-  async function toggleFiadoPagado(v: Venta) {
-    try {
-      await window.api.ventas.marcarPagado(v.id, !v.pagado);
-      cargar();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'No se pudo actualizar el fiado');
-    }
+  function abrirCuentaDe(v: Venta) {
+    const cliente = v.clienteId ? clientes.find((c) => c.id === v.clienteId) : undefined;
+    if (cliente) setClienteAbierto(cliente);
   }
 
   return (
@@ -322,15 +413,9 @@ export default function ClientesPage() {
             {ultimosFiados.map((v) => (
               <div
                 key={v.id}
-                className={`flex w-full items-center justify-between px-4 py-2.5 transition-colors sm:px-5 ${v.pagado ? 'opacity-60' : ''}`}
+                className={`flex w-full items-center justify-between px-4 py-2.5 transition-colors sm:px-5 ${estadoDeFiado(v).cubierto ? 'opacity-60' : ''}`}
               >
-                <button
-                  onClick={() => {
-                    const cliente = v.clienteId ? clientes.find((c) => c.id === v.clienteId) : undefined;
-                    if (cliente) setClienteAbierto(cliente);
-                  }}
-                  className="min-w-0 flex-1 text-left hover:opacity-80"
-                >
+                <button onClick={() => abrirCuentaDe(v)} className="min-w-0 flex-1 text-left hover:opacity-80">
                   <p className="truncate text-sm text-slate-800">
                     <span className="font-medium">{v.clienteNombre ?? 'Cliente eliminado'}</span>
                     <span className="text-slate-400"> · {formatearCantidad(v.cantidad)} x {v.articuloDescripcion}</span>
@@ -340,18 +425,28 @@ export default function ClientesPage() {
                     <span className="font-medium text-slate-500">{v.usuarioNombre ?? '—'}</span>
                   </p>
                 </button>
-                <button
-                  onClick={() => toggleFiadoPagado(v)}
-                  title={v.pagado ? 'Marcar como no pagado' : 'Marcar como pagado'}
-                  className={`ml-3 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold transition-colors ${
-                    v.pagado
-                      ? 'text-emerald-600 hover:bg-emerald-50'
-                      : 'text-amber-700 hover:bg-amber-50'
-                  }`}
-                >
-                  {v.pagado ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-                  <span className={v.pagado ? 'line-through' : ''}>{formatearMoneda(v.total)}</span>
-                </button>
+                {(() => {
+                  const e = estadoDeFiado(v);
+                  return (
+                    <button
+                      onClick={() => abrirCuentaDe(v)}
+                      title={e.cubierto ? 'Ya está pago' : 'Ver la cuenta y registrar el pago'}
+                      className={`ml-3 flex shrink-0 flex-col items-end rounded-lg px-2 py-0.5 text-sm font-semibold transition-colors ${
+                        e.cubierto ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-700 hover:bg-amber-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {e.cubierto ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                        <span className={e.cubierto ? 'line-through' : ''}>
+                          {formatearMoneda(e.parcial ? e.resta : v.total)}
+                        </span>
+                      </span>
+                      {e.parcial && (
+                        <span className="text-[11px] font-normal text-slate-400">de {formatearMoneda(v.total)}</span>
+                      )}
+                    </button>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -420,10 +515,14 @@ export default function ClientesPage() {
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                        c.saldo > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                        c.saldo > 0
+                          ? 'bg-amber-100 text-amber-700'
+                          : c.saldo < 0
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-slate-100 text-slate-500'
                       }`}
                     >
-                      {formatearMoneda(c.saldo)}
+                      {c.saldo < 0 ? `A favor ${formatearMoneda(-c.saldo)}` : formatearMoneda(c.saldo)}
                     </span>
                     {(() => {
                       const dias = diasDeDeuda(c);
@@ -509,6 +608,9 @@ function NuevoClienteModal({
   const [nombre, setNombre] = useState('');
   const [deudaInicial, setDeudaInicial] = useState('');
   const [fechaDeuda, setFechaDeuda] = useState(ahoraParaInputLocal);
+  // La deuda de entrada: un monto solo, o la lista de productos que debe.
+  const [conProductos, setConProductos] = useState(false);
+  const [filas, setFilas] = useState<FilaProducto[]>(() => [filaNueva()]);
   const [nota, setNota] = useState('');
   const [telefono, setTelefono] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -527,8 +629,9 @@ function NuevoClienteModal({
   // interpreta, y el textito de abajo muestra el monto que se va a cargar
   // para poder revisarlo antes de guardar.
   const deudaParseada = parsearMonto(deudaInicial);
-  const deudaNum = Number.isFinite(deudaParseada) ? deudaParseada : 0;
-  const deudaInvalida = deudaInicial.trim() !== '' && !Number.isFinite(deudaParseada);
+  const productos = resumenDeFilas(filas);
+  const deudaNum = conProductos ? productos.total : Number.isFinite(deudaParseada) ? deudaParseada : 0;
+  const deudaInvalida = !conProductos && deudaInicial.trim() !== '' && !Number.isFinite(deudaParseada);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -539,6 +642,10 @@ function NuevoClienteModal({
     }
     if (deudaInvalida) {
       setError('El monto que debe no es un número válido');
+      return;
+    }
+    if (conProductos && productos.incompletas > 0) {
+      setError('Hay productos sin terminar de completar: poné el nombre, la cantidad y el precio, o sacalos.');
       return;
     }
     setGuardando(true);
@@ -554,7 +661,8 @@ function NuevoClienteModal({
           telefono: telefono.trim() || null,
         },
         deudaNum,
-        fechaISO
+        fechaISO,
+        conProductos && productos.items.length > 0 ? productos.items : undefined
       );
       onCreado();
     } catch (err) {
@@ -566,11 +674,15 @@ function NuevoClienteModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+      <div
+        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+          conProductos ? 'max-w-xl' : 'max-w-sm'
+        }`}
+      >
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Nuevo cliente</h2>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto px-5 py-4">
           <div>
             <label className="label">Nombre y apellido</label>
             <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} required autoFocus />
@@ -581,23 +693,47 @@ function NuevoClienteModal({
               </p>
             )}
           </div>
-          <div>
-            <label className="label">Debe (opcional)</label>
-            <input
-              className="input"
-              inputMode="decimal"
-              placeholder="0"
-              value={deudaInicial}
-              onChange={(e) => setDeudaInicial(e.target.value.replace(/[^0-9.,]/g, ''))}
-            />
-            <p className={`mt-1 text-xs ${deudaInvalida ? 'text-red-600' : 'text-slate-400'}`}>
-              {deudaInvalida
-                ? 'Ese monto no es un número válido.'
-                : deudaNum > 0
-                  ? `Se le va a cargar ${formatearMonedaConCentavos(deudaNum)} de entrada.`
-                  : 'Si ya te debía plata de antes (por ejemplo, de un cuaderno), poné el monto acá.'}
-            </p>
-          </div>
+          {conProductos ? (
+            <div>
+              <label className="label">Qué productos debe (opcional)</label>
+              <EditorDeProductos filas={filas} onChange={setFilas} />
+              <p className="mt-1 text-xs text-slate-400">
+                Así en su estado de cuenta (el PDF) figura qué es lo que debe. No toca el stock.
+              </p>
+              <button
+                type="button"
+                className="mt-1 text-xs text-slate-500 underline hover:text-slate-700"
+                onClick={() => setConProductos(false)}
+              >
+                Mejor poner sólo un monto
+              </button>
+            </div>
+          ) : (
+            <div>
+              <label className="label">Debe (opcional)</label>
+              <input
+                className="input"
+                inputMode="decimal"
+                placeholder="0"
+                value={deudaInicial}
+                onChange={(e) => setDeudaInicial(e.target.value.replace(/[^0-9.,]/g, ''))}
+              />
+              <p className={`mt-1 text-xs ${deudaInvalida ? 'text-red-600' : 'text-slate-400'}`}>
+                {deudaInvalida
+                  ? 'Ese monto no es un número válido.'
+                  : deudaNum > 0
+                    ? `Se le va a cargar ${formatearMonedaConCentavos(deudaNum)} de entrada.`
+                    : 'Si ya te debía plata de antes (por ejemplo, de un cuaderno), poné el monto acá.'}
+              </p>
+              <button
+                type="button"
+                className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+                onClick={() => setConProductos(true)}
+              >
+                O anotá qué productos son
+              </button>
+            </div>
+          )}
           {deudaNum > 0 && (
             <div>
               <label className="label">¿Desde cuándo debe?</label>
@@ -665,6 +801,7 @@ function ClienteDetalleModal({
   const [movimientos, setMovimientos] = useState<MovimientoCuenta[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarPago, setMostrarPago] = useState(abrirPago === true);
+  const [sugerido, setSugerido] = useState<SugerenciaDePago | null>(null);
   const [mostrarDeuda, setMostrarDeuda] = useState(false);
   const [editando, setEditando] = useState(false);
 
@@ -706,14 +843,38 @@ function ClienteDetalleModal({
     }
   }
 
-  async function toggleMovimientoPagado(m: MovimientoCuenta) {
+  // Un fiado que estaba marcado como pagado a mano (así se hacía antes) se puede volver a
+  // dejar pendiente. Ya no se marcan así: lo pagado se registra como pago, que suma a lo
+  // cobrado y se descuenta de lo más viejo.
+  async function desmarcarPagado(m: MovimientoCuenta) {
+    if (!confirm('¿Volver a dejar este fiado como pendiente? Estaba marcado como pagado a mano.')) return;
     try {
-      await window.api.ventas.marcarPagado(m.id, !m.pagado);
+      await window.api.ventas.marcarPagado(m.id, false);
       cargar();
       onCambio();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'No se pudo actualizar el fiado');
     }
+  }
+
+  // Cobrar una deuda puntual: abre el pago con el monto que hace falta para cubrirla. Como
+  // lo que se paga se descuenta de lo más viejo primero, incluye lo anterior que todavía se debe.
+  function abrirCobro(m: MovimientoCuenta) {
+    const pendientes = movimientos
+      .filter((x) => x.tipo !== 'pago' && x.resta !== null && x.resta > 0.005)
+      .sort(compararAntiguedad);
+    const hasta = Math.max(0, pendientes.findIndex((x) => x.id === m.id));
+    const previo = pendientes.slice(0, hasta).reduce((acc, x) => acc + (x.resta ?? 0), 0);
+    const monto = Math.round((previo + (m.resta ?? 0)) * 100) / 100;
+    setSugerido({
+      monto,
+      nota: `Pago de ${m.descripcion}`,
+      aviso:
+        previo > 0.005
+          ? `Incluye ${formatearMoneda(previo)} de lo más viejo que todavía debe: lo que se paga se descuenta de lo más viejo primero.`
+          : null,
+    });
+    setMostrarPago(true);
   }
 
   return createPortal(
@@ -724,9 +885,17 @@ function ClienteDetalleModal({
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-slate-800">{cliente.nombre}</h2>
               <p className="text-sm text-slate-500">
-                Debe:{' '}
-                <span className={saldoActual > 0 ? 'font-semibold text-amber-600' : 'font-semibold text-slate-500'}>
-                  {formatearMoneda(saldoActual)}
+                {saldoActual < 0 ? 'Saldo a favor:' : 'Debe:'}{' '}
+                <span
+                  className={
+                    saldoActual > 0
+                      ? 'font-semibold text-amber-600'
+                      : saldoActual < 0
+                        ? 'font-semibold text-emerald-600'
+                        : 'font-semibold text-slate-500'
+                  }
+                >
+                  {formatearMoneda(Math.abs(saldoActual))}
                 </span>
               </p>
               {(() => {
@@ -787,7 +956,13 @@ function ClienteDetalleModal({
               <NotebookPen className="h-4 w-4" />
               Anotar deuda
             </button>
-            <button className="btn-primary" onClick={() => setMostrarPago(true)}>
+            <button
+              className="btn-primary"
+              onClick={() => {
+                setSugerido(null);
+                setMostrarPago(true);
+              }}
+            >
               Registrar pago
             </button>
             <button onClick={onCerrar} className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 sm:block">
@@ -806,10 +981,10 @@ function ClienteDetalleModal({
             {/* Celular: cada movimiento en su propia tarjeta. */}
             <ul className="divide-y divide-slate-100 sm:hidden">
               {movimientos.map((m) => (
-                <li key={`${m.tipo}-${m.id}`} className={`px-4 py-3 ${m.pagado ? 'opacity-60' : ''}`}>
+                <li key={`${m.tipo}-${m.id}`} className={`px-4 py-3 ${estaCubierto(m) ? 'opacity-60' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className={`text-sm text-slate-800 ${m.pagado ? 'line-through' : ''}`}>
+                      <p className={`text-sm text-slate-800 ${estaCubierto(m) ? 'line-through' : ''}`}>
                         {m.descripcion}
                         {m.tipo === 'pago' && m.metodoPago && (
                           <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
@@ -817,13 +992,14 @@ function ClienteDetalleModal({
                           </span>
                         )}
                       </p>
+                      <DetalleDeMovimiento m={m} />
                       <p className="text-xs text-slate-400">
                         {formatearFechaHoraCorta(m.fecha)}
                         {m.usuarioNombre ? ` · ${m.usuarioNombre}` : ''}
                       </p>
                     </div>
                     <p
-                      className={`shrink-0 font-semibold ${m.pagado ? 'line-through' : ''} ${
+                      className={`shrink-0 font-semibold ${estaCubierto(m) ? 'line-through' : ''} ${
                         m.tipo === 'pago' ? 'text-emerald-600' : 'text-slate-800'
                       }`}
                     >
@@ -832,19 +1008,7 @@ function ClienteDetalleModal({
                     </p>
                   </div>
                   <div className="mt-2 flex items-center justify-between">
-                    {m.tipo === 'venta' ? (
-                      <button
-                        onClick={() => toggleMovimientoPagado(m)}
-                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                          m.pagado ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {m.pagado ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
-                        {m.pagado ? 'Pagado' : 'Pendiente'}
-                      </button>
-                    ) : (
-                      <span />
-                    )}
+                    <EstadoDeLinea m={m} onCobrar={abrirCobro} onDesmarcar={desmarcarPagado} />
                     <button
                       onClick={() => eliminarMovimiento(m)}
                       className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
@@ -870,21 +1034,22 @@ function ClienteDetalleModal({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {movimientos.map((m) => (
-                  <tr key={`${m.tipo}-${m.id}`} className={m.pagado ? 'opacity-60' : ''}>
+                  <tr key={`${m.tipo}-${m.id}`} className={estaCubierto(m) ? 'opacity-60' : ''}>
                     <td className="whitespace-nowrap px-4 py-2 text-slate-500">
                       {formatearFechaHoraCorta(m.fecha)}
                     </td>
-                    <td className={`px-4 py-2 text-slate-800 ${m.pagado ? 'line-through' : ''}`}>
+                    <td className={`px-4 py-2 text-slate-800 ${estaCubierto(m) ? 'line-through' : ''}`}>
                       {m.descripcion}
                       {m.tipo === 'pago' && m.metodoPago && (
                         <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
                           {ETIQUETA_METODO[m.metodoPago]}
                         </span>
                       )}
+                      <DetalleDeMovimiento m={m} />
                     </td>
                     <td className="px-4 py-2 text-slate-500">{m.usuarioNombre ?? '—'}</td>
                     <td
-                      className={`px-4 py-2 text-right font-medium ${m.pagado ? 'line-through' : ''} ${
+                      className={`px-4 py-2 text-right font-medium ${estaCubierto(m) ? 'line-through' : ''} ${
                         m.tipo === 'pago' ? 'text-emerald-600' : 'text-slate-800'
                       }`}
                     >
@@ -892,20 +1057,7 @@ function ClienteDetalleModal({
                       {formatearMoneda(m.monto)}
                     </td>
                     <td className="px-4 py-2">
-                      {m.tipo === 'venta' && (
-                        <button
-                          onClick={() => toggleMovimientoPagado(m)}
-                          title={m.pagado ? 'Marcar como no pagado' : 'Marcar como pagado'}
-                          className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
-                            m.pagado
-                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                              : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                          }`}
-                        >
-                          {m.pagado ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
-                          {m.pagado ? 'Pagado' : 'Pendiente'}
-                        </button>
-                      )}
+                      <EstadoDeLinea m={m} onCobrar={abrirCobro} onDesmarcar={desmarcarPagado} />
                     </td>
                     <td className="px-2 py-2 text-right">
                       <button
@@ -954,9 +1106,14 @@ function ClienteDetalleModal({
         <RegistrarPagoModal
           cliente={cliente}
           saldo={saldoActual}
-          onCerrar={() => setMostrarPago(false)}
+          sugerido={sugerido}
+          onCerrar={() => {
+            setMostrarPago(false);
+            setSugerido(null);
+          }}
           onRegistrado={() => {
             setMostrarPago(false);
+            setSugerido(null);
             cargar();
             onCambio();
           }}
@@ -1060,6 +1217,41 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
             </div>
           )}
 
+          {estado && estado.pendientes.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Lo que tiene que pagar</p>
+              <ul className="max-h-52 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm">
+                {estado.pendientes.map((l, i) => {
+                  const resta = l.resta ?? l.monto;
+                  return (
+                    <li key={i} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-slate-700">{l.descripcion}</p>
+                        {aclaracionesDeLinea(l).map((t, n) => (
+                          <p key={n} className="text-xs text-slate-400">
+                            {t}
+                          </p>
+                        ))}
+                        <p className="text-xs text-slate-400">{new Date(l.fecha).toLocaleDateString('es-AR')}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="font-semibold text-slate-800">{formatearMonedaConCentavos(resta)}</p>
+                        {resta < l.monto - 0.005 && (
+                          <p className="text-[11px] text-slate-400">de {formatearMonedaConCentavos(l.monto)}</p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-1 text-xs text-slate-400">
+                Esto es lo que va a ver en el PDF.{' '}
+                {estado.totalPagado > 0 &&
+                  `Ya pagó ${formatearMonedaConCentavos(estado.totalPagado)}: se descontó de lo más viejo primero.`}
+              </p>
+            </div>
+          )}
+
           <div className="text-center">
             {errorEnlace ? (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-left text-sm text-amber-700">
@@ -1106,8 +1298,10 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
   );
 }
 
-// Anotar una deuda a mano: lo que ya debía de antes (el cuaderno) o algo que no pasó
-// por la caja. Se suma a lo que debe y queda anotado con su detalle y su fecha.
+// Anotar una deuda a mano: lo que ya debía de antes (el cuaderno) o algo que no pasó por la
+// caja. Se anotan los productos (así el estado de cuenta dice qué es lo que debe) o, si no se
+// sabe qué fue, sólo el monto. Se suma a lo que debe y queda anotado con su detalle y su fecha.
+// No toca el stock: para lo que se lleva ahora, usar "Armar cuenta" con "Fiado".
 function AnotarDeudaModal({
   cliente,
   saldo,
@@ -1120,19 +1314,26 @@ function AnotarDeudaModal({
   onCerrar: () => void;
   onAnotada: () => void;
 }) {
+  const [conProductos, setConProductos] = useState(true);
+  const [filas, setFilas] = useState<FilaProducto[]>(() => [filaNueva()]);
   const [monto, setMonto] = useState('');
   const [detalle, setDetalle] = useState('');
   const [fecha, setFecha] = useState(ahoraParaInputLocal);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const montoNum = parsearMonto(monto);
+  const productos = resumenDeFilas(filas);
+  const montoNum = conProductos ? productos.total : parsearMonto(monto);
   const montoValido = Number.isFinite(montoNum) && montoNum > 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (conProductos && productos.incompletas > 0) {
+      setError('Hay productos sin terminar de completar: poné el nombre, la cantidad y el precio, o sacalos.');
+      return;
+    }
     if (!montoValido) {
-      setError('Ingresá un monto válido');
+      setError(conProductos ? 'Agregá al menos un producto con su precio' : 'Ingresá un monto válido');
       return;
     }
     setGuardando(true);
@@ -1142,7 +1343,8 @@ function AnotarDeudaModal({
         cliente.id,
         montoNum,
         detalle.trim() || null,
-        fecha ? new Date(fecha).toISOString() : undefined
+        fecha ? new Date(fecha).toISOString() : undefined,
+        conProductos ? productos.items : undefined
       );
       onAnotada();
     } catch (err) {
@@ -1154,36 +1356,69 @@ function AnotarDeudaModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+      <div
+        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+          conProductos ? 'max-w-xl' : 'max-w-sm'
+        }`}
+      >
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Anotar deuda de {cliente.nombre}</h2>
-          <p className="text-xs text-slate-400">Hoy debe {formatearMoneda(saldo)}</p>
+          <p className="text-xs text-slate-400">Hoy: {textoDeSaldo(saldo).toLowerCase()}</p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
-          <div>
-            <label className="label">Monto que debe</label>
-            <input
-              className="input"
-              inputMode="decimal"
-              value={monto}
-              onChange={(e) => setMonto(e.target.value.replace(/[^0-9.,]/g, ''))}
-              autoFocus
-              required
-            />
-            {monto.trim() !== '' && (
-              <p className={`mt-1 text-xs ${montoValido ? 'text-slate-500' : 'text-red-600'}`}>
-                {montoValido
-                  ? `Se le suman ${formatearMonedaConCentavos(montoNum)}: pasa a deber ${formatearMonedaConCentavos(saldo + montoNum)}`
-                  : 'Ese monto no es un número válido.'}
-              </p>
-            )}
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto px-5 py-4">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+            {[
+              { valor: true, texto: 'Con productos' },
+              { valor: false, texto: 'Sólo un monto' },
+            ].map((o) => (
+              <button
+                key={o.texto}
+                type="button"
+                onClick={() => setConProductos(o.valor)}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  conProductos === o.valor ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {o.texto}
+              </button>
+            ))}
           </div>
+
+          {conProductos ? (
+            <div>
+              <label className="label">Qué productos debe</label>
+              <EditorDeProductos filas={filas} onChange={setFilas} />
+            </div>
+          ) : (
+            <div>
+              <label className="label">Monto que debe</label>
+              <input
+                className="input"
+                inputMode="decimal"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value.replace(/[^0-9.,]/g, ''))}
+                autoFocus
+              />
+            </div>
+          )}
+          {montoNum > 0 && Number.isFinite(montoNum) && (
+            <p className="-mt-2 text-xs text-slate-500">
+              Se le suman {formatearMonedaConCentavos(montoNum)}:{' '}
+              {saldo + montoNum >= 0
+                ? `pasa a deber ${formatearMonedaConCentavos(saldo + montoNum)}`
+                : `le quedan ${formatearMonedaConCentavos(-(saldo + montoNum))} a favor`}
+            </p>
+          )}
+          {!conProductos && monto.trim() !== '' && !montoValido && (
+            <p className="-mt-2 text-xs text-red-600">Ese monto no es un número válido.</p>
+          )}
+
           <div>
-            <label className="label">Detalle (opcional)</label>
+            <label className="label">Nota (opcional)</label>
             <input
               className="input"
               maxLength={200}
-              placeholder="Ej: del cuaderno, fiambre del 3/10"
+              placeholder="Ej: del cuaderno de octubre"
               value={detalle}
               onChange={(e) => setDetalle(e.target.value)}
             />
@@ -1305,6 +1540,7 @@ function EditarClienteModal({
 function RegistrarPagoModal({
   cliente,
   saldo,
+  sugerido,
   onCerrar,
   onRegistrado,
 }: {
@@ -1313,10 +1549,13 @@ function RegistrarPagoModal({
    * cliente.saldo de la lista (ése es una foto de cuando se abrió la pantalla
    * y no incluía los pagos registrados desde entonces). */
   saldo: number;
+  /** Si se llegó desde una deuda puntual: el monto y la nota que van ya escritos. */
+  sugerido: SugerenciaDePago | null;
   onCerrar: () => void;
   onRegistrado: () => void;
 }) {
-  const [monto, setMonto] = useState('');
+  const [monto, setMonto] = useState(() => (sugerido ? String(sugerido.monto).replace('.', ',') : ''));
+  const [nota, setNota] = useState(sugerido?.nota ?? '');
   const [metodoPago, setMetodoPago] = useState<MetodoPago>('efectivo');
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -1336,7 +1575,7 @@ function RegistrarPagoModal({
     setGuardando(true);
     setError(null);
     try {
-      await window.api.clientes.registrarPago(cliente.id, num, null, metodoPago);
+      await window.api.clientes.registrarPago(cliente.id, num, nota.trim() || null, metodoPago);
       onRegistrado();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo registrar el pago');
@@ -1350,13 +1589,24 @@ function RegistrarPagoModal({
       <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Registrar pago de {cliente.nombre}</h2>
-          <p className="text-xs text-slate-400">Debe {formatearMoneda(saldo)}</p>
+          <p className="text-xs text-slate-400">{textoDeSaldo(saldo)}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
           <div>
-            <label className="label">Monto que paga</label>
+            <div className="flex items-center justify-between">
+              <label className="label !mb-0">Monto que paga</label>
+              {saldo > 0 && (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-brand-600 hover:underline"
+                  onClick={() => setMonto(String(saldo).replace('.', ','))}
+                >
+                  Paga todo ({formatearMoneda(saldo)})
+                </button>
+              )}
+            </div>
             <input
-              className="input"
+              className="input mt-1"
               inputMode="decimal"
               value={monto}
               onChange={(e) => setMonto(e.target.value.replace(/[^0-9.,]/g, ''))}
@@ -1372,6 +1622,8 @@ function RegistrarPagoModal({
                   : 'Ese monto no es un número válido.'}
               </p>
             )}
+            {sugerido?.aviso && <p className="mt-1 text-xs text-amber-600">{sugerido.aviso}</p>}
+            <p className="mt-1 text-xs text-slate-400">Lo que paga se descuenta de lo más viejo primero.</p>
           </div>
           <div>
             <label className="label">Con qué paga</label>
@@ -1391,6 +1643,16 @@ function RegistrarPagoModal({
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="label">Nota (opcional)</label>
+            <input
+              className="input"
+              maxLength={200}
+              placeholder="Ej: dejó una parte, el resto el viernes"
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+            />
           </div>
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}

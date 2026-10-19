@@ -231,6 +231,182 @@ function entradaArticulo(base) {
     ok(rep.cantidadVentas === 0 && rep.porDia.length === 3 && rep.porDia.every((d) => d.cantidadVentas === 0 && d.totalPagos > 0), 'sin ventas ese mes, el reporte igual trae los 3 días con pagos');
     const repHoy = (await api('GET', `/api/reportes/ventas?desde=${encodeURIComponent(haceDias(1))}&hasta=${encodeURIComponent(new Date(Date.now() + DIA).toISOString())}`, undefined, token)).data;
     ok(repHoy.totalPagos === pagosDeHoy && repHoy.totalCobrado === 300, 'el reporte de los últimos días: pagos $1000 y ventas cobradas $300, cada uno en su lugar');
+    // ------------------------------------------------------------------ productos en la deuda anotada
+    log('\n[7] La deuda anotada a mano con la lista de productos');
+    const deudaCon = (id, items, extra = {}) =>
+      api('POST', `/api/clientes/${id}/deuda`, { monto: 1, nota: null, fecha: haceDias(30), items, ...extra }, token);
+    const rosa = await crearCliente('ROSA PRODUCTOS');
+    const cuaderno = [
+      { descripcion: 'Fiambre de jamón cocido (kg)', cantidad: 0.5, precioUnitario: 9000 },
+      { descripcion: 'Queso cremoso', cantidad: 1, precioUnitario: 4800 },
+      { descripcion: '  Pan   lactal  ', cantidad: 2, precioUnitario: 2100 },
+    ];
+    r = await deudaCon(rosa.id, cuaderno, { nota: 'Cuaderno de septiembre' });
+    ok(r.ok === true, 'se anota una deuda con 3 productos');
+    c = await de(rosa.id);
+    ok(c.saldo === 4500 + 4800 + 4200, `debe lo que suman los productos: $13.500 (aunque la pantalla mande otro monto): ${c.saldo}`);
+    hist = (await api('GET', `/api/clientes/${rosa.id}/historial`, undefined, token)).data;
+    const mov = hist.find((m) => m.tipo === 'ajuste');
+    ok(mov.descripcion === 'Cuaderno de septiembre' && mov.monto === 13500, 'en su cuenta queda con la nota y el total');
+    ok(mov.items?.length === 3 && mov.items[0].descripcion.startsWith('Fiambre') && mov.items[0].cantidad === 0.5 && mov.items[0].precioUnitario === 9000, 'y con cada producto, su cantidad (también por kilo) y su precio');
+    ok(mov.items[2].descripcion === 'Pan lactal', 'los espacios de más del nombre se limpian');
+    r = await api('POST', `/api/clientes/${rosa.id}/deuda`, { monto: 700, nota: 'solo monto', fecha: haceDias(10) }, token);
+    hist = (await api('GET', `/api/clientes/${rosa.id}/historial`, undefined, token)).data;
+    ok(r.ok && hist.find((m) => m.descripcion === 'solo monto').items === null, 'una deuda anotada sólo con el monto sigue andando (sin productos)');
+
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: '', cantidad: 1, precioUnitario: 5 }]), 'le falta el nombre'), 'un producto sin nombre se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X', cantidad: 0, precioUnitario: 5 }]), 'cantidad.*mayor a cero'), 'una cantidad de cero se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X', cantidad: 1, precioUnitario: -5 }]), 'precio.*no es v'), 'un precio negativo se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X', cantidad: 1, precioUnitario: 0 }]), 'total.*mayor a cero'), 'si todo vale cero, se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X', cantidad: '2', precioUnitario: 5 }]), 'cantidad'), 'una cantidad que no es número se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, Array.from({ length: 61 }, (_, n) => ({ descripcion: 'P' + n, cantidad: 1, precioUnitario: 1 }))), 'hasta 60'), 'más de 60 productos juntos se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X'.repeat(121), cantidad: 1, precioUnitario: 5 }]), 'demasiado largo'), 'un nombre larguísimo se rechaza');
+    ok(rechazo(await deudaCon(rosa.id, [{ descripcion: 'X', cantidad: 1, precioUnitario: 5 }], { fecha: new Date(Date.now() + 5 * DIA).toISOString() }), 'más adelante'), 'una fecha del futuro se rechaza');
+    ok(rechazo(await api('POST', `/api/clientes/${rosa.id}/deuda`, { monto: 0, items: [] }, token), 'mayor a cero'), 'sin productos y sin monto no se anota nada');
+    ok((await de(rosa.id)).saldo === 13500 + 700, 'y nada de eso modificó lo que debe ($14.200)');
+
+    // Crear un cliente con la deuda de entrada.
+    r = await api('POST', '/api/clientes', { nombre: 'NUEVO CON LISTA', nota: null, telefono: null, deudaInicial: 1, fechaInicial: haceDias(15), items: [{ descripcion: 'Yerba', cantidad: 2, precioUnitario: 3500 }, { descripcion: 'Azúcar', cantidad: 1, precioUnitario: 1200 }] }, token);
+    ok(r.ok && r.data.saldo === 8200, `un cliente nuevo puede nacer debiendo una lista de productos: $8.200 (${r.data?.saldo})`);
+    hist = (await api('GET', `/api/clientes/${r.data.id}/historial`, undefined, token)).data;
+    ok(hist.length === 1 && hist[0].descripcion === 'Saldo inicial' && hist[0].items?.length === 2, 'figura como "Saldo inicial" con sus 2 productos');
+    ok(Math.abs(new Date(r.data.deudaDesde).getTime() - (Date.now() - 15 * DIA)) < 60000, 'y debe desde la fecha que se puso (hace 15 días)');
+
+    const antes = (await lista()).length;
+    r = await api('POST', '/api/clientes', { nombre: 'FECHA ROTA', nota: null, telefono: null, deudaInicial: 500, fechaInicial: 'no es una fecha' }, token);
+    ok(rechazo(r, 'fecha no es v'), 'crear con una fecha que no es fecha se rechaza');
+    r = await api('POST', '/api/clientes', { nombre: 'FECHA FUTURA', nota: null, telefono: null, deudaInicial: 500, fechaInicial: new Date(Date.now() + 9 * DIA).toISOString() }, token);
+    ok(rechazo(r, 'más adelante'), 'crear con una fecha del futuro se rechaza');
+    ok((await lista()).length === antes, 'y en ninguno de los dos casos queda un cliente a medias');
+    r = await api('POST', '/api/clientes', { nombre: 'SIN FECHA', nota: null, telefono: null, deudaInicial: 100 }, token);
+    ok(r.ok && Math.abs(new Date(r.data.deudaDesde).getTime() - Date.now()) < 60000, 'sin fecha, la deuda de entrada es de ahora');
+    r = await api('POST', '/api/clientes', { nombre: 'SIN DEUDA', nota: null, telefono: null, deudaInicial: 0, fechaInicial: 'cualquier cosa' }, token);
+    ok(r.ok && r.data.saldo === 0 && r.data.deudaDesde === null, 'sin deuda, la fecha no importa (no se anota nada)');
+
+    // ------------------------------------------------------------------ cuánto falta pagar de cada cosa
+    log('\n[8] Lo que paga se descuenta de lo más viejo: qué falta pagar, producto por producto');
+    const anita = await crearCliente('ANA LA DEL FIADO');
+    const alfajor = (await api('POST', '/api/articulos', entradaArticulo({ descripcion: 'ALFAJOR TRIPLE', precioVenta: 1200 }), token)).data;
+    const cola = (await api('POST', '/api/articulos', entradaArticulo({ descripcion: 'COCA COLA 1.5L', precioVenta: 2500 }), token)).data;
+    await deudaCon(anita.id, [{ descripcion: 'Fiambre', cantidad: 1, precioUnitario: 3000 }, { descripcion: 'Queso', cantidad: 1, precioUnitario: 1200 }], { nota: 'Del cuaderno', fecha: haceDias(40) });
+    const v1 = (await api('POST', '/api/ventas', { articuloId: alfajor.id, cantidad: 2, metodoPago: 'fiado', clienteId: anita.id }, token)).data;
+    const v2 = (await api('POST', '/api/ventas', { articuloId: cola.id, cantidad: 1, metodoPago: 'fiado', clienteId: anita.id }, token)).data;
+    ok((await de(anita.id)).saldo === 4200 + 2400 + 2500, 'debe $9.100 (cuaderno $4.200 + alfajores $2.400 + coca $2.500)');
+    let est = (await api('GET', `/api/clientes/${anita.id}/estado`, undefined, token)).data;
+    ok(est.pendientes.length === 3 && est.pagos.length === 0 && est.totalPagado === 0, 'sin pagos: 3 cosas pendientes y nada pagado');
+    ok(est.pendientes[0].descripcion === 'Del cuaderno' && est.pendientes[0].items.length === 2 && est.pendientes[0].resta === 4200, 'lo más viejo es el cuaderno, con sus 2 productos');
+    const lAlfajor = est.pendientes.find((l) => l.descripcion === '2 x ALFAJOR TRIPLE');
+    ok(lAlfajor && lAlfajor.items.length === 1 && lAlfajor.items[0].precioUnitario === 1200 && lAlfajor.items[0].cantidad === 2 && lAlfajor.resta === 2400, 'un fiado del mostrador trae su producto, su cantidad y el precio de cada uno');
+
+    await pago(anita.id, 3000);
+    est = (await api('GET', `/api/clientes/${anita.id}/estado`, undefined, token)).data;
+    ok(est.saldo === 6100 && est.totalPagado === 3000, 'paga $3.000: ahora debe $6.100');
+    ok(est.pendientes.length === 3 && est.pendientes[0].monto === 4200 && est.pendientes[0].resta === 1200, 'se descontó del cuaderno (lo más viejo): le quedan $1.200 de $4.200');
+    ok(est.pendientes.reduce((a, l) => a + l.resta, 0) === est.saldo, 'lo que falta pagar de cada cosa suma exactamente lo que debe');
+    hist = (await api('GET', `/api/clientes/${anita.id}/historial`, undefined, token)).data;
+    ok(hist.find((m) => m.descripcion === 'Del cuaderno').resta === 1200 && hist.find((m) => m.id === v1.id).resta === 2400, 'el historial también dice cuánto falta de cada cosa');
+    ok(hist.find((m) => m.tipo === 'pago').resta === null && hist.find((m) => m.tipo === 'pago').items === null, 'y un pago no tiene ni "falta" ni productos');
+    let ultimos = (await api('GET', '/api/ventas/ultimos-fiados?limite=10', undefined, token)).data;
+    ok(ultimos.find((v) => v.id === v1.id).resta === 2400 && ultimos.find((v) => v.id === v2.id).resta === 2500, 'la lista de últimos fiados trae cuánto falta de cada uno');
+
+    await pago(anita.id, 2500);
+    est = (await api('GET', `/api/clientes/${anita.id}/estado`, undefined, token)).data;
+    ok(est.saldo === 3600 && est.pendientes.length === 2, 'paga $2.500 más: el cuaderno ya no figura (quedó cubierto) y debe $3.600');
+    ok(est.pendientes[0].descripcion === '2 x ALFAJOR TRIPLE' && est.pendientes[0].resta === 1100 && est.pendientes[0].monto === 2400, 'se empezó a pagar los alfajores: faltan $1.100 de $2.400');
+    ok(est.pendientes[1].resta === 2500, 'la coca sigue completa');
+    ultimos = (await api('GET', '/api/ventas/ultimos-fiados?limite=10', undefined, token)).data;
+    ok(ultimos.find((v) => v.id === v1.id).resta === 1100 && ultimos.find((v) => v.id === v2.id).resta === 2500, 'en últimos fiados, los alfajores figuran "faltan $1.100"');
+    c = await de(anita.id);
+    ok(Math.abs(new Date(c.deudaDesde).getTime() - new Date(v1.fecha).getTime()) < 5, 'y debe desde la fecha de los alfajores (lo más viejo que sigue sin cubrirse)');
+
+    await pago(anita.id, 5000);
+    est = (await api('GET', `/api/clientes/${anita.id}/estado`, undefined, token)).data;
+    ok(est.saldo === -1400 && est.pendientes.length === 0 && est.totalPagado === 10500, 'si paga de más: no queda nada pendiente y tiene $1.400 a favor');
+    ultimos = (await api('GET', '/api/ventas/ultimos-fiados?limite=10', undefined, token)).data;
+    ok(ultimos.find((v) => v.id === v1.id).resta === 0 && ultimos.find((v) => v.id === v2.id).resta === 0, 'y en últimos fiados los dos figuran cubiertos');
+
+    // Un fiado marcado como pagado a mano (como se hacía antes) no cuenta; un descuento (ajuste que resta) cubre como un pago.
+    const beto = await crearCliente('BETO CON DESCUENTO');
+    await deudaCon(beto.id, [{ descripcion: 'Cosas', cantidad: 1, precioUnitario: 1000 }], { nota: 'Primero', fecha: haceDias(30) });
+    await deudaCon(beto.id, [{ descripcion: 'Más cosas', cantidad: 1, precioUnitario: 600 }], { nota: 'Segundo', fecha: haceDias(10) });
+    const vb = (await api('POST', '/api/ventas', { articuloId: alfajor.id, cantidad: 1, metodoPago: 'fiado', clienteId: beto.id }, token)).data;
+    await api('POST', `/api/ventas/${vb.id}/pagado`, { pagado: true }, token);
+    const c3 = new MongoClient(MONGO);
+    await c3.connect();
+    await c3.db(DB).collection('ajustes_cuenta').insertOne({ _id: new ObjectId(), clienteId: new ObjectId(beto.id), monto: -400, fecha: haceDias(5), usuarioId: new ObjectId(idAdmin), nota: 'Descuento por pronto pago' });
+    await c3.close();
+    est = (await api('GET', `/api/clientes/${beto.id}/estado`, undefined, token)).data;
+    ok(est.saldo === 1200, `debe 1000 + 600 - 400 de descuento, sin contar el fiado marcado como pagado: $1.200 (${est.saldo})`);
+    ok(est.pendientes.length === 2 && est.pendientes[0].resta === 600 && est.pendientes[1].resta === 600, 'el descuento de $400 se aplicó a lo más viejo: $1.000 pasó a $600');
+    ok(est.pagos.length === 1 && est.pagos[0].monto === 400 && /Descuento/.test(est.pagos[0].descripcion), 'y el descuento figura entre lo que se descontó');
+    ok((await de(beto.id)).saldo === 1200, 'la lista de clientes dice lo mismo ($1.200)');
+
+    // Dos deudas con exactamente la misma fecha (pasa: la fecha llega hasta el minuto): siempre se cubre primero la que se anotó antes.
+    const gemelos = await crearCliente('GEMELOS DE FECHA');
+    const mismaFecha = haceDias(7);
+    await deudaCon(gemelos.id, [{ descripcion: 'Primera cosa', cantidad: 1, precioUnitario: 1000 }], { nota: 'Primera', fecha: mismaFecha });
+    await deudaCon(gemelos.id, [{ descripcion: 'Segunda cosa', cantidad: 1, precioUnitario: 500 }], { nota: 'Segunda', fecha: mismaFecha });
+    await pago(gemelos.id, 1000);
+    est = (await api('GET', `/api/clientes/${gemelos.id}/estado`, undefined, token)).data;
+    ok(est.pendientes.length === 1 && est.pendientes[0].descripcion === 'Segunda' && est.pendientes[0].resta === 500, 'con la misma fecha exacta, se cubre primero lo que se anotó antes: queda pendiente "Segunda" ($500)');
+    hist = (await api('GET', `/api/clientes/${gemelos.id}/historial`, undefined, token)).data;
+    ok(hist.find((m) => m.descripcion === 'Primera').resta === 0 && hist.find((m) => m.descripcion === 'Segunda').resta === 500, 'y el historial dice lo mismo');
+    ok(hist[0].descripcion === 'Pago recibido' || hist[0].descripcion === 'Segunda', 'el historial va de lo más nuevo a lo más viejo, también con fechas iguales');
+
+    // El PDF dice qué productos debe.
+    log('\n[9] El PDF dice qué productos tiene que pagar');
+    const carla = await crearCliente('CARLA DEL MOSTRADOR');
+    await api('POST', '/api/ventas', { articuloId: alfajor.id, cantidad: 2, metodoPago: 'fiado', clienteId: carla.id }, token);
+    await api('POST', '/api/ventas', { articuloId: cola.id, cantidad: 1, metodoPago: 'fiado', clienteId: carla.id }, token);
+    const pdfCarla = Buffer.from((await api('GET', `/api/clientes/${carla.id}/estado-pdf`, undefined, token)).data, 'base64').toString('latin1');
+    ok(pdfCarla.includes('2 x ALFAJOR TRIPLE') && pdfCarla.includes('1 x COCA COLA 1.5L'), 'lista los productos del mostrador por su nombre y cantidad');
+    ok(pdfCarla.includes('1.200,00 cada uno'), 'y el precio de cada alfajor');
+    const pdf = Buffer.from((await api('GET', `/api/clientes/${anita.id}/estado-pdf`, undefined, token)).data, 'base64').toString('latin1');
+    const pdfRosa = Buffer.from((await api('GET', `/api/clientes/${rosa.id}/estado-pdf`, undefined, token)).data, 'base64').toString('latin1');
+    ok(pdfRosa.includes('Fiambre de') && pdfRosa.includes('Queso cremoso') && pdfRosa.includes('Pan lactal'), 'lista los productos de lo anotado a mano');
+    ok(pdfRosa.includes('0,5 x Fiambre') && pdfRosa.includes('c/u'), 'con su cantidad y el precio de cada uno');
+    ok(pdfRosa.includes('Cuaderno de septiembre') && pdfRosa.includes('FALTA PAGAR'), 'y la nota, con la columna "falta pagar"');
+    const pdfBeto = Buffer.from((await api('GET', `/api/clientes/${beto.id}/estado-pdf`, undefined, token)).data, 'base64').toString('latin1');
+    ok(pdfBeto.includes('Lo que ya pag') && pdfBeto.includes('1.200,00'), 'si ya pagó algo, el PDF lo aclara y muestra el total');
+    ok(!pdf.includes('Del cuaderno'), 'lo que ya quedó cubierto (el cuaderno de Ana) ya no aparece entre lo pendiente');
+
+    // Un pago con nota; y la nota se limpia y se corta.
+    const ben = await crearCliente('BEN LAS NOTAS');
+    await deudaCon(ben.id, [{ descripcion: 'X', cantidad: 1, precioUnitario: 900 }]);
+    await api('POST', `/api/clientes/${ben.id}/pago`, { monto: 100, nota: '   dejó una parte   ', metodoPago: 'efectivo' }, token);
+    await api('POST', `/api/clientes/${ben.id}/pago`, { monto: 50, nota: 'z'.repeat(500), metodoPago: 'efectivo' }, token);
+    await api('POST', `/api/clientes/${ben.id}/pago`, { monto: 25, nota: '   ', metodoPago: 'efectivo' }, token);
+    hist = (await api('GET', `/api/clientes/${ben.id}/historial`, undefined, token)).data.filter((m) => m.tipo === 'pago');
+    ok(hist.some((m) => m.descripcion === 'dejó una parte'), 'la nota de un pago se guarda sin espacios de más');
+    ok(hist.some((m) => m.descripcion.length === 200), 'y se corta en 200 letras');
+    ok(hist.some((m) => m.monto === 25 && m.descripcion === 'Pago recibido'), 'una nota en blanco queda como "Pago recibido"');
+    // ------------------------------------------------------------------ la cuenta, sin base de datos
+    log('\n[10] El reparto de los pagos (la cuenta sola, con casos raros)');
+    const { repartirPagos, deudaDesdeDe, normalizarItemsDeuda, aclaracionesDeLinea } = require(path.join(RAIZ, 'dist-electron/shared/cuentaCorriente.js'));
+    const L = (id, fecha, monto) => ({ id, fecha, monto });
+    let rp = repartirPagos([L('b', '2026-02-01', 300), L('a', '2026-01-01', 200), L('c', '2026-03-01', 100)], 250);
+    ok(rp.get('a') === 0 && rp.get('b') === 250 && rp.get('c') === 100, 'se paga de lo más viejo a lo más nuevo, sin importar en qué orden vengan');
+    rp = repartirPagos([L('a', '2026-01-01', 0.1), L('b', '2026-01-02', 0.2), L('c', '2026-01-03', 5)], 0.3);
+    ok(rp.get('a') === 0 && rp.get('b') === 0 && rp.get('c') === 5, 'con decimales (0,1 + 0,2 = 0,3) no queda un centavo fantasma');
+    rp = repartirPagos([L('b', '2026-01-01', 100), L('a', '2026-01-01', 100)], 100);
+    ok(rp.get('a') === 0 && rp.get('b') === 100, 'con la misma fecha manda el orden de creación (el id), venga como venga la lista');
+    rp = repartirPagos([L('a', '2026-01-01', 0), L('b', '2026-01-02', -50), L('c', '2026-01-03', 80)], 30);
+    ok(!rp.has('a') && !rp.has('b') && rp.get('c') === 50, 'lo que vale cero o es negativo no es deuda y se ignora');
+    rp = repartirPagos([L('a', '2026-01-01', 100)], -500);
+    ok(rp.get('a') === 100, 'un crédito negativo no aumenta la deuda');
+    rp = repartirPagos([], 100);
+    ok(rp.size === 0, 'sin deudas no hay nada que repartir');
+    ok(deudaDesdeDe([L('a', '2026-01-01', 100), L('b', '2026-02-01', 100)], 100) === '2026-02-01', 'debe desde la fecha de lo primero que no quedó cubierto');
+    ok(deudaDesdeDe([L('a', '2026-01-01', 100), L('b', '2026-02-01', 100)], 150) === '2026-02-01', 'una parte pagada de lo segundo: sigue debiendo desde ahí');
+    ok(deudaDesdeDe([L('a', '2026-01-01', 100)], 100) === null && deudaDesdeDe([], 0) === null, 'si no debe nada, no hay fecha');
+    ok(deudaDesdeDe([L('b', '2026-02-01', 100), L('a', '2026-01-01', 100)], 0) === '2026-01-01', 'sin pagos: desde la deuda más vieja');
+    let n = normalizarItemsDeuda([{ descripcion: ' Pan ', cantidad: 3, precioUnitario: 0.1 }, { descripcion: 'Leche', cantidad: 1.2345, precioUnitario: 100 }]);
+    ok(n.items[1].cantidad === 1.235 && n.total === 123.8, `la cantidad se redondea a 3 decimales y el total no arrastra restos (${n.total})`);
+    ok(n.items[0].descripcion === 'Pan', 'el nombre se limpia');
+    ok(aclaracionesDeLinea({ descripcion: '2 x ALFAJOR', items: [{ descripcion: 'ALFAJOR', cantidad: 2, precioUnitario: 1200 }] }).join('|').includes('1.200,00 cada uno'), 'un fiado de varias unidades aclara el precio de cada una');
+    ok(aclaracionesDeLinea({ descripcion: '1 x ALFAJOR', items: [{ descripcion: 'ALFAJOR', cantidad: 1, precioUnitario: 1200 }] }).length === 0, 'uno solo no repite el precio');
+    ok(aclaracionesDeLinea({ descripcion: 'Del cuaderno', items: [{ descripcion: 'Pan', cantidad: 2, precioUnitario: 100 }] })[0].replace(/ /g, ' ') === '2 x Pan · $ 100,00 c/u · $ 200,00', 'una deuda anotada a mano lista cada producto con su precio y subtotal');
+    ok(aclaracionesDeLinea({ descripcion: 'Cualquiera' }).length === 0, 'sin productos no aclara nada');
   } catch (e) {
     fallas += 1;
     log('\n✗ ERROR EN LA PRUEBA:', e.message);

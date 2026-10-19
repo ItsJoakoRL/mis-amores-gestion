@@ -646,11 +646,12 @@ export async function iniciarServidorWeb(
     '/api/clientes',
     ruta((req) => {
       const sesion = requiereSesion(req);
-      const { deudaInicial, fechaInicial, ...input } = req.body as ClienteInput & {
+      const { deudaInicial, fechaInicial, items, ...input } = req.body as ClienteInput & {
         deudaInicial: number;
         fechaInicial?: string;
+        items?: unknown;
       };
-      return crearCliente(input, deudaInicial, sesion.id, fechaInicial);
+      return crearCliente(input, deudaInicial, sesion.id, fechaInicial, items);
     })
   );
   app.get(
@@ -715,8 +716,13 @@ export async function iniciarServidorWeb(
     '/api/clientes/:id/deuda',
     ruta(async (req) => {
       const sesion = requiereSesion(req);
-      const { monto, nota, fecha } = req.body as { monto: number; nota: string | null; fecha?: string };
-      await registrarAjuste(req.params.id as string, monto, nota ?? null, sesion.id, fecha);
+      const { monto, nota, fecha, items } = req.body as {
+        monto: number;
+        nota: string | null;
+        fecha?: string;
+        items?: unknown;
+      };
+      await registrarAjuste(req.params.id as string, monto, nota ?? null, sesion.id, fecha, items);
       return true;
     })
   );

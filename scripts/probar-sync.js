@@ -973,6 +973,25 @@ async function extras() {
   ok(true, 'un pago recibido en A figura en lo cobrado de hoy en B');
   await hasta(coinciden, 'que coincidan al final', 40000);
   ok(true, 'las dos PCs siguen idénticas');
+
+  // ---- 25. Deudas con productos y "qué falta pagar": lo mismo en las dos PCs ----
+  log('\n[25] Deuda anotada con productos y lo que falta pagar, entre dos PCs');
+  const cliente25 = await api(pcs.A, 'POST', '/api/clientes', { nombre: 'CLIENTE SYNC 25', nota: null, telefono: null, deudaInicial: 1, fechaInicial: new Date(Date.now() - 20 * 86400000).toISOString(), items: [{ descripcion: 'Fiambre', cantidad: 0.5, precioUnitario: 9000 }, { descripcion: 'Pan', cantidad: 2, precioUnitario: 2100 }] });
+  ok(cliente25.saldo === 8700, 'A crea un cliente que debe 2 productos ($8.700)');
+  await hasta(async () => (await api(pcs.B, 'GET', `/api/clientes/${cliente25.id}/historial`)).some((m) => m.items?.length === 2), 'que B vea los productos de la deuda');
+  const hist25 = await api(pcs.B, 'GET', `/api/clientes/${cliente25.id}/historial`);
+  ok(hist25[0].items[0].descripcion === 'Fiambre' && hist25[0].items[0].cantidad === 0.5 && hist25[0].items[1].precioUnitario === 2100, 'B ve cada producto con su cantidad y su precio (la lista viajó entera)');
+  await api(pcs.B, 'POST', `/api/clientes/${cliente25.id}/deuda`, { monto: 1, nota: 'otro cuaderno', fecha: new Date(Date.now() - 5 * 86400000).toISOString(), items: [{ descripcion: 'Queso', cantidad: 1, precioUnitario: 4800 }] });
+  await hasta(async () => (await api(pcs.A, 'GET', `/api/clientes/${cliente25.id}/estado`)).pendientes.length === 2, 'que A vea la deuda que anotó B');
+  await api(pcs.A, 'POST', `/api/clientes/${cliente25.id}/pago`, { monto: 5000, nota: 'dejó una parte', metodoPago: 'efectivo' });
+  await hasta(async () => (await api(pcs.B, 'GET', `/api/clientes/${cliente25.id}/estado`)).totalPagado === 5000, 'que B vea el pago de A');
+  const estA = await api(pcs.A, 'GET', `/api/clientes/${cliente25.id}/estado`);
+  const estB = await api(pcs.B, 'GET', `/api/clientes/${cliente25.id}/estado`);
+  ok(estA.saldo === 8500 && estB.saldo === 8500, 'las dos PCs dicen que debe $8.500 (8.700 + 4.800 - 5.000)');
+  ok(JSON.stringify(estA.pendientes) === JSON.stringify(estB.pendientes), 'y las dos listan exactamente lo mismo como pendiente');
+  ok(estA.pendientes[0].resta === 3700 && estA.pendientes[0].monto === 8700 && estA.pendientes[1].resta === 4800, 'el pago se descontó de lo más viejo: quedan $3.700 de los $8.700 y los $4.800 del queso');
+  await hasta(coinciden, 'que coincidan después de la deuda con productos', 40000);
+  ok(true, 'las dos PCs siguen idénticas');
 }
 
 async function todo() {

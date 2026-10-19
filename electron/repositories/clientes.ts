@@ -1,8 +1,23 @@
 import { ObjectId, type Collection } from 'mongodb';
 import { getDb } from '../db/database';
 import { formatearCantidad } from '../../shared/formato';
+import {
+  compararAntiguedad,
+  deudaDesdeDe,
+  normalizarItemsDeuda,
+  repartirPagos,
+  type LineaDeuda,
+} from '../../shared/cuentaCorriente';
 import { DIA_LOCAL_EXPR, limitesDiaLocalYMD } from '../fechaLocal';
-import type { Cliente, ClienteInput, EstadoCuenta, MetodoPago, MovimientoCuenta, PagoCuentaDelDia } from '../../shared/types';
+import type {
+  Cliente,
+  ClienteInput,
+  EstadoCuenta,
+  ItemDeuda,
+  MetodoPago,
+  MovimientoCuenta,
+  PagoCuentaDelDia,
+} from '../../shared/types';
 
 // Con qué se puede pagar una deuda — "fiado" no: sería pagar una deuda con otra.
 const METODOS_PAGO_CUENTA: readonly MetodoPago[] = ['efectivo', 'tarjeta', 'transferencia'];
@@ -130,7 +145,24 @@ export async function listClientes(): Promise<Cliente[]> {
 async function deudaDesdeDeLosQueDeben(deben: Array<{ id: ObjectId; totalPagos: number }>): Promise<Map<string, string>> {
   const resultado = new Map<string, string>();
   if (deben.length === 0) return resultado;
-  const ids = deben.map((d) => d.id);
+  const cuentas = await lineasPendientesDe(deben.map((d) => d.id));
+  for (const { id, totalPagos } of deben) {
+    const k = id.toHexString();
+    const cuenta = cuentas.get(k);
+    if (!cuenta) continue;
+    // Un descuento (ajuste negativo) cubre deuda igual que un pago.
+    const desde = deudaDesdeDe(cuenta.lineas, totalPagos + cuenta.descuentos);
+    if (desde) resultado.set(k, desde);
+  }
+  return resultado;
+}
+
+// Lo que debe cada cliente, línea por línea: los fiados que no se marcaron como pagados y
+// las deudas anotadas a mano. Los descuentos (ajustes que restan) van aparte: cubren deuda
+// como un pago. Dos consultas para todos juntos (no una por cliente).
+async function lineasPendientesDe(ids: ObjectId[]): Promise<Map<string, { lineas: LineaDeuda[]; descuentos: number }>> {
+  const porCliente = new Map<string, { lineas: LineaDeuda[]; descuentos: number }>();
+  if (ids.length === 0) return porCliente;
   const db = getDb();
   const [ventas, ajustes] = await Promise.all([
     db
@@ -139,30 +171,45 @@ async function deudaDesdeDeLosQueDeben(deben: Array<{ id: ObjectId; totalPagos: 
       .toArray(),
     db.collection('ajustes_cuenta').find({ clienteId: { $in: ids } }, { projection: { clienteId: 1, fecha: 1, monto: 1 } }).toArray(),
   ]);
-  const porCliente = new Map<string, Array<{ fecha: string; monto: number }>>();
-  const agregar = (clienteId: ObjectId, fecha: string, monto: number) => {
+  const de = (clienteId: ObjectId) => {
     const k = clienteId.toHexString();
-    if (!porCliente.has(k)) porCliente.set(k, []);
-    porCliente.get(k)!.push({ fecha, monto });
+    let c = porCliente.get(k);
+    if (!c) porCliente.set(k, (c = { lineas: [], descuentos: 0 }));
+    return c;
   };
-  for (const v of ventas) agregar(v.clienteId as ObjectId, String(v.fecha), Number(v.total) || 0);
-  for (const a of ajustes) agregar(a.clienteId as ObjectId, String(a.fecha), Number(a.monto) || 0);
-  for (const { id, totalPagos } of deben) {
-    const k = id.toHexString();
-    const lineas = (porCliente.get(k) ?? []).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
-    // Un descuento (ajuste negativo) cubre deuda igual que un pago.
-    let credito = totalPagos + lineas.filter((l) => l.monto < 0).reduce((acc, l) => acc - l.monto, 0);
-    for (const l of lineas) {
-      if (l.monto <= 0) continue;
-      if (credito >= l.monto - 0.005) {
-        credito -= l.monto;
-        continue;
-      }
-      resultado.set(k, l.fecha);
-      break;
-    }
+  for (const v of ventas) {
+    de(v.clienteId as ObjectId).lineas.push({ id: String(v._id), fecha: String(v.fecha), monto: Number(v.total) || 0 });
   }
-  return resultado;
+  for (const a of ajustes) {
+    const monto = Number(a.monto) || 0;
+    const cuenta = de(a.clienteId as ObjectId);
+    if (monto < 0) cuenta.descuentos -= monto;
+    else cuenta.lineas.push({ id: String(a._id), fecha: String(a.fecha), monto });
+  }
+  return porCliente;
+}
+
+/** Cuánto falta pagar de cada fiado (por id de venta) de estos clientes, con los pagos de
+ * cada uno descontados de lo más viejo a lo más nuevo. Los fiados marcados como pagados a
+ * mano no figuran. */
+export async function restasDeFiados(clienteIds: ObjectId[]): Promise<Map<string, number>> {
+  const restas = new Map<string, number>();
+  if (clienteIds.length === 0) return restas;
+  const [cuentas, pagos] = await Promise.all([
+    lineasPendientesDe(clienteIds),
+    getDb()
+      .collection('pagos_cuenta')
+      .aggregate<{ _id: ObjectId; total: number }>([
+        { $match: { clienteId: { $in: clienteIds } } },
+        { $group: { _id: '$clienteId', total: { $sum: '$monto' } } },
+      ])
+      .toArray(),
+  ]);
+  const pagado = new Map(pagos.map((p) => [p._id.toHexString(), p.total]));
+  for (const [k, cuenta] of cuentas) {
+    for (const [id, resta] of repartirPagos(cuenta.lineas, (pagado.get(k) ?? 0) + cuenta.descuentos)) restas.set(id, resta);
+  }
+  return restas;
 }
 
 function esErrorDuplicado(err: unknown): boolean {
@@ -174,19 +221,46 @@ function esErrorDuplicado(err: unknown): boolean {
 // no inventar una venta que nunca pasó por la caja. `fechaInicial` deja
 // anotar cuándo empezó a deber en realidad (puede ser de hace rato), en vez
 // de que siempre quede fechado hoy.
+// La fecha desde la que se debe algo anotado a mano: puede ser de hace rato, pero no del
+// futuro. Sin fecha, es ahora.
+function resolverFechaDeDeuda(fecha: unknown): string {
+  if (fecha === undefined || fecha === null || fecha === '') return new Date().toISOString();
+  const f = typeof fecha === 'string' ? new Date(fecha) : null;
+  if (!f || Number.isNaN(f.getTime())) throw new Error('La fecha no es válida');
+  if (f.getTime() > Date.now() + 60_000) throw new Error('La fecha no puede ser de más adelante');
+  return f.toISOString();
+}
+
+// Lo que se anota a mano: o un monto solo, o una lista de productos (y entonces el monto
+// es lo que suman: el que manda la pantalla se ignora).
+function resolverDeudaAnotada(monto: unknown, items: unknown): { monto: number; items: ItemDeuda[] | null } {
+  if (Array.isArray(items) && items.length > 0) {
+    const r = normalizarItemsDeuda(items);
+    return { monto: r.total, items: r.items };
+  }
+  if (typeof monto !== 'number' || !(monto > 0) || !Number.isFinite(monto) || monto > 1e9) {
+    throw new Error('El monto de la deuda tiene que ser mayor a cero');
+  }
+  return { monto: redondearPesos(monto), items: null };
+}
+
 export async function crearCliente(
   input: ClienteInput,
   deudaInicial: number,
   usuarioId: string,
-  fechaInicial?: string
+  fechaInicial?: string,
+  items?: unknown
 ): Promise<Cliente> {
   const nombre = typeof input.nombre === 'string' ? input.nombre.trim() : '';
   if (!nombre) throw new Error('Ingresá el nombre del cliente');
   // Un monto que no es un número (NaN, texto) se toma como "no debe nada"
   // en vez de guardarse tal cual y romper el saldo del cliente.
-  const deuda = typeof deudaInicial === 'number' && Number.isFinite(deudaInicial) && deudaInicial > 0
-    ? redondearPesos(deudaInicial)
-    : 0;
+  const hayProductos = Array.isArray(items) && items.length > 0;
+  const hayMonto = typeof deudaInicial === 'number' && Number.isFinite(deudaInicial) && deudaInicial > 0;
+  const deudaAnotada = hayProductos || hayMonto ? resolverDeudaAnotada(deudaInicial, items) : null;
+  const deuda = deudaAnotada?.monto ?? 0;
+  // Se revisa antes de crear al cliente: con una fecha mala no tiene que quedar a medias.
+  const fechaDeuda = deuda > 0 ? resolverFechaDeDeuda(fechaInicial) : null;
   const telefono = limpiarTelefono(input.telefono);
   const doc: Omit<ClienteDoc, '_id'> = {
     nombre,
@@ -203,9 +277,10 @@ export async function crearCliente(
         .insertOne({
           clienteId: result.insertedId,
           monto: deuda,
-          fecha: fechaInicial || new Date().toISOString(),
+          fecha: fechaDeuda as string,
           usuarioId: new ObjectId(usuarioId),
           nota: 'Saldo inicial',
+          ...(deudaAnotada?.items ? { items: deudaAnotada.items } : {}),
         });
     }
     return {
@@ -216,7 +291,7 @@ export async function crearCliente(
       activo: true,
       saldo: deuda,
       ultimoFiado: null,
-      deudaDesde: deuda > 0 ? (fechaInicial || doc.creadoEn) : null,
+      deudaDesde: deuda > 0 ? fechaDeuda : null,
     };
   } catch (err) {
     if (esErrorDuplicado(err)) throw new Error('Ya existe un cliente con ese nombre');
@@ -250,28 +325,22 @@ export async function registrarAjuste(
   monto: number,
   nota: string | null,
   usuarioId: string,
-  fecha?: string
+  fecha?: string,
+  items?: unknown
 ): Promise<void> {
-  if (typeof monto !== 'number' || !(monto > 0) || !Number.isFinite(monto) || monto > 1e9) {
-    throw new Error('El monto de la deuda tiene que ser mayor a cero');
-  }
+  const deuda = resolverDeudaAnotada(monto, items);
   if (!(await existeClienteActivo(clienteId))) throw new Error('Ese cliente ya no está en la lista');
-  let cuando = new Date();
-  if (fecha !== undefined && fecha !== null && fecha !== '') {
-    const f = new Date(fecha);
-    if (typeof fecha !== 'string' || Number.isNaN(f.getTime())) throw new Error('La fecha no es válida');
-    if (f.getTime() > Date.now() + 60_000) throw new Error('La fecha no puede ser de más adelante');
-    cuando = f;
-  }
+  const cuando = resolverFechaDeDeuda(fecha);
   const detalle = typeof nota === 'string' ? nota.trim().slice(0, 200) : '';
   await getDb()
     .collection('ajustes_cuenta')
     .insertOne({
       clienteId: new ObjectId(clienteId),
-      monto: redondearPesos(monto),
-      fecha: cuando.toISOString(),
+      monto: deuda.monto,
+      fecha: cuando,
       usuarioId: new ObjectId(usuarioId),
       nota: detalle || 'Deuda anotada',
+      ...(deuda.items ? { items: deuda.items } : {}),
     });
 }
 
@@ -353,7 +422,7 @@ export async function registrarPago(
       monto: redondearPesos(monto),
       fecha: new Date().toISOString(),
       usuarioId: new ObjectId(usuarioId),
-      nota,
+      nota: typeof nota === 'string' ? nota.trim().slice(0, 200) || null : null,
       metodoPago,
     });
 }
@@ -375,29 +444,43 @@ export async function eliminarAjuste(id: string): Promise<void> {
     .deleteOne({ _id: new ObjectId(id) });
 }
 
-// Lo que debe un cliente para mandárselo: lo que quedó anotado sin pagar (un
-// fiado ya marcado como pagado no cuenta, igual que en el saldo de la lista),
-// los pagos que hizo, y el saldo que resulta. Devuelve null si el cliente no
-// existe o ya no está en la lista.
+/// Lo que debe un cliente para mandárselo: lo que todavía tiene que pagar, producto por
+// producto, y lo que ya pagó. Los pagos se descuentan de lo más viejo primero (así lo que
+// queda anotado es lo que de verdad sigue sin pagar: un fiado viejo que ya se cubrió no
+// aparece). Un fiado marcado como pagado a mano no cuenta, igual que en el saldo de la
+// lista. Devuelve null si el cliente no existe o ya no está en la lista.
 export async function estadoDeCuenta(clienteId: string): Promise<EstadoCuenta | null> {
   if (typeof clienteId !== 'string' || !ObjectId.isValid(clienteId)) return null;
   const cliente = await coleccion().findOne({ _id: new ObjectId(clienteId), activo: true });
   if (!cliente) return null;
-  const movimientos = (await historialCliente(clienteId)).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const movimientos = (await historialCliente(clienteId)).sort(compararAntiguedad);
   const pendientes = movimientos
-    .filter((m) => m.tipo !== 'pago' && !(m.tipo === 'venta' && m.pagado))
-    .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+    .filter((m) => m.tipo !== 'pago' && m.resta !== null && m.resta > 0.005)
+    .map((m) => ({
+      fecha: m.fecha,
+      descripcion: m.descripcion,
+      monto: m.monto,
+      resta: m.resta as number,
+      ...(m.items && m.items.length > 0 ? { items: m.items } : {}),
+    }));
+  // Lo que se descontó de la deuda: pagos y, si los hay, descuentos cargados a mano.
   const pagos = movimientos
-    .filter((m) => m.tipo === 'pago')
-    .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: m.monto }));
+    .filter((m) => m.tipo === 'pago' || (m.tipo === 'ajuste' && m.monto < 0))
+    .map((m) => ({ fecha: m.fecha, descripcion: m.descripcion, monto: Math.abs(m.monto) }));
   const saldo = redondearPesos(
-    pendientes.reduce((acc, l) => acc + l.monto, 0) - pagos.reduce((acc, l) => acc + l.monto, 0)
+    movimientos.reduce((acc, m) => {
+      if (m.tipo === 'pago') return acc - m.monto;
+      if (m.tipo === 'venta' && m.pagado) return acc;
+      return acc + m.monto;
+    }, 0)
   );
-  return { clienteId, nombre: cliente.nombre, fecha: new Date().toISOString(), saldo, pendientes, pagos };
+  const totalPagado = redondearPesos(pagos.reduce((acc, l) => acc + l.monto, 0));
+  return { clienteId, nombre: cliente.nombre, fecha: new Date().toISOString(), saldo, pendientes, pagos, totalPagado };
 }
 
 // El historial de cuenta de un cliente: cada compra fiada suma, cada pago
-// resta, todo mezclado por fecha para ver el ida y vuelta completo.
+// resta, todo mezclado por fecha para ver el ida y vuelta completo. Cada deuda trae qué
+// productos son (si se sabe) y cuánto falta pagar de ella.
 export async function historialCliente(clienteId: string): Promise<MovimientoCuenta[]> {
   const db = getDb();
   const objectId = new ObjectId(clienteId);
@@ -410,6 +493,7 @@ export async function historialCliente(clienteId: string): Promise<MovimientoCue
       fecha: string;
       total: number;
       cantidad: number;
+      precioUnitario?: number;
       articuloDescripcion: string;
       pagado?: boolean;
       usuario?: Array<{ nombre: string }>;
@@ -435,9 +519,20 @@ export async function historialCliente(clienteId: string): Promise<MovimientoCue
       fecha: string;
       monto: number;
       nota: string | null;
+      items?: ItemDeuda[];
       usuario?: Array<{ nombre: string }>;
     }>([{ $match: { clienteId: objectId } }, JOIN_USUARIO])
     .toArray();
+
+  // Cuánto falta pagar de cada deuda: los pagos (y los descuentos) cubren de lo más viejo
+  // a lo más nuevo. Un fiado marcado como pagado a mano no entra en la cuenta.
+  const lineas: LineaDeuda[] = [
+    ...ventas.filter((v) => v.pagado !== true).map((v) => ({ id: v._id.toHexString(), fecha: v.fecha, monto: v.total })),
+    ...ajustes.filter((a) => a.monto > 0).map((a) => ({ id: a._id.toHexString(), fecha: a.fecha, monto: a.monto })),
+  ];
+  const credito =
+    pagos.reduce((acc, p) => acc + p.monto, 0) + ajustes.filter((a) => a.monto < 0).reduce((acc, a) => acc - a.monto, 0);
+  const restas = repartirPagos(lineas, credito);
 
   const movimientos: MovimientoCuenta[] = [
     ...ventas.map((v) => ({
@@ -449,6 +544,14 @@ export async function historialCliente(clienteId: string): Promise<MovimientoCue
       usuarioNombre: v.usuario?.[0]?.nombre ?? null,
       metodoPago: null,
       pagado: v.pagado ?? false,
+      items: [
+        {
+          descripcion: v.articuloDescripcion,
+          cantidad: v.cantidad,
+          precioUnitario: v.precioUnitario ?? (v.cantidad > 0 ? redondearPesos(v.total / v.cantidad) : v.total),
+        },
+      ],
+      resta: restas.get(v._id.toHexString()) ?? null,
     })),
     ...pagos.map((p) => ({
       id: p._id.toHexString(),
@@ -460,6 +563,8 @@ export async function historialCliente(clienteId: string): Promise<MovimientoCue
       // Pagos cargados antes de este campo no tienen método guardado.
       metodoPago: p.metodoPago ?? null,
       pagado: null,
+      items: null,
+      resta: null,
     })),
     ...ajustes.map((a) => ({
       id: a._id.toHexString(),
@@ -470,8 +575,11 @@ export async function historialCliente(clienteId: string): Promise<MovimientoCue
       usuarioNombre: a.usuario?.[0]?.nombre ?? null,
       metodoPago: null,
       pagado: null,
+      items: Array.isArray(a.items) && a.items.length > 0 ? a.items : null,
+      resta: restas.get(a._id.toHexString()) ?? null,
     })),
   ];
 
-  return movimientos.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  // Lo más nuevo primero (con la misma fecha, el que se creó después).
+  return movimientos.sort((a, b) => compararAntiguedad(b, a));
 }

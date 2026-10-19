@@ -8,6 +8,7 @@
 // de internet), así que sirve en cualquiera de ellos.
 import crypto from 'crypto';
 import { formatearMonedaConCentavos, nombreArchivoEstadoCuenta } from '../shared/formato';
+import { aclaracionesDeLinea } from '../shared/cuentaCorriente';
 import { URL_SERVIDOR_INTERNET } from '../shared/servidor';
 import type { EnlaceEstadoCuenta, EstadoCuenta, LineaEstadoCuenta } from '../shared/types';
 import { direccionPublica } from './despertador';
@@ -113,48 +114,72 @@ export function armarPdfEstado(estado: EstadoCuenta): Buffer {
 
   let y = 262;
 
-  const encabezadoTabla = () => {
+  const encabezadoTabla = (columnaMonto = 'MONTO') => {
     pdf.rect(MARGEN, y, derecha - MARGEN, 20, FONDO);
     pdf.texto(MARGEN + 8, y + 14, 'FECHA', { tam: 8, negrita: true, color: GRIS });
     pdf.texto(MARGEN + 86, y + 14, 'DETALLE', { tam: 8, negrita: true, color: GRIS });
-    pdf.texto(derecha - 8, y + 14, 'MONTO', { tam: 8, negrita: true, color: GRIS, alinear: 'der' });
+    pdf.texto(derecha - 8, y + 14, columnaMonto, { tam: 8, negrita: true, color: GRIS, alinear: 'der' });
     y += 20;
   };
 
+  // Un renglón de la tabla con su detalle: el título, abajo (más chico y en gris) lo que
+  // haga falta aclarar, y el monto a la derecha (con "de $X" abajo si es una parte).
+  const filaDeTabla = (l: LineaEstadoCuenta, signo: '+' | '-') => {
+    const titulo = pdf.envolver(l.descripcion, 10, anchoDetalle);
+    const aclaraciones = signo === '+' ? aclaracionesDeLinea(l).flatMap((a) => pdf.envolver(a, 8.5, anchoDetalle - 10)) : [];
+    const montoMostrado = signo === '+' ? (l.resta ?? l.monto) : l.monto;
+    const esParte = signo === '+' && l.resta !== undefined && l.resta < l.monto - 0.005;
+    const alto = Math.max(titulo.length * 13 + aclaraciones.length * 11.5 + 9, esParte ? 34 : 0);
+    if (y + alto > limite) {
+      pdf.nuevaPagina();
+      y = 60;
+      encabezadoTabla(); // la tabla sigue en la página nueva: se repite el encabezado
+    }
+    pdf.texto(MARGEN + 8, y + 15, fechaCorta(l.fecha), { tam: 10, color: GRIS });
+    titulo.forEach((r, i) => pdf.texto(MARGEN + 86, y + 15 + i * 13, r, { tam: 10 }));
+    aclaraciones.forEach((r, i) =>
+      pdf.texto(MARGEN + 96, y + 15 + titulo.length * 13 - 1 + i * 11.5, r, { tam: 8.5, color: GRIS })
+    );
+    pdf.texto(derecha - 8, y + 15, `${signo === '-' ? '-' : ''}${formatearMonedaConCentavos(montoMostrado)}`, {
+      tam: 10,
+      negrita: true,
+      alinear: 'der',
+      color: signo === '-' ? VERDE : TEXTO,
+    });
+    if (esParte) {
+      pdf.texto(derecha - 8, y + 26, `de ${formatearMonedaConCentavos(l.monto)}`, { tam: 8, color: GRIS, alinear: 'der' });
+    }
+    y += alto;
+    pdf.linea(MARGEN, y, derecha, y, LINEA, 0.6);
+  };
+
   // Cada sección: un título, una tabla de líneas (fecha, detalle, monto) y su suma.
-  const seccion = (titulo: string, lineas: LineaEstadoCuenta[], vacio: string, signo: '+' | '-') => {
+  const seccion = (
+    titulo: string,
+    lineas: LineaEstadoCuenta[],
+    vacio: string,
+    signo: '+' | '-',
+    columnaMonto: string,
+    nota?: string
+  ) => {
     if (y + 60 > limite) {
       pdf.nuevaPagina();
       y = 60;
     }
     pdf.texto(MARGEN, y, titulo, { tam: 12, negrita: true });
     y += 12;
-    encabezadoTabla();
+    if (nota) {
+      pdf.texto(MARGEN, y + 9, nota, { tam: 8.5, color: GRIS });
+      y += 14;
+    }
+    encabezadoTabla(columnaMonto);
     if (lineas.length === 0) {
       pdf.texto(MARGEN + 8, y + 18, vacio, { tam: 10, color: GRIS });
       y += 30;
       return;
     }
-    for (const l of lineas) {
-      const renglones = pdf.envolver(l.descripcion, 10, anchoDetalle);
-      const alto = renglones.length * 13 + 9;
-      if (y + alto > limite) {
-        pdf.nuevaPagina();
-        y = 60;
-        encabezadoTabla(); // la tabla sigue en la página nueva: se repite el encabezado
-      }
-      pdf.texto(MARGEN + 8, y + 15, fechaCorta(l.fecha), { tam: 10, color: GRIS });
-      renglones.forEach((r, i) => pdf.texto(MARGEN + 86, y + 15 + i * 13, r, { tam: 10 }));
-      pdf.texto(derecha - 8, y + 15, `${signo === '-' ? '-' : ''}${formatearMonedaConCentavos(l.monto)}`, {
-        tam: 10,
-        negrita: true,
-        alinear: 'der',
-        color: signo === '-' ? VERDE : TEXTO,
-      });
-      y += alto;
-      pdf.linea(MARGEN, y, derecha, y, LINEA, 0.6);
-    }
-    const suma = lineas.reduce((acc, l) => acc + l.monto, 0);
+    for (const l of lineas) filaDeTabla(l, signo);
+    const suma = lineas.reduce((acc, l) => acc + (signo === '+' ? (l.resta ?? l.monto) : l.monto), 0);
     pdf.texto(derecha - 8, y + 20, `${signo === '-' ? '-' : ''}${formatearMonedaConCentavos(suma)}`, {
       tam: 11,
       negrita: true,
@@ -169,8 +194,17 @@ export function armarPdfEstado(estado: EstadoCuenta): Buffer {
     y += 42;
   };
 
-  seccion('Lo que quedó anotado y todavía no se pagó', estado.pendientes, 'No hay nada anotado sin pagar.', '+');
-  if (estado.pagos.length > 0) seccion('Pagos que ya hizo', estado.pagos, '', '-');
+  seccion(
+    'Lo que tiene que pagar',
+    estado.pendientes,
+    'No hay nada anotado sin pagar.',
+    '+',
+    'FALTA PAGAR',
+    estado.pagos.length > 0 && estado.pendientes.length > 0
+      ? 'Lo que ya pagó se descontó de lo más viejo primero: acá figura sólo lo que sigue debiendo.'
+      : undefined
+  );
+  if (estado.pagos.length > 0) seccion('Pagos que ya hizo', estado.pagos, '', '-', 'PAGADO');
 
   // --- Cierre ---
   if (y + 40 > limite) {

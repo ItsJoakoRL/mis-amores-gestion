@@ -448,10 +448,10 @@ export function registrarHandlers(deps: DepsHandlers) {
   );
   ipcMain.handle(
     Channels.clientesCrear,
-    (_e, input: ClienteInput, deudaInicial: number, fechaInicial?: string) =>
+    (_e, input: ClienteInput, deudaInicial: number, fechaInicial?: string, items?: unknown) =>
       wrap(() => {
         const sesion = requiereSesion();
-        return crearCliente(input, deudaInicial, sesion.id, fechaInicial);
+        return crearCliente(input, deudaInicial, sesion.id, fechaInicial, items);
       })
   );
   ipcMain.handle(Channels.clientesSetActivo, (_e, id: string, activo: boolean) =>
@@ -467,12 +467,14 @@ export function registrarHandlers(deps: DepsHandlers) {
       return historialCliente(clienteId);
     })
   );
-  ipcMain.handle(Channels.clientesAnotarDeuda, (_e, clienteId: string, monto: number, nota: string | null, fecha?: string) =>
-    wrap(async () => {
-      const sesion = requiereSesion();
-      await registrarAjuste(clienteId, monto, nota ?? null, sesion.id, fecha);
-      return true;
-    })
+  ipcMain.handle(
+    Channels.clientesAnotarDeuda,
+    (_e, clienteId: string, monto: number, nota: string | null, fecha?: string, items?: unknown) =>
+      wrap(async () => {
+        const sesion = requiereSesion();
+        await registrarAjuste(clienteId, monto, nota ?? null, sesion.id, fecha, items);
+        return true;
+      })
   );
   ipcMain.handle(Channels.clientesActualizar, (_e, id: string, input: ClienteInput) =>
     wrap(async () => {
