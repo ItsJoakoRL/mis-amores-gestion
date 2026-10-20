@@ -29,6 +29,7 @@ import { nuevoIdTicket } from '../../utils/ticket';
 import AsignarCodigoModal from '../articulos/AsignarCodigoModal';
 import ArticuloFormModal from '../articulos/ArticuloFormModal';
 import NuevoClienteRapido from './NuevoClienteRapido';
+import { CantidadConBotones, CantidadDeRenglon, limpiarCantidadEscrita } from './SelectorCantidad';
 import { esTactil } from '../../utils/dispositivo';
 
 const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
@@ -532,14 +533,18 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     }
   }
 
-  function cambiarCantidad(valor: string) {
-    if (producto?.unidad === 'peso') {
-      // Productos por peso aceptan decimales (ej. 1,5 kg) — con coma (como
-      // se escribe acá) o con punto, pero un solo separador.
-      setCantidad(limpiarDecimal(valor));
-    } else {
-      setCantidad(valor.replace(/[^0-9]/g, ''));
-    }
+  // Productos por peso aceptan decimales (ej. 1,5 kg) — con coma (como se escribe acá) o con punto, pero un solo
+  // separador; los de unidad, sólo números enteros.
+  const cantidadPorPeso = producto?.unidad === 'peso';
+
+  // Cambia cuántas unidades tiene un renglón que ya está en la cuenta (antes se agregaba y quedaba fija: para
+  // corregirla había que sacarlo y volver a buscarlo).
+  function cambiarCantidadDeLinea(lineaId: string, nueva: number) {
+    if (!(nueva > 0)) return;
+    setVendidosSinStock([]);
+    setCarrito((actual) => actual.map((l) => (l.id === lineaId ? { ...l, cantidad: redondearCantidad(nueva) } : l)));
+    // El cuadro de "Dividir" quedaría con la cantidad vieja.
+    if (dividiendoId === lineaId) setDividiendoId(null);
   }
 
   const cantidadNum = redondearCantidad(numeroDeDecimal(cantidad));
@@ -656,6 +661,17 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                     Figura sin stock: se puede vender igual y queda para revisar.
                   </p>
                 )}
+                {/* Qué se va a sumar: cuántas unidades, cuánto es, y cuántas hay ya en la cuenta de este mismo producto. */}
+                {cantidadNum > 0 && !sinPrecio(producto) && (
+                  <p data-vas-a-sumar className="mt-1 text-xs font-medium text-brand-700">
+                    Vas a sumar {formatearCantidad(cantidadNum)} {producto.unidad === 'peso' ? 'kg' : 'un.'} ={' '}
+                    {formatearMoneda(cantidadNum * producto.precioVenta)}
+                    {(cantidadPorProducto.get(producto.id) ?? 0) > 0 &&
+                      ` · ya hay ${formatearCantidad(cantidadPorProducto.get(producto.id) ?? 0)} en la cuenta: quedan ${formatearCantidad(
+                        redondearCantidad((cantidadPorProducto.get(producto.id) ?? 0) + cantidadNum)
+                      )}`}
+                  </p>
+                )}
                 {sinPrecio(producto) && (
                   <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-red-600">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -666,6 +682,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
               <button
                 onClick={() => {
                   setProducto(null);
+                  // La cantidad era para ese producto: el que se elija después arranca de nuevo en 1.
+                  setCantidad('1');
                   busquedaRef.current?.focus();
                 }}
                 className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-600"
@@ -722,16 +740,14 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         </div>
 
         <div data-tour="cuenta-cantidad" className="flex items-end gap-3">
-          <div className="w-24">
+          <div>
             <label className="label">Cantidad</label>
-            <input
-              className="input"
-              inputMode="decimal"
-              value={cantidad}
-              onChange={(e) => cambiarCantidad(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') agregarAlCarrito();
-              }}
+            <CantidadConBotones
+              texto={cantidad}
+              onCambiar={(t) => setCantidad(limpiarCantidadEscrita(t, cantidadPorPeso))}
+              porPeso={cantidadPorPeso}
+              onEnter={agregarAlCarrito}
+              ancho="w-16"
             />
           </div>
 
@@ -803,6 +819,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   </div>
 
                   <div data-tour="cuenta-opciones-linea" className="mt-2 flex flex-wrap items-center gap-2">
+                    <CantidadDeRenglon
+                      cantidad={linea.cantidad}
+                      porPeso={linea.producto.unidad === 'peso'}
+                      etiqueta={`Cantidad de ${linea.producto.descripcion}`}
+                      onCambiar={(n) => cambiarCantidadDeLinea(linea.id, n)}
+                    />
                     <div data-tour="cuenta-metodo-linea">
                       <select
                         aria-label={`Forma de pago de ${linea.producto.descripcion}`}

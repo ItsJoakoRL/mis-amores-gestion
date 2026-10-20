@@ -57,7 +57,7 @@ const CANTIDAD_Y_AGREGAR: PasoRecorrido = {
   selector: '[data-tour="cuenta-cantidad"]',
   titulo: 'Cuántos se lleva',
   texto:
-    'Si se lleva uno, dejá el 1. Si se lleva tres, escribí 3. Después tocá "Agregar". Si se lleva varios productos distintos, repetí estos dos pasos con cada uno.',
+    'Si se lleva uno, dejá el 1. Si se lleva tres, escribí 3 (o tocá el + dos veces). Abajo del producto ves cuánto vas a sumar. Después tocá "Agregar". Si se lleva varios productos distintos, repetí estos dos pasos con cada uno.',
 };
 
 export const GUIAS: Guia[] = [
@@ -76,7 +76,7 @@ export const GUIAS: Guia[] = [
       {
         selector: '[data-tour="cuenta-lista"]',
         titulo: 'Lo que lleva el cliente',
-        texto: 'Acá va quedando la cuenta, con el precio de cada cosa. Si te equivocás con algo, tocá el tachito de esa línea para sacarlo.',
+        texto: 'Acá va quedando la cuenta, con el precio de cada cosa. Si te equivocaste en cuántos, cambiá el número de esa línea (o tocá el + y el −); si te equivocaste de producto, tocá el tachito para sacarlo.',
       },
       {
         selector: '[data-tour="cuenta-opciones-linea"]',

@@ -175,6 +175,8 @@ En "Armar cuenta" (caja y celular) cada renglón dice **cómo se paga**: Efectiv
 - Al cobrar, **cada renglón es una venta** con su forma de pago y su cliente, y todas comparten el mismo número de compra (`ticketId`): el Panel y los Reportes la cuentan como **una** compra. La cuenta a medias se guarda por usuario y se recupera al recargar; la que quedó guardada con el formato anterior (una sola forma de pago para todo) se entiende sola.
 - No cambió nada en el servidor ni en la sincronización: `ventas.crear` ya recibía forma de pago y cliente por venta.
 
+**La cantidad (0.8.21).** El cuadro "Cantidad" tiene **− y +** (de a 1 unidad, o de a medio kilo en lo que se vende por peso; no baja de 1) y, al elegir un producto, abajo dice **qué se va a sumar**: "Vas a sumar 3 un. = $ 7.500" y, si ese mismo producto ya está en la cuenta, "ya hay 4 en la cuenta: quedan 7". Y **cada renglón de la cuenta tiene su propia cantidad editable** (− número +): antes quedaba fija al agregarlo y para corregirla había que sacarlo y volver a buscarlo. Mientras se escribe puede quedar vacía o a medias ("1,"): el renglón sólo cambia cuando el número es mayor que cero y, al salir del cuadro, vuelve a mostrar el que vale. Cambiar la cantidad cierra el cuadro de "Dividir" (tenía la cantidad vieja). Al sacar el producto elegido con la X, la cantidad vuelve a 1. Está en `src/modules/ventas/SelectorCantidad.tsx`.
+
 ## Revisión general (0.8.18): cuentas, stock y mensajes
 
 Lo que salió de revisar toda la aplicación (con pruebas que arman una base aparte y la maltratan: `npm run probar:ventas`):

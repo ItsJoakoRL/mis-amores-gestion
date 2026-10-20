@@ -78,13 +78,13 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
     {
       selector: '[data-tour="cuenta-cantidad"]',
       titulo: 'Cuántos lleva',
-      texto: 'Poné la cantidad (si es uno, dejá el 1) y tocá "Agregar".',
+      texto: 'Poné la cantidad (si es uno, dejá el 1; podés escribirla o usar el + y el −) y tocá "Agregar". Abajo del producto ves cuánto vas a sumar.',
     },
     {
       selector: '[data-tour="cuenta-lista"]',
       titulo: 'Lo que lleva el cliente',
       texto:
-        'Acá va quedando la cuenta. Cada producto dice cómo se paga (Efectivo, Tarjeta, Transferencia o Fiado) y lo podés cambiar en esa línea; si se lleva varias unidades y las paga distinto, tocá "Dividir". Para sacar algo que agregaste por error, tocá el tachito.',
+        'Acá va quedando la cuenta. Cada producto dice cómo se paga (Efectivo, Tarjeta, Transferencia o Fiado) y lo podés cambiar en esa línea, igual que la cantidad (el número con el + y el −); si se lleva varias unidades y las paga distinto, tocá "Dividir". Para sacar algo que agregaste por error, tocá el tachito.',
     },
     {
       selector: '[data-tour="cuenta-pago"]',
