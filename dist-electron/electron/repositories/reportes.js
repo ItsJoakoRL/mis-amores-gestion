@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.productoMasVendidoPorUnidades = productoMasVendidoPorUnidades;
+exports.productosMasVendidos = productosMasVendidos;
 exports.getReporteVentas = getReporteVentas;
 const database_1 = require("../db/database");
 const fechaLocal_1 = require("../fechaLocal");
@@ -84,6 +85,10 @@ async function topProductos(desde, hasta, limite, orden = 'total') {
 // caro puede ganar en plata y haberse vendido poco).
 async function productoMasVendidoPorUnidades(desde, hasta) {
     return (await topProductos(desde, hasta, 1, 'cantidad'))[0] ?? null;
+}
+// Los `limite` productos más vendidos del período, por unidades o por plata (lo usa el asistente con IA).
+function productosMasVendidos(desde, hasta, limite, orden) {
+    return topProductos(desde, hasta, limite, orden);
 }
 async function porMetodoPago(desde, hasta) {
     const docs = await coleccionVentas()

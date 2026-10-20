@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.8.22",
+  "version": "0.8.23",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",
@@ -29,12 +29,15 @@
     "probar:versiones": "node scripts/probar-versiones.js",
     "generar:temas": "node scripts/generar-temas.js",
     "probar:ventas": "node scripts/probar-ventas.js",
+    "probar:asistente-ia": "node scripts/probar-asistente-ia.js",
+    "probar:asistente-simple": "node scripts/probar-asistente-simple.js",
     "probar:nube-pantalla": "node scripts/probar-nube-pantalla.js",
     "armar:servidor": "npm run build && node scripts/armar-paquete-servidor.js",
     "preparar:nube": "node scripts/preparar-nube.js",
     "publicar:nube": "npm run build && node scripts/publicar-nube.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.136.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "bcryptjs": "^2.4.3",
     "bson": "^6.10.4",

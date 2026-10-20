@@ -38,6 +38,7 @@ const catalogos_1 = require("../repositories/catalogos");
 const dashboard_1 = require("../repositories/dashboard");
 const reportes_1 = require("../repositories/reportes");
 const asistente_1 = require("../repositories/asistente");
+const asistenteIa_1 = require("../asistenteIa");
 const ventas_1 = require("../repositories/ventas");
 const clientes_1 = require("../repositories/clientes");
 const recordatorios_1 = require("../repositories/recordatorios");
@@ -384,11 +385,8 @@ sync) {
         const { desde, hasta } = req.query;
         return (0, reportes_1.getReporteVentas)(desde, hasta);
     }));
-    // --- Asistente ---
-    app.post('/api/asistente/preguntar', ruta((req) => {
-        requiereSesion(req);
-        return (0, asistente_1.responderPregunta)(req.body.pregunta);
-    }));
+    // --- Asistente (la IA se maneja desde la PC; el celular sólo pregunta) ---
+    app.post('/api/asistente/preguntar', ruta((req) => (0, asistenteIa_1.responderPreguntaInteligente)(req.body?.pregunta, req.body?.historial, requiereSesion(req))));
     // --- Ventas ---
     app.get('/api/ventas/resumen-mes', ruta((req) => {
         requiereSesion(req);

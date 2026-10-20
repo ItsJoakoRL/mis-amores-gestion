@@ -13,6 +13,9 @@ const catalogos_1 = require("../repositories/catalogos");
 const dashboard_1 = require("../repositories/dashboard");
 const reportes_1 = require("../repositories/reportes");
 const asistente_1 = require("../repositories/asistente");
+const asistenteIa_1 = require("../asistenteIa");
+const claveIa_1 = require("../claveIa");
+const usoIa_1 = require("../usoIa");
 const ventas_1 = require("../repositories/ventas");
 const clientes_1 = require("../repositories/clientes");
 const recordatorios_1 = require("../repositories/recordatorios");
@@ -173,10 +176,26 @@ function registrarHandlers(deps) {
         (0, session_1.requiereSesion)();
         return (0, reportes_1.getReporteVentas)(desde, hasta);
     }));
-    // --- Asistente (sin IA externa, solo patrones + datos reales) ---
-    electron_1.ipcMain.handle(channels_1.Channels.asistentePreguntar, (_e, pregunta) => wrap(() => {
-        (0, session_1.requiereSesion)();
-        return (0, asistente_1.responderPregunta)(pregunta);
+    // --- Asistente: una IA (Claude) con los datos reales; sin clave o sin internet, el asistente simple ---
+    electron_1.ipcMain.handle(channels_1.Channels.asistentePreguntar, (_e, pregunta, historial) => wrap(() => (0, asistenteIa_1.responderPreguntaInteligente)(pregunta, historial, (0, session_1.requiereSesion)())));
+    // La clave de la IA se maneja desde Configuración y es sólo de la administradora; nunca vuelve a la pantalla.
+    electron_1.ipcMain.handle(channels_1.Channels.asistenteIaEstado, () => wrap(() => {
+        (0, session_1.requiereAdmin)();
+        return (0, asistenteIa_1.estadoIa)();
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.asistenteIaGuardarClave, (_e, clave) => wrap(() => {
+        (0, session_1.requiereAdmin)();
+        (0, claveIa_1.guardarClaveIa)(clave === null ? null : String(clave ?? ''));
+        return (0, asistenteIa_1.estadoIa)();
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.asistenteIaFijarTope, (_e, usd) => wrap(() => {
+        (0, session_1.requiereAdmin)();
+        (0, usoIa_1.fijarTopeMensualUsd)(usd);
+        return (0, asistenteIa_1.estadoIa)();
+    }));
+    electron_1.ipcMain.handle(channels_1.Channels.asistenteIaProbar, () => wrap(() => {
+        (0, session_1.requiereAdmin)();
+        return (0, asistenteIa_1.probarIa)();
     }));
     // --- Usuarios (solo admin) ---
     electron_1.ipcMain.handle(channels_1.Channels.usuariosList, () => wrap(() => {

@@ -34,6 +34,11 @@ exports.Channels = {
     reportesVentas: 'reportes:ventas',
     articulosSugerirRubro: 'articulos:sugerirRubro',
     asistentePreguntar: 'asistente:preguntar',
+    // La clave de la IA del asistente (sólo la administradora, sólo en la PC).
+    asistenteIaEstado: 'asistente:iaEstado',
+    asistenteIaGuardarClave: 'asistente:iaGuardarClave',
+    asistenteIaProbar: 'asistente:iaProbar',
+    asistenteIaFijarTope: 'asistente:iaFijarTope',
     ventasCrear: 'ventas:crear',
     ventasEliminar: 'ventas:eliminar',
     ventasListPorDia: 'ventas:listPorDia',

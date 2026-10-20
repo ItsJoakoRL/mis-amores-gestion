@@ -64,7 +64,8 @@ const api = {
         ventas: (desde, hasta) => invoke(channels_1.Channels.reportesVentas, desde, hasta),
     },
     asistente: {
-        preguntar: (pregunta) => invoke(channels_1.Channels.asistentePreguntar, pregunta),
+        // `historial`: lo que ya se habló, para que la IA se acuerde ("¿y ayer?").
+        preguntar: (pregunta, historial = []) => invoke(channels_1.Channels.asistentePreguntar, pregunta, historial),
     },
     ventas: {
         crear: (input) => invoke(channels_1.Channels.ventasCrear, input),
@@ -141,7 +142,7 @@ const api = {
 const escritorio = {
     // Por si la pantalla viene de una PC con otra versión: para que pueda
     // fijarse qué sabe hacer este puente antes de usarlo.
-    versionPuente: 3,
+    versionPuente: 4,
     // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
     // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
     actualizaciones: {
@@ -169,6 +170,14 @@ const escritorio = {
     conectarNube: (direccion) => invoke(channels_1.Channels.escritorioConectarNube, direccion),
     probarServidor: (direccion) => invoke(channels_1.Channels.escritorioProbarServidor, direccion),
     reintentar: () => invoke(channels_1.Channels.escritorioReintentar),
+    // La IA del asistente (sólo la administradora): la clave se guarda en esta PC y nunca vuelve a la pantalla.
+    ia: {
+        estado: () => invoke(channels_1.Channels.asistenteIaEstado),
+        guardarClave: (clave) => invoke(channels_1.Channels.asistenteIaGuardarClave, clave),
+        probar: () => invoke(channels_1.Channels.asistenteIaProbar),
+        // El tope de gasto por mes, en dólares.
+        fijarTope: (usd) => invoke(channels_1.Channels.asistenteIaFijarTope, usd),
+    },
 };
 electron_1.contextBridge.exposeInMainWorld('escritorio', escritorio);
 electron_1.contextBridge.exposeInMainWorld('api', api);
