@@ -170,9 +170,14 @@ async function responderPregunta(preguntaOriginal) {
             if (r.topProductos.length === 0) {
                 return { texto: 'Todavía no hay ventas en los últimos 30 días para calcular esto.', reconocida: true };
             }
-            const top = r.topProductos[0];
+            // "Lo más vendido" son las unidades; el que más plata dejó puede ser otro (uno caro que se vendió poco).
+            const masUnidades = (await (0, reportes_1.productoMasVendidoPorUnidades)(desde, hasta)) ?? r.topProductos[0];
+            const masPlata = r.topProductos[0];
             return {
-                texto: `En los últimos 30 días, lo más vendido fue "${top.descripcion}": ${(0, formato_1.formatearCantidad)(top.cantidad)} unidad(es) por ${(0, formato_1.formatearMoneda)(top.total)}.`,
+                texto: `En los últimos 30 días, lo más vendido fue "${masUnidades.descripcion}": ${(0, formato_1.formatearCantidad)(masUnidades.cantidad)} unidad(es) por ${(0, formato_1.formatearMoneda)(masUnidades.total)}.` +
+                    (masPlata.articuloId !== masUnidades.articuloId
+                        ? ` El que más plata dejó fue "${masPlata.descripcion}": ${(0, formato_1.formatearMoneda)(masPlata.total)} (${(0, formato_1.formatearCantidad)(masPlata.cantidad)} unidad(es)).`
+                        : ''),
                 reconocida: true,
             };
         }

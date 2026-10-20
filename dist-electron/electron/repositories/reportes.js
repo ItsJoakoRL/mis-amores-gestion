@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.productoMasVendidoPorUnidades = productoMasVendidoPorUnidades;
 exports.getReporteVentas = getReporteVentas;
 const database_1 = require("../db/database");
 const fechaLocal_1 = require("../fechaLocal");
@@ -53,7 +54,7 @@ async function porDia(desde, hasta) {
     }
     return [...filas.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
-async function topProductos(desde, hasta, limite) {
+async function topProductos(desde, hasta, limite, orden = 'total') {
     const docs = await coleccionVentas()
         .aggregate([
         { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -68,7 +69,7 @@ async function topProductos(desde, hasta, limite) {
                 total: { $sum: '$total' },
             },
         },
-        { $sort: { total: -1 } },
+        { $sort: orden === 'cantidad' ? { cantidad: -1, total: -1 } : { total: -1 } },
         { $limit: limite },
     ])
         .toArray();
@@ -78,6 +79,11 @@ async function topProductos(desde, hasta, limite) {
         cantidad: d.cantidad,
         total: d.total,
     }));
+}
+// El producto del que más unidades se vendieron (el gráfico de Reportes ordena por plata: un producto
+// caro puede ganar en plata y haberse vendido poco).
+async function productoMasVendidoPorUnidades(desde, hasta) {
+    return (await topProductos(desde, hasta, 1, 'cantidad'))[0] ?? null;
 }
 async function porMetodoPago(desde, hasta) {
     const docs = await coleccionVentas()
