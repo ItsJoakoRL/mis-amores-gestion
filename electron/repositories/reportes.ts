@@ -90,6 +90,11 @@ export async function productoMasVendidoPorUnidades(desde: string, hasta: string
   return (await topProductos(desde, hasta, 1, 'cantidad'))[0] ?? null;
 }
 
+// Los `limite` productos más vendidos del período, por unidades o por plata (lo usa el asistente con IA).
+export function productosMasVendidos(desde: string, hasta: string, limite: number, orden: 'total' | 'cantidad'): Promise<TopProducto[]> {
+  return topProductos(desde, hasta, limite, orden);
+}
+
 async function porMetodoPago(desde: string, hasta: string): Promise<VentasPorMetodoPago[]> {
   const docs = await coleccionVentas()
     .aggregate<{ _id: VentasPorMetodoPago['metodoPago']; tickets: string[]; total: number }>([

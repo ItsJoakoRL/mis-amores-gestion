@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { Channels } from '../../shared/channels';
 import { seleccionarImagen } from '../imagenes';
-import type { ApiResult, ArticuloInput, ArticulosFiltro, Genero, ItemConteo, Rol } from '../../shared/types';
+import type { ApiResult, ArticuloInput, ArticulosFiltro, Genero, ItemConteo, MensajeAsistente, Rol } from '../../shared/types';
 import { getSesion, requiereAdmin, requiereSesion, setSesion } from '../session';
 import { ocultarCostoSiNoAdmin, ocultarCostoSiNoAdminLista, sanitizarInputSegunRol } from '../reglasRol';
 import { mensajeParaLaPersona } from '../mensajesError';
@@ -41,7 +41,10 @@ import {
 } from '../repositories/catalogos';
 import { getDashboardStats } from '../repositories/dashboard';
 import { getReporteVentas } from '../repositories/reportes';
-import { sugerirRubro, responderPregunta } from '../repositories/asistente';
+import { sugerirRubro } from '../repositories/asistente';
+import { estadoIa, probarIa, responderPreguntaInteligente } from '../asistenteIa';
+import { guardarClaveIa } from '../claveIa';
+import { fijarTopeMensualUsd } from '../usoIa';
 import {
   crearVenta,
   eliminarVenta,
@@ -324,11 +327,35 @@ export function registrarHandlers(deps: DepsHandlers) {
     })
   );
 
-  // --- Asistente (sin IA externa, solo patrones + datos reales) ---
-  ipcMain.handle(Channels.asistentePreguntar, (_e, pregunta: string) =>
+  // --- Asistente: una IA (Claude) con los datos reales; sin clave o sin internet, el asistente simple ---
+  ipcMain.handle(Channels.asistentePreguntar, (_e, pregunta: string, historial?: MensajeAsistente[]) =>
+    wrap(() => responderPreguntaInteligente(pregunta, historial, requiereSesion()))
+  );
+  // La clave de la IA se maneja desde Configuración y es sólo de la administradora; nunca vuelve a la pantalla.
+  ipcMain.handle(Channels.asistenteIaEstado, () =>
     wrap(() => {
-      requiereSesion();
-      return responderPregunta(pregunta);
+      requiereAdmin();
+      return estadoIa();
+    })
+  );
+  ipcMain.handle(Channels.asistenteIaGuardarClave, (_e, clave: string | null) =>
+    wrap(() => {
+      requiereAdmin();
+      guardarClaveIa(clave === null ? null : String(clave ?? ''));
+      return estadoIa();
+    })
+  );
+  ipcMain.handle(Channels.asistenteIaFijarTope, (_e, usd: number) =>
+    wrap(() => {
+      requiereAdmin();
+      fijarTopeMensualUsd(usd);
+      return estadoIa();
+    })
+  );
+  ipcMain.handle(Channels.asistenteIaProbar, () =>
+    wrap(() => {
+      requiereAdmin();
+      return probarIa();
     })
   );
 

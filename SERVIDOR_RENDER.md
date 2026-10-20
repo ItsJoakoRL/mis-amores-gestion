@@ -218,6 +218,16 @@ no se tocan: viven en Atlas.
   llama a nadie (sólo atiende), tiene límite de intentos al entrar
   (`electron/server/limiteIntentos.ts`) y cierra `/api/copia/*`,
   `/api/sistema/juntar-datos` y la lista de cuentas.
+- Asistente con IA (opcional): para que el asistente de los celulares que entran
+  por Render sea una IA de verdad, en *Environment* agregá `MIS_AMORES_CLAVE_IA`
+  con una clave de API de Anthropic (platform.claude.com). Sin esa variable el
+  asistente de Render contesta el simple, por patrones. Se puede cambiar el
+  modelo con `MIS_AMORES_MODELO_IA` (por defecto `claude-sonnet-5-5`; `claude-haiku-5-5` es mucho más barato). No va en
+  `nube/render.yaml` a propósito: es un secreto y es opcional.
+  Tope de gasto de la IA: `MIS_AMORES_TOPE_IA_USD` (dólares por mes, de 1 a 1000;
+  por defecto 10). Ojo: en Render la cuenta de lo gastado vive en memoria y se
+  reinicia cuando el servidor se reinicia o se duerme, así que el freno fuerte es el
+  tope de gasto que se pone en platform.claude.com.
 - La sincronización: una PC con una dirección completa (`https://...`) no se
   "pide", se le **empuja** (`POST /api/sync/empujar`, firmado con la clave
   incluyendo el contenido). Ver `empujar()` en `electron/sync/motor.ts`.

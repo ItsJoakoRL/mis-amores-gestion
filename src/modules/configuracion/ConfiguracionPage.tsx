@@ -23,6 +23,7 @@ import { compararVersiones } from '@shared/versiones';
 import { useAuth } from '../auth/AuthContext';
 import BotonAyuda from '../../components/BotonAyuda';
 import CampoContrasena from '../../components/CampoContrasena';
+import TarjetaIa from './TarjetaIa';
 
 // "hace 3 min", "hace 2 h", "ayer 14:30"...
 function hace(iso: string | null): string {
@@ -198,6 +199,8 @@ export default function ConfiguracionPage() {
           </div>
 
           <ServidorDeInternet red={red} onCambio={cargar} />
+
+          {(window.escritorio?.versionPuente ?? 0) >= 4 && <TarjetaIa />}
 
           {red.pcs.some((pc) => !esRemota(pc)) && (
             <div className="px-1">

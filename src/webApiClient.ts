@@ -219,7 +219,7 @@ export function crearWebApiClient(): Api {
       ventas: (desde, hasta) => req('GET', `/api/reportes/ventas${query({ desde, hasta })}`),
     },
     asistente: {
-      preguntar: (pregunta) => req('POST', '/api/asistente/preguntar', { pregunta }),
+      preguntar: (pregunta, historial = []) => req('POST', '/api/asistente/preguntar', { pregunta, historial }),
     },
     ventas: {
       crear: (input: VentaInput) => req('POST', '/api/ventas', input),

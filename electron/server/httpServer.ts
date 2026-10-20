@@ -68,7 +68,8 @@ import {
 import { listFamilias, crearFamilia, listMarcas, crearMarca, listProveedores, crearProveedor } from '../repositories/catalogos';
 import { getDashboardStats } from '../repositories/dashboard';
 import { getReporteVentas } from '../repositories/reportes';
-import { sugerirRubro, responderPregunta } from '../repositories/asistente';
+import { sugerirRubro } from '../repositories/asistente';
+import { responderPreguntaInteligente } from '../asistenteIa';
 import {
   crearVenta,
   eliminarVenta,
@@ -553,13 +554,10 @@ export async function iniciarServidorWeb(
     })
   );
 
-  // --- Asistente ---
+  // --- Asistente (la IA se maneja desde la PC; el celular sólo pregunta) ---
   app.post(
     '/api/asistente/preguntar',
-    ruta((req) => {
-      requiereSesion(req);
-      return responderPregunta(req.body.pregunta as string);
-    })
+    ruta((req) => responderPreguntaInteligente(req.body?.pregunta, req.body?.historial, requiereSesion(req)))
   );
 
   // --- Ventas ---

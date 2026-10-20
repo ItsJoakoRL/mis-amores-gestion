@@ -21,6 +21,9 @@ import type {
   ReporteVentas,
   SugerenciaRubro,
   RespuestaAsistente,
+  MensajeAsistente,
+  EstadoIa,
+  ResultadoProbarIa,
   Venta,
   VentaInput,
   MetodoPago,
@@ -121,7 +124,9 @@ const api = {
     ventas: (desde: string, hasta: string) => invoke<ReporteVentas>(Channels.reportesVentas, desde, hasta),
   },
   asistente: {
-    preguntar: (pregunta: string) => invoke<RespuestaAsistente>(Channels.asistentePreguntar, pregunta),
+    // `historial`: lo que ya se habló, para que la IA se acuerde ("¿y ayer?").
+    preguntar: (pregunta: string, historial: MensajeAsistente[] = []) =>
+      invoke<RespuestaAsistente>(Channels.asistentePreguntar, pregunta, historial),
   },
   ventas: {
     crear: (input: VentaInput) => invoke<Venta>(Channels.ventasCrear, input),
@@ -210,7 +215,7 @@ const api = {
 const escritorio = {
   // Por si la pantalla viene de una PC con otra versión: para que pueda
   // fijarse qué sabe hacer este puente antes de usarlo.
-  versionPuente: 3,
+  versionPuente: 4,
   // Las actualizaciones no pasan por invoke(): no hay nada que desenvolver —
   // en qué anda la actualización llega aparte, por onCambio, cada vez que cambia.
   actualizaciones: {
@@ -238,6 +243,14 @@ const escritorio = {
   conectarNube: (direccion: string) => invoke<ResultadoConectarNube>(Channels.escritorioConectarNube, direccion),
   probarServidor: (direccion: string) => invoke<EstadoServidorWeb>(Channels.escritorioProbarServidor, direccion),
   reintentar: () => invoke<boolean>(Channels.escritorioReintentar),
+  // La IA del asistente (sólo la administradora): la clave se guarda en esta PC y nunca vuelve a la pantalla.
+  ia: {
+    estado: () => invoke<EstadoIa>(Channels.asistenteIaEstado),
+    guardarClave: (clave: string | null) => invoke<EstadoIa>(Channels.asistenteIaGuardarClave, clave),
+    probar: () => invoke<ResultadoProbarIa>(Channels.asistenteIaProbar),
+    // El tope de gasto por mes, en dólares.
+    fijarTope: (usd: number) => invoke<EstadoIa>(Channels.asistenteIaFijarTope, usd),
+  },
 };
 
 contextBridge.exposeInMainWorld('escritorio', escritorio);

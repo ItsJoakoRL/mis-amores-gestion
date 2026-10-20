@@ -28,6 +28,14 @@
   }
 }
 
+/* Quien tiene activado "reducir movimientos" (Windows, celular) no ve la carita moverse: queda quieta y sonriendo. */
+@media (prefers-reduced-motion: reduce) {
+  [data-mascota],
+  [data-mascota] * {
+    animation: none !important;
+  }
+}
+
 @layer components {
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;

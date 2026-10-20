@@ -36,7 +36,7 @@ export default function TarjetaBienvenida() {
       className="mt-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-surface p-5 sm:p-6"
     >
       <div className="flex items-start gap-4">
-        <Mascota tamanio="lg" className="hidden shrink-0 sm:block" />
+        <Mascota tamanio="lg" murmura className="hidden shrink-0 sm:block" />
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold text-slate-800">¿Es tu primera vez? Te enseño lo básico</h2>
           <p className="mt-1 text-base leading-relaxed text-slate-600">

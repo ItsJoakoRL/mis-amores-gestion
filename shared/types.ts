@@ -616,9 +616,40 @@ export interface SugerenciaRubro {
   familiaNombre: string;
 }
 
-/** Respuesta del asistente a una pregunta en lenguaje natural — reconoce
- * patrones comunes y contesta con datos reales de la base, sin IA externa. */
+/** Respuesta del asistente a una pregunta en lenguaje natural. Con la clave de la
+ * IA cargada contesta una IA de verdad (Claude) con datos reales de la base; sin
+ * clave, o sin internet, contesta el asistente simple de siempre (por patrones). */
 export interface RespuestaAsistente {
   texto: string;
   reconocida: boolean;
+  /** Quién contestó: la IA, o el asistente simple (por patrones). */
+  modo?: 'ia' | 'simple';
+  /** Una aclaración para mostrar aparte (ej. "no pude consultar a la IA, te contesto con el asistente simple"). */
+  aviso?: string;
+}
+
+/** Un mensaje de la charla con el asistente (la pantalla manda los últimos, para que se acuerde). */
+export interface MensajeAsistente {
+  rol: 'usuario' | 'asistente';
+  texto: string;
+}
+
+/** Si el asistente con IA está listo para usar en esta PC (la clave nunca viaja a la pantalla). */
+export interface EstadoIa {
+  configurada: boolean;
+  /** De dónde sale la clave: la que se cargó en Configuración, o una variable del entorno. */
+  origen: 'archivo' | 'entorno' | null;
+  /** Para reconocerla sin mostrarla: "sk-ant-…a1b2". */
+  pista: string | null;
+  modelo: string;
+  /** Lo que lleva gastado el asistente este mes, en dólares (aproximado: sale de los tokens que informa la API). */
+  gastoMes: { mes: string; costoUsd: number; preguntas: number };
+  /** Hasta cuánto puede gastar por mes. Al llegar, contesta el asistente simple hasta el mes que viene. */
+  topeMensualUsd: number;
+  topeAlcanzado: boolean;
+}
+
+export interface ResultadoProbarIa {
+  ok: boolean;
+  mensaje: string;
 }

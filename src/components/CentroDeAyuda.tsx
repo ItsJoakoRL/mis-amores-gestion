@@ -303,8 +303,8 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
 
                   <p className="rounded-2xl bg-surface px-4 py-3 text-sm leading-relaxed text-slate-500">
                     <strong className="text-slate-700">¿Querés saber algo de tu negocio?</strong> (cuánto vendiste, quién te
-                    debe, qué tiene poco stock...) Preguntale al asistente: es el dibujito redondo que está abajo a la
-                    derecha.
+                    debe, qué tiene poco stock...) Preguntale al asistente: es la carita redonda que está abajo a la
+                    derecha. Se acuerda de lo que hablaron: podés preguntarle "¿cuánto vendí hoy?" y después sólo "¿y ayer?".
                   </p>
                 </>
               )}
