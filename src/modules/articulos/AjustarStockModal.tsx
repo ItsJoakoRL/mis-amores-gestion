@@ -45,8 +45,8 @@ export default function AjustarStockModal({ articulo, onCerrar, onGuardado }: Pr
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Ajustar stock</h2>
           <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -113,7 +113,7 @@ export default function AjustarStockModal({ articulo, onCerrar, onGuardado }: Pr
             />
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>

@@ -23,7 +23,7 @@ export default function PreciosPage() {
         </p>
       </div>
 
-      <div data-tour="precios-pestanas" className="mb-5 flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+      <div data-tour="precios-pestanas" className="mb-5 flex gap-1 rounded-lg border border-slate-200 bg-surface p-1">
         <button
           onClick={() => setPestana('precios')}
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${

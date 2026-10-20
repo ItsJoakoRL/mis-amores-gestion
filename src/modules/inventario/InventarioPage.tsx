@@ -393,7 +393,7 @@ export default function InventarioPage() {
           de a un rubro, y lo que vas contando queda guardado: lo podés dejar y seguir después.
         </p>
 
-        {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
         {guardado && (
           <div className="card mt-6 border-teal-200 bg-teal-50/60 p-4">
@@ -421,7 +421,7 @@ export default function InventarioPage() {
               onClick={() => empezar(REVISAR)}
               className="flex items-center gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100 sm:col-span-2"
             >
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700" />
               <span>
                 <span className="block font-medium text-amber-800">Para revisar ({paraRevisar})</span>
                 <span className="block text-xs text-amber-700">Se vendieron sin stock registrado: empezá por éstos.</span>
@@ -432,7 +432,7 @@ export default function InventarioPage() {
             <button
               key={f.id}
               onClick={() => empezar(f.id)}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:border-teal-300 hover:bg-teal-50"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-surface px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:border-teal-300 hover:bg-teal-50"
             >
               <PackageSearch className="h-5 w-5 shrink-0 text-teal-500" />
               {f.nombre}
@@ -440,7 +440,7 @@ export default function InventarioPage() {
           ))}
           <button
             onClick={() => empezar(TODOS)}
-            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:border-teal-300 hover:bg-teal-50"
+            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-surface px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:border-teal-300 hover:bg-teal-50"
           >
             <PackageSearch className="h-5 w-5 shrink-0 text-slate-400" />
             Todos los rubros
@@ -480,7 +480,7 @@ export default function InventarioPage() {
         </div>
       </div>
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       {resultado && (
         <div className="mt-4 space-y-2">
@@ -520,7 +520,7 @@ export default function InventarioPage() {
           <button
             type="button"
             onClick={() => setCamaraAbierta(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:brightness-90"
             title="Escanear con la cámara del celular"
           >
             <Camera className="h-4 w-4" />
@@ -531,7 +531,7 @@ export default function InventarioPage() {
       {scanAviso && (
         <p
           className={`mt-2 rounded-lg px-3 py-1.5 text-xs font-medium ${
-            scanAviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+            scanAviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
           }`}
         >
           {scanAviso.texto}
@@ -600,7 +600,7 @@ export default function InventarioPage() {
                   </div>
                   <div className="text-xs text-slate-500">
                     En el sistema:{' '}
-                    <span className={`font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                    <span className={`font-semibold ${a.stock < 0 ? 'text-red-700' : 'text-slate-700'}`}>
                       {formatearCantidad(a.stock)} {porPeso ? 'kg' : 'un.'}
                     </span>
                     {a.stock < 0 && <span className="text-red-500"> (se vendió de más)</span>}
@@ -627,7 +627,7 @@ export default function InventarioPage() {
                           Igual
                         </span>
                       ) : (
-                        <span className={dif > 0 ? 'text-emerald-600' : 'text-red-600'}>
+                        <span className={dif > 0 ? 'text-emerald-700' : 'text-red-700'}>
                           {dif > 0 ? '+' : '−'}
                           {formatearCantidad(Math.abs(dif))}
                         </span>
@@ -653,7 +653,7 @@ export default function InventarioPage() {
           lo "fijo" de adentro se acomode a la página y no a la pantalla.
           (A la derecha queda lugar para el botón redondo del asistente, que flota ahí.) */}
       {createPortal(
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-surface/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-600">
             {resumen.aCorregir.length === 0 ? (
@@ -665,8 +665,8 @@ export default function InventarioPage() {
             ) : (
               <>
                 <strong>{resumen.aCorregir.length}</strong> con diferencia
-                {resumen.suben > 0 && <span className="text-emerald-600"> · {resumen.suben} suben</span>}
-                {resumen.bajan > 0 && <span className="text-red-600"> · {resumen.bajan} bajan</span>}
+                {resumen.suben > 0 && <span className="text-emerald-700"> · {resumen.suben} suben</span>}
+                {resumen.bajan > 0 && <span className="text-red-700"> · {resumen.bajan} bajan</span>}
               </>
             )}
           </p>

@@ -62,10 +62,10 @@ function etiquetaFecha(paraFecha: string, hecho: boolean): { texto: string; clas
   const fecha = parseISO(paraFecha);
   const dias = differenceInCalendarDays(fecha, new Date());
   if (hecho) return { texto: `Era para el ${format(fecha, "d 'de' MMMM", { locale: es })}`, clase: 'text-slate-400' };
-  if (dias < -1) return { texto: `Venció hace ${-dias} días`, clase: 'text-red-600 font-medium' };
-  if (dias === -1) return { texto: 'Venció ayer', clase: 'text-red-600 font-medium' };
-  if (dias === 0) return { texto: 'Para hoy', clase: 'text-amber-600 font-medium' };
-  if (dias === 1) return { texto: 'Para mañana', clase: 'text-amber-600' };
+  if (dias < -1) return { texto: `Venció hace ${-dias} días`, clase: 'text-red-700 font-medium' };
+  if (dias === -1) return { texto: 'Venció ayer', clase: 'text-red-700 font-medium' };
+  if (dias === 0) return { texto: 'Para hoy', clase: 'text-amber-700 font-medium' };
+  if (dias === 1) return { texto: 'Para mañana', clase: 'text-amber-700' };
   if (dias < 7) return { texto: `Para el ${format(fecha, 'EEEE d', { locale: es })}`, clase: 'text-slate-500' };
   return { texto: `Para el ${format(fecha, "d 'de' MMMM", { locale: es })}`, clase: 'text-slate-500' };
 }
@@ -263,7 +263,7 @@ export default function RecordatoriosPage() {
         </button>
       </div>
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div className="mt-4 space-y-2.5">
         {items === null ? (
@@ -432,7 +432,7 @@ function FilaRecordatorio({
         {puedeBorrar && (
           <button
             onClick={onBorrar}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700"
             title="Borrar"
           >
             <Trash2 className="h-4 w-4" />
@@ -604,7 +604,7 @@ function FormularioRecordatorio({
       </div>
 
       {error && (
-        <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {error}
         </p>

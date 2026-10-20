@@ -250,20 +250,20 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
 
       <div
         ref={globoRef}
-        className="pointer-events-auto absolute rounded-2xl bg-white p-5 shadow-2xl transition-[top,left] duration-300 ease-out"
+        className="pointer-events-auto absolute rounded-2xl bg-surface p-5 shadow-2xl transition-[top,left] duration-300 ease-out"
         style={{ top: pos.top, left: pos.left, width: ancho }}
         role="dialog"
         aria-label={actual.titulo}
       >
         {pos.flecha && (
           <div
-            className="absolute h-4 w-4 rotate-45 bg-white"
+            className="absolute h-4 w-4 rotate-45 bg-surface"
             style={pos.flecha === 'arriba' ? { top: -8, left: pos.flechaX - 8 } : { bottom: -8, left: pos.flechaX - 8 }}
           />
         )}
 
         <div className="relative flex items-start justify-between gap-2">
-          <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-violet-600">
+          <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-violet-700">
             {titulo ?? 'Ayuda'}
           </p>
           <button
@@ -334,7 +334,7 @@ export default function RecorridoAyuda({ pasos, titulo, onCerrar }: Props) {
               </button>
             ) : (
               <button
-                className="rounded-xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+                className="rounded-xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:brightness-90"
                 onClick={avanzar}
               >
                 {esUltimo ? 'Listo' : 'Siguiente'}

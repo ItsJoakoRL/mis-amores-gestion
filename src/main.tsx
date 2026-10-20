@@ -4,6 +4,8 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './modules/auth/AuthContext';
 import { crearWebApiClient } from './webApiClient';
+import './tema'; // aplica el modo claro / oscuro antes de dibujar nada
+import './temas.css';
 import './index.css';
 
 // Dentro de Electron, el preload ya dejó window.api listo. Si no existe, es

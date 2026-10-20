@@ -93,9 +93,14 @@ export const RECORRIDOS: Record<string, PasoRecorrido[]> = {
         'Efectivo, Tarjeta o Transferencia para toda la cuenta de una vez. Si se lo lleva sin pagar ahora, elegí "Fiado": en cada línea fiada elegís el cliente (o tocás "Cliente nuevo") y queda anotado como deuda.',
     },
     {
+      selector: '[data-tour="cuenta-paga-con"]',
+      titulo: 'El vuelto',
+      texto: 'Si paga en efectivo, escribí con cuánta plata paga (o tocá un billete de abajo) y el programa te dice cuánto vuelto darle. Es opcional: sólo ayuda a no equivocarse con el cambio.',
+    },
+    {
       selector: '[data-tour="cuenta-cobrar"]',
       titulo: 'Cobrar',
-      texto: 'Cuando el total esté bien, tocá "Cobrar". La venta queda anotada y se descuenta del stock.',
+      texto: 'Cuando el total esté bien, tocá "Cobrar". La venta queda anotada y se descuenta del stock. Si pusiste con cuánto paga, el vuelto queda a la vista en un cartel verde.',
     },
   ],
   'Contar inventario': [

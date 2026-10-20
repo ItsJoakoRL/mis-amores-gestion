@@ -382,7 +382,7 @@ export default function ArticulosPage() {
       <>
         <button
           onClick={() => handleRestaurar(a)}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50"
           title="Restaurar artículo"
         >
           <RotateCcw className="h-4 w-4" />
@@ -390,7 +390,7 @@ export default function ArticulosPage() {
         </button>
         <button
           onClick={() => handleEliminarDefinitivo(a)}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700"
           title="Eliminar para siempre"
         >
           <Trash2 className="h-4 w-4" />
@@ -400,7 +400,7 @@ export default function ArticulosPage() {
       <>
         <button
           onClick={() => navigate(`/recordatorios?articulo=${a.id}`)}
-          className="rounded-lg p-2 text-slate-400 hover:bg-orange-50 hover:text-orange-600 md:p-1.5"
+          className="rounded-lg p-2 text-slate-400 hover:bg-orange-50 hover:text-orange-700 md:p-1.5"
           title="Anotar un recordatorio sobre este producto"
         >
           <BellRing className="h-4 w-4" />
@@ -423,7 +423,7 @@ export default function ArticulosPage() {
         {esAdmin && (
           <button
             onClick={() => handleEliminar(a)}
-            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 md:p-1.5"
+            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-700 md:p-1.5"
             title="Eliminar"
           >
             <Trash2 className="h-4 w-4" />
@@ -526,14 +526,14 @@ export default function ArticulosPage() {
             <button
               type="button"
               onClick={() => setCamaraAbierta(true)}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:brightness-90"
               title="Escanear con la cámara del celular"
             >
               <Camera className="h-4 w-4" />
               Cámara
             </button>
           )}
-          {scanError && <span className="text-xs font-medium text-red-600">{scanError}</span>}
+          {scanError && <span className="text-xs font-medium text-red-700">{scanError}</span>}
         </div>
       )}
 
@@ -597,7 +597,7 @@ export default function ArticulosPage() {
         )}
       </div>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div className="card overflow-hidden">
         {/* Celular: una tarjeta por artículo (una tabla de 5 columnas no entra). */}

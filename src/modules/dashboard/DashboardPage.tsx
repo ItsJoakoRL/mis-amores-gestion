@@ -67,7 +67,7 @@ export default function DashboardPage() {
 
       <TarjetaBienvenida />
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div data-tour="panel-resumen" className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -106,7 +106,7 @@ export default function DashboardPage() {
       {stats && stats.paraRevisarCount > 0 && (
         <Link
           to="/articulos?revisar=1"
-          className="group mt-6 flex animate-slide-up items-center justify-between card border-amber-200 bg-amber-50/60 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          className="group mt-6 flex animate-slide-up items-center justify-between card border-amber-200 bg-amber-50 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-hover"
         >
           <div className="flex items-center gap-4">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm shadow-amber-500/30">
@@ -129,38 +129,42 @@ export default function DashboardPage() {
       <Link
         to="/ventas"
         data-tour="panel-ventas-hoy"
-        className="group mt-8 flex animate-slide-up items-center justify-between card p-6 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+        className="group relative mt-8 flex animate-slide-up items-center justify-between overflow-hidden rounded-2xl bg-gradient-to-r from-[#4338ca] via-[#6d28d9] to-[#be185d] p-6 text-white shadow-lg shadow-brand-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-600/30"
         style={{ animationDelay: '240ms' }}
       >
-        <div className="flex items-center gap-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm shadow-emerald-500/30">
-            <ReceiptText className="h-5 w-5" />
+        <span className="pointer-events-none absolute -right-10 -top-16 h-52 w-52 rounded-full bg-white/10" />
+        <span className="pointer-events-none absolute -bottom-20 right-24 h-40 w-40 rounded-full bg-white/5" />
+        <div className="relative flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 text-white backdrop-blur-sm">
+            <ReceiptText className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="font-medium text-slate-700">Ventas de hoy</h2>
+            <h2 className="text-sm font-semibold text-white/85">Ventas de hoy</h2>
             {ventasHoy ? (
               <>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  {formatearMoneda(ventasHoy.totalCobrado + ventasHoy.totalPagos)} cobrado
-                  {ventasHoy.cantidadVentas > 0 ? ` en ${ventasHoy.cantidadVentas} venta(s)` : ''}
+                <p className="mt-0.5 text-3xl font-bold leading-tight">
+                  {formatearMoneda(ventasHoy.totalCobrado + ventasHoy.totalPagos)}
+                  <span className="ml-2 text-sm font-medium text-white/80">
+                    cobrado{ventasHoy.cantidadVentas > 0 ? ` en ${ventasHoy.cantidadVentas} venta(s)` : ''}
+                  </span>
                 </p>
                 {ventasHoy.totalPagos > 0 && (
-                  <p className="mt-0.5 text-xs text-sky-600">
+                  <p className="mt-0.5 text-xs text-white/85">
                     incluye {formatearMoneda(ventasHoy.totalPagos)} de pagos de cuentas ({ventasHoy.cantidadPagos})
                   </p>
                 )}
                 {ventasHoy.totalFiado > 0 && (
-                  <p className="mt-0.5 text-xs text-amber-600">
+                  <p className="mt-0.5 text-xs text-white/85">
                     + {formatearMoneda(ventasHoy.totalFiado)} fiado (todavía no cobrado)
                   </p>
                 )}
               </>
             ) : (
-              <p className="mt-0.5 text-sm text-slate-500">Cargando...</p>
+              <p className="mt-0.5 text-sm text-white/80">Cargando...</p>
             )}
           </div>
         </div>
-        <ArrowRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5" />
+        <ArrowRight className="relative h-5 w-5 shrink-0 text-white/70 transition-transform group-hover:translate-x-0.5" />
       </Link>
 
       <Link
@@ -235,20 +239,28 @@ function StatCard({
     red: 'bg-gradient-to-br from-red-400 to-red-600 shadow-red-500/30',
     green: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/30',
   };
+  // Un círculo tenue del mismo color en la esquina: le da identidad a cada tarjeta.
+  const manchas: Record<string, string> = {
+    brand: 'bg-brand-500/10',
+    amber: 'bg-amber-500/10',
+    red: 'bg-red-500/10',
+    green: 'bg-emerald-500/10',
+  };
   const tarjeta = (
     <div
       data-tour={tourId}
-      className={`card flex animate-slide-up items-center gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+      className={`card relative flex animate-slide-up items-center gap-4 overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-hover ${
         to ? 'cursor-pointer' : ''
       }`}
       style={{ animationDelay: `${delay}ms` }}
     >
-      <div className={`flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm ${colors[color]}`}>
+      <span className={`pointer-events-none absolute -right-5 -top-5 h-20 w-20 rounded-full ${manchas[color]}`} />
+      <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-md ${colors[color]}`}>
         <Icon className="h-5 w-5" />
       </div>
-      <div>
-        <p className="text-xs text-slate-400">{label}</p>
-        <p className="text-xl font-semibold text-slate-800">{value}</p>
+      <div className="relative min-w-0">
+        <p className="text-xs font-medium text-slate-500">{label}</p>
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
       </div>
     </div>
   );

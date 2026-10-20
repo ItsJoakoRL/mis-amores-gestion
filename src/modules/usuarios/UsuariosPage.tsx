@@ -57,7 +57,7 @@ export default function UsuariosPage() {
         </span>
       </p>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div data-tour="usr-lista" className="card divide-y divide-slate-100">
         {usuarios.map((u) => (
@@ -69,7 +69,7 @@ export default function UsuariosPage() {
               <p className="flex flex-wrap items-center gap-x-2 font-medium text-slate-800">
                 {u.nombre}
                 {u.id === sesion?.id && (
-                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-600">
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                     Sos vos
                   </span>
                 )}
@@ -86,7 +86,7 @@ export default function UsuariosPage() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <button
                 onClick={() => setEditando(u)}
-                className="flex items-center gap-1.5 py-1 text-sm text-slate-500 hover:text-brand-600"
+                className="flex items-center gap-1.5 py-1 text-sm text-slate-500 hover:text-brand-700"
                 title="Editar datos"
               >
                 <Pencil className="h-4 w-4" />
@@ -115,7 +115,7 @@ export default function UsuariosPage() {
               {u.id !== sesion?.id && (
                 <button
                   onClick={() => eliminar(u)}
-                  className="flex items-center gap-1.5 py-1 text-sm text-slate-400 hover:text-red-600"
+                  className="flex items-center gap-1.5 py-1 text-sm text-slate-400 hover:text-red-700"
                   title="Eliminar usuario"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -157,7 +157,7 @@ export default function UsuariosPage() {
 // Los cuadros de esta pantalla: se pueden desplazar si el teclado del celular
 // les saca lugar.
 const CAJA_MODAL =
-  'max-h-[90dvh] w-full max-w-sm animate-scale-in overflow-y-auto rounded-xl bg-white shadow-xl';
+  'max-h-[90dvh] w-full max-w-sm animate-scale-in overflow-y-auto rounded-xl bg-surface shadow-xl';
 
 // "Generar una" + cómo queda a la vista: para no tener que inventar una
 // contraseña, y poder leerla o copiarla antes de pasársela a la persona.
@@ -182,7 +182,7 @@ function GeneradorDeClave({ valor, onGenerar }: { valor: string; onGenerar: (cla
           setGenerada(nueva);
           onGenerar(nueva);
         }}
-        className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:underline"
+        className="flex items-center gap-1.5 text-xs font-medium text-brand-700 hover:underline"
       >
         <Wand2 className="h-3.5 w-3.5" />
         Generar una contraseña
@@ -193,7 +193,7 @@ function GeneradorDeClave({ valor, onGenerar }: { valor: string; onGenerar: (cla
           <button
             type="button"
             onClick={copiar}
-            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-white"
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-surface"
           >
             {copiada ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copiada ? 'Copiada' : 'Copiar'}
@@ -254,7 +254,7 @@ function EditarUsuarioModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
       <div className={CAJA_MODAL}>
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">
@@ -274,7 +274,7 @@ function EditarUsuarioModal({
                 <button
                   type="button"
                   onClick={copiar}
-                  className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-white"
+                  className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-surface"
                 >
                   {copiada ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   {copiada ? 'Copiada' : 'Copiar'}
@@ -336,7 +336,7 @@ function EditarUsuarioModal({
               <GeneradorDeClave valor={password} onGenerar={setPassword} />
             </div>
 
-            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-secondary" onClick={datosGuardados ? onGuardado : onCerrar}>
@@ -378,7 +378,7 @@ function NuevoUsuarioModal({ onCerrar, onCreado }: { onCerrar: () => void; onCre
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
       <div className={CAJA_MODAL}>
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Nuevo usuario</h2>
@@ -428,7 +428,7 @@ function NuevoUsuarioModal({ onCerrar, onCreado }: { onCerrar: () => void; onCre
             </div>
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>

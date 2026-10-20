@@ -33,7 +33,7 @@ export default function IndicadorRed() {
   const sinConexion = red.pcs.filter((p) => !p.enLinea);
   if (red.poniendoseAlDia || (red.sincronizando && sinConexion.length === 0)) {
     return (
-      <p className="mb-2 flex items-center gap-2 px-1 text-xs text-brand-600">
+      <p className="mb-2 flex items-center gap-2 px-1 text-xs text-brand-700">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {red.poniendoseAlDia ? 'Trayendo los datos de la otra PC...' : 'Sincronizando...'}
       </p>

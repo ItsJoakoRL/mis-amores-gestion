@@ -21,6 +21,7 @@ import { etiquetaRol, type CuentaPublica } from '@shared/types';
 import { useAuth } from './AuthContext';
 import { cuentasRecordadas, olvidarCuenta } from '../../webApiClient';
 import CampoContrasena from '../../components/CampoContrasena';
+import SelectorTema from '../../components/SelectorTema';
 
 const RASGOS = [
   { icon: ShoppingCart, texto: 'Ventas y stock siempre al día' },
@@ -99,12 +100,12 @@ export default function LoginScreen() {
   const mostrarPassword = modoManual || cuentaElegida !== null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-page lg:flex-row">
       {/* Panel izquierdo: la marca. En el celular se achica a una franja
           compacta arriba; en pantallas grandes ocupa la mitad, con la
           "personalidad" de la app (nombre, para qué sirve, degradé propio) —
           así el login deja de sentirse como un formulario genérico. */}
-      <div className="relative flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-600 via-violet-800 to-brand-900 px-6 py-10 text-white lg:min-h-screen lg:w-1/2 lg:px-16 lg:py-16">
+      <div className="relative flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-[#4338ca] via-[#6d28d9] to-[#be185d] px-6 py-10 text-white lg:min-h-screen lg:w-1/2 lg:px-16 lg:py-16">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.15]"
           style={{
@@ -140,13 +141,13 @@ export default function LoginScreen() {
             <Heart className="h-7 w-7 lg:h-8 lg:w-8" fill="currentColor" />
           </div>
           <h1 className="text-2xl font-semibold lg:text-4xl">Mis Amores</h1>
-          <p className="mt-2 text-sm text-brand-100 lg:text-base">
+          <p className="mt-2 text-sm text-white/85 lg:text-base">
             Bienvenido al sistema del Almacén Mis Amores
           </p>
 
           <div className="mt-8 hidden w-full space-y-3 lg:block">
             {RASGOS.map(({ icon: Icon, texto }) => (
-              <div key={texto} className="flex items-center gap-3 text-brand-50">
+              <div key={texto} className="flex items-center gap-3 text-white">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10">
                   <Icon className="h-4 w-4" />
                 </div>
@@ -163,11 +164,14 @@ export default function LoginScreen() {
       <div
         className="relative flex flex-1 items-center justify-center overflow-hidden p-4 sm:p-8"
         style={{
-          backgroundColor: '#fafbfe',
+          backgroundColor: 'rgb(var(--c-page))',
           backgroundImage:
-            'radial-gradient(circle at 85% 15%, rgba(59, 118, 209, 0.07), transparent 40%), radial-gradient(circle at 10% 90%, rgba(216, 70, 160, 0.05), transparent 40%)',
+            'radial-gradient(circle at 85% 15%, rgb(var(--c-brand-500) / 0.09), transparent 40%), radial-gradient(circle at 10% 90%, rgb(var(--c-pink-500) / 0.07), transparent 40%)',
         }}
       >
+        <div className="absolute right-4 top-4 z-20 w-28">
+          <SelectorTema compacto />
+        </div>
         <ShoppingBag
           className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 text-brand-900/[0.04]"
           strokeWidth={1.2}
@@ -291,7 +295,7 @@ export default function LoginScreen() {
                 </div>
               </div>
 
-              {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+              {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
               <button type="submit" className="btn-primary w-full" disabled={enviando}>
                 {enviando ? 'Ingresando...' : 'Ingresar'}

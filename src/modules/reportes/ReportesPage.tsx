@@ -16,6 +16,7 @@ import {
 import type { MetodoPago, ReporteVentas } from '@shared/types';
 import { formatearMoneda } from '@shared/formato';
 import BotonAyuda from '../../components/BotonAyuda';
+import { useTema } from '../../tema';
 
 
 type RangoPreset = 'hoy' | '7dias' | '30dias' | 'mes';
@@ -67,15 +68,37 @@ function formatearValor(valor: unknown): string {
   return formatearMoneda(Number(valor));
 }
 
-const COLOR_BARRA = '#2a5cb3';
-const COLORES_METODO_PAGO: Record<MetodoPago, string> = {
-  efectivo: '#2a5cb3',
-  tarjeta: '#5f97e1',
-  transferencia: '#95bced',
-  fiado: '#e1ecfa',
-};
+// Los gráficos pintan con colores de verdad (no con clases), así que tienen su juego de colores
+// para el modo claro y otro para el oscuro: más suaves, para que se lean sobre el fondo oscuro.
+function usarColoresDeGrafico() {
+  const { tema } = useTema();
+  const oscuro = tema === 'oscuro';
+  const grilla = oscuro ? '#2e3a52' : '#e2e8f0';
+  return {
+    barra: oscuro ? '#818cf8' : '#4f46e5',
+    pagos: oscuro ? '#2dd4bf' : '#14b8a6',
+    fiado: oscuro ? '#fbbf24' : '#f59e0b',
+    grilla,
+    ejeTexto: oscuro ? '#9aa7bf' : '#64748b',
+    ejeTextoFuerte: oscuro ? '#cdd5e3' : '#475569',
+    tooltip: {
+      borderRadius: 8,
+      borderColor: grilla,
+      fontSize: 13,
+      backgroundColor: oscuro ? '#141b2b' : '#ffffff',
+      color: oscuro ? '#e3e8f1' : '#1e293b',
+    },
+    metodo: {
+      efectivo: oscuro ? '#818cf8' : '#4f46e5',
+      tarjeta: oscuro ? '#a78bfa' : '#8b5cf6',
+      transferencia: oscuro ? '#22d3ee' : '#06b6d4',
+      fiado: oscuro ? '#fbbf24' : '#f59e0b',
+    } as Record<MetodoPago, string>,
+  };
+}
 
 export default function ReportesPage() {
+  const c = usarColoresDeGrafico();
   const [preset, setPreset] = useState<RangoPreset>('7dias');
   const [reporte, setReporte] = useState<ReporteVentas | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -129,7 +152,7 @@ export default function ReportesPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">Cómo vino vendiendo el negocio en el período elegido.</p>
         </div>
-        <div data-tour="rep-presets" className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
+        <div data-tour="rep-presets" className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-surface p-1">
           {PRESETS.map((p) => (
             <button
               key={p.valor}
@@ -144,7 +167,7 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       {cargando ? (
         <div className="flex items-center justify-center py-24 text-slate-400">
@@ -183,25 +206,25 @@ export default function ReportesPage() {
               <h2 className="text-sm font-semibold text-slate-700">Ventas por día</h2>
               <div className="flex items-center gap-3 text-xs text-slate-400">
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLOR_BARRA }} />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.barra }} />
                   Cobrado
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.pagos }} />
                   Pagos de cuentas
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-400" />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.fiado }} />
                   Fiado
                 </span>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={datosPorDia} margin={{ left: 0, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="etiqueta" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c.grilla} />
+                <XAxis dataKey="etiqueta" tick={{ fontSize: 12, fill: c.ejeTexto }} axisLine={{ stroke: c.grilla }} tickLine={false} />
                 <YAxis
-                  tick={{ fontSize: 12, fill: '#64748b' }}
+                  tick={{ fontSize: 12, fill: c.ejeTexto }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v: number) => formatearMoneda(v)}
@@ -210,11 +233,11 @@ export default function ReportesPage() {
                 <Tooltip
                   formatter={formatearValor}
                   labelFormatter={(etiqueta) => `Día ${etiqueta}`}
-                  contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
+                  contentStyle={c.tooltip}
                 />
-                <Bar dataKey="totalCobrado" name="Cobrado" stackId="dia" fill={COLOR_BARRA} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="totalPagos" name="Pagos de cuentas" stackId="dia" fill="#14b8a6" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="totalFiado" name="Fiado" stackId="dia" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="totalCobrado" name="Cobrado" stackId="dia" fill={c.barra} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="totalPagos" name="Pagos de cuentas" stackId="dia" fill={c.pagos} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="totalFiado" name="Fiado" stackId="dia" fill={c.fiado} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -233,13 +256,13 @@ export default function ReportesPage() {
                     layout="vertical"
                     margin={{ left: 0, right: 16 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={c.grilla} />
+                    <XAxis type="number" tick={{ fontSize: 12, fill: c.ejeTexto }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: c.grilla }} tickLine={false} />
                     <YAxis
                       type="category"
                       dataKey="descripcion"
                       width={160}
-                      tick={{ fontSize: 11, fill: '#475569' }}
+                      tick={{ fontSize: 11, fill: c.ejeTextoFuerte }}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(v: string) => (v.length > 22 ? v.slice(0, 22) + '…' : v)}
@@ -250,9 +273,9 @@ export default function ReportesPage() {
                         formatearValor(valor),
                         `${item.payload.cantidad} unidad(es)`,
                       ]}
-                      contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
+                      contentStyle={c.tooltip}
                     />
-                    <Bar dataKey="total" name="Vendido" fill={COLOR_BARRA} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="total" name="Vendido" fill={c.barra} radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -265,18 +288,18 @@ export default function ReportesPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={Math.max(220, reporte.porRubro.length * 34)}>
                   <BarChart data={reporte.porRubro} layout="vertical" margin={{ left: 0, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={c.grilla} />
+                    <XAxis type="number" tick={{ fontSize: 12, fill: c.ejeTexto }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: c.grilla }} tickLine={false} />
                     <YAxis
                       type="category"
                       dataKey="familiaNombre"
                       width={110}
-                      tick={{ fontSize: 12, fill: '#475569' }}
+                      tick={{ fontSize: 12, fill: c.ejeTextoFuerte }}
                       axisLine={false}
                       tickLine={false}
                     />
-                    <Tooltip formatter={formatearValor} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }} />
-                    <Bar dataKey="total" name="Vendido" fill="#3b76d1" radius={[0, 4, 4, 0]} />
+                    <Tooltip formatter={formatearValor} contentStyle={c.tooltip} />
+                    <Bar dataKey="total" name="Vendido" fill={c.barra} radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -287,20 +310,20 @@ export default function ReportesPage() {
             <h2 className="mb-4 text-sm font-semibold text-slate-700">Ventas por forma de pago</h2>
             <ResponsiveContainer width="100%" height={Math.max(160, datosPorMetodoPago.length * 40)}>
               <BarChart data={datosPorMetodoPago} layout="vertical" margin={{ left: 0, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                <YAxis type="category" dataKey="etiqueta" width={110} tick={{ fontSize: 12, fill: '#475569' }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={c.grilla} />
+                <XAxis type="number" tick={{ fontSize: 12, fill: c.ejeTexto }} tickFormatter={(v: number) => formatearMoneda(v)} axisLine={{ stroke: c.grilla }} tickLine={false} />
+                <YAxis type="category" dataKey="etiqueta" width={110} tick={{ fontSize: 12, fill: c.ejeTextoFuerte }} axisLine={false} tickLine={false} />
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   formatter={(valor: unknown, _n: unknown, item: any) => [
                     formatearValor(valor),
                     `${item.payload.cantidad} venta(s)`,
                   ]}
-                  contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
+                  contentStyle={c.tooltip}
                 />
                 <Bar dataKey="total" name="Vendido" radius={[0, 4, 4, 0]}>
                   {datosPorMetodoPago.map((d) => (
-                    <Cell key={d.metodoPago} fill={COLORES_METODO_PAGO[d.metodoPago]} />
+                    <Cell key={d.metodoPago} fill={c.metodo[d.metodoPago]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -326,7 +349,7 @@ function StatCard({
   detalle?: string;
   color?: 'brand' | 'amber';
 }) {
-  const colores = color === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-brand-50 text-brand-600';
+  const colores = color === 'amber' ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700';
   return (
     <div className="card flex items-center gap-3 p-4">
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${colores}`}>
@@ -335,7 +358,7 @@ function StatCard({
       <div>
         <p className="text-xs text-slate-400">{etiqueta}</p>
         <p className="text-lg font-semibold text-slate-800">{valor}</p>
-        {detalle && <p className="text-xs text-sky-600">{detalle}</p>}
+        {detalle && <p className="text-xs text-sky-700">{detalle}</p>}
       </div>
     </div>
   );

@@ -402,7 +402,7 @@ export default function LectorCamara({ titulo = 'Escaneá el código de barras',
               data-boton-linterna
               title={linterna ? 'Apagar la linterna' : 'Prender la linterna'}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
-                linterna ? 'bg-amber-400 text-slate-900' : 'bg-white/15 hover:bg-white/25'
+                linterna ? 'bg-amber-400 text-neutral-900' : 'bg-white/15 hover:bg-white/25'
               }`}
             >
               {linterna ? <Flashlight className="h-5 w-5" /> : <FlashlightOff className="h-5 w-5" />}

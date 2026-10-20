@@ -110,7 +110,7 @@ function Fila({
           }}
         />
         {abierta && sugerencias.length > 0 && (
-          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-surface py-1 shadow-lg">
             {sugerencias.map((a) => (
               <button
                 key={a.id}
@@ -149,7 +149,7 @@ function Fila({
         type="button"
         onClick={onQuitar}
         disabled={!puedeQuitar}
-        className="flex h-[38px] w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300"
+        className="flex h-[38px] w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300"
         title="Sacar este producto"
       >
         <X className="h-4 w-4" />
@@ -181,7 +181,7 @@ export default function EditorDeProductos({
       <button
         type="button"
         onClick={() => onChange([...filas, filaNueva()])}
-        className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
+        className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
       >
         <Plus className="h-4 w-4" />
         Agregar otro producto
@@ -190,7 +190,7 @@ export default function EditorDeProductos({
         <span className="text-slate-500">
           {items.length} producto{items.length === 1 ? '' : 's'}
           {incompletas > 0 && (
-            <span className="ml-2 text-amber-600">
+            <span className="ml-2 text-amber-700">
               · {incompletas} sin terminar de completar
             </span>
           )}

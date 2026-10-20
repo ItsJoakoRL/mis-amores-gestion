@@ -119,7 +119,7 @@ export default function ConfiguracionPage() {
         <p className="mt-1 text-sm text-slate-500">Cómo trabaja esta PC junto con las otras PCs del negocio y los celulares.</p>
       </div>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       {!puenteNuevo ? (
         <div className="card p-5">
@@ -425,7 +425,7 @@ function ServidorDeInternet({ red, onCambio }: { red: EstadoRed; onCambio: () =>
             onChange={(e) => setDireccion(e.target.value)}
             autoComplete="off"
           />
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <button className="btn-primary" type="submit" disabled={conectando || !direccion.trim()}>
             {conectando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
             {conectando ? 'Conectando (puede tardar un minuto)...' : 'Conectar con el servidor'}
@@ -459,7 +459,7 @@ function ListaDePcs({
           Las otras PCs del negocio
         </h2>
         {red.sincronizando && !red.poniendoseAlDia && (
-          <span className="flex items-center gap-1.5 text-xs text-brand-600">
+          <span className="flex items-center gap-1.5 text-xs text-brand-700">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Sincronizando...
           </span>
@@ -588,7 +588,7 @@ function Avisos({ avisos, onBorrar }: { avisos: EstadoRed['avisos']; onBorrar: (
       </p>
       <ul className="mt-3 space-y-1.5">
         {avisos.map((a) => (
-          <li key={a.id} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
+          <li key={a.id} className="rounded-lg bg-surface px-3 py-2 text-sm text-slate-700 shadow-sm">
             {a.texto}
             <span className="ml-2 text-xs text-slate-400">{hace(a.fecha)}</span>
           </li>
@@ -684,8 +684,8 @@ function SumarPcModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-lg animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[90dvh] w-full max-w-lg animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-800">Sumar esta PC a la red del negocio</h2>
           {paso !== 'listo' && (
@@ -711,7 +711,7 @@ function SumarPcModal({
                     type="button"
                     onClick={buscar}
                     disabled={buscando}
-                    className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
+                    className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline disabled:opacity-50"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${buscando ? 'animate-spin' : ''}`} />
                     Buscar de nuevo
@@ -832,7 +832,7 @@ function SumarPcModal({
           )}
 
           {error && (
-            <p className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            <p className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               {error}
             </p>

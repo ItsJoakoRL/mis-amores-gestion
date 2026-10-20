@@ -50,9 +50,9 @@ function PuntoAviso() {
 
 function BarraProgreso({ porcentaje, clara = false }: { porcentaje: number; clara?: boolean }) {
   return (
-    <div className={`h-1.5 w-full overflow-hidden rounded-full ${clara ? 'bg-white/30' : 'bg-brand-100'}`}>
+    <div className={`h-1.5 w-full overflow-hidden rounded-full ${clara ? 'bg-surface/30' : 'bg-brand-100'}`}>
       <div
-        className={`h-full rounded-full transition-[width] duration-300 ${clara ? 'bg-white' : 'bg-brand-500'}`}
+        className={`h-full rounded-full transition-[width] duration-300 ${clara ? 'bg-surface' : 'bg-brand-500'}`}
         style={{ width: `${Math.max(3, porcentaje)}%` }}
       />
     </div>
@@ -86,12 +86,12 @@ export function BotonActualizacion({ info }: { info: InfoActualizacion | null })
         className={`${base} bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-100`}
       >
         <span className="relative">
-          <Download className="h-4 w-4 text-emerald-600" />
+          <Download className="h-4 w-4 text-emerald-700" />
           <PuntoAviso />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block">Actualización disponible</span>
-          <span className={`block text-[11px] font-normal ${estado.error ? 'text-red-600' : 'text-emerald-600'}`}>
+          <span className={`block text-[11px] font-normal ${estado.error ? 'text-red-700' : 'text-emerald-700'}`}>
             {estado.error ? 'Falló la descarga · tocá para reintentar' : `Versión ${estado.version} · tocá para bajarla`}
           </span>
         </span>
@@ -119,7 +119,7 @@ export function BotonActualizacion({ info }: { info: InfoActualizacion | null })
       <button
         data-tour="buscar-actualizaciones"
         onClick={instalar}
-        className={`${base} bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm hover:from-brand-700 hover:to-violet-700`}
+        className={`${base} bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm hover:brightness-110`}
       >
         <span className="relative">
           <Rocket className="h-4 w-4" />
@@ -195,7 +195,7 @@ export function CartelActualizacion({ info }: { info: InfoActualizacion | null }
     );
   } else if (estado.tipo === 'disponible') {
     contenido = (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-emerald-900 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-surface px-4 py-3 text-emerald-900 shadow-sm">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-sm shadow-emerald-500/30">
           <Sparkles className="h-5 w-5" />
         </div>
@@ -214,7 +214,7 @@ export function CartelActualizacion({ info }: { info: InfoActualizacion | null }
     );
   } else if (estado.tipo === 'descargando') {
     contenido = (
-      <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-white px-4 py-3 text-brand-900 shadow-sm">
+      <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-surface px-4 py-3 text-brand-900 shadow-sm">
         <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-500" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="text-sm font-semibold">
@@ -228,7 +228,7 @@ export function CartelActualizacion({ info }: { info: InfoActualizacion | null }
   } else {
     contenido = (
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-gradient-to-r from-brand-600 to-violet-600 px-4 py-3 text-white shadow-md">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface/15">
           <Rocket className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -239,13 +239,13 @@ export function CartelActualizacion({ info }: { info: InfoActualizacion | null }
           </p>
         </div>
         <button
-          className="btn bg-white text-brand-700 shadow-sm hover:bg-brand-50"
+          className="btn bg-surface text-brand-700 shadow-sm hover:bg-brand-50"
           onClick={instalar}
         >
           <Rocket className="h-4 w-4" />
           Reiniciar y actualizar
         </button>
-        <button onClick={cerrar} className="btn text-white/90 hover:bg-white/10">
+        <button onClick={cerrar} className="btn text-white/90 hover:bg-surface/10">
           Más tarde
         </button>
       </div>

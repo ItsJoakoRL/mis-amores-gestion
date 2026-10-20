@@ -79,7 +79,7 @@ export default function VentasPage() {
           <p className="mt-1 text-sm text-slate-500">Mirá lo vendido día por día.</p>
         </div>
         <div data-tour="cal-resumen-hoy" className="card flex items-center gap-3 px-4 py-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
             <DollarSign className="h-5 w-5" />
           </div>
           <div>
@@ -91,10 +91,10 @@ export default function VentasPage() {
               )}
             </p>
             {ventasHoy && ventasHoy.totalPagos > 0 && (
-              <p className="text-xs text-sky-600">incluye {formatearMoneda(ventasHoy.totalPagos)} de pagos de cuentas</p>
+              <p className="text-xs text-sky-700">incluye {formatearMoneda(ventasHoy.totalPagos)} de pagos de cuentas</p>
             )}
             {ventasHoy && ventasHoy.totalFiado > 0 && (
-              <p className="text-xs text-amber-600">+ {formatearMoneda(ventasHoy.totalFiado)} fiado</p>
+              <p className="text-xs text-amber-700">+ {formatearMoneda(ventasHoy.totalFiado)} fiado</p>
             )}
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function VentasPage() {
 
         <div data-tour="cal-grid" className="relative grid grid-cols-7">
           {cargandoCalendario && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+            <div className="absolute inset-0 flex items-center justify-center bg-surface/60">
               <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
             </div>
           )}
@@ -145,7 +145,7 @@ export default function VentasPage() {
                 onClick={() => resumen && setDiaSeleccionado(ymd)}
                 disabled={!resumen}
                 className={`flex min-h-[64px] flex-col items-start gap-1 border-b border-r border-slate-100 p-1 text-left transition-colors last:border-r-0 sm:min-h-[76px] sm:p-2 ${
-                  enMes ? 'bg-white' : 'bg-slate-50/50'
+                  enMes ? 'bg-surface' : 'bg-slate-50/50'
                 } ${resumen ? 'cursor-pointer hover:bg-brand-50' : 'cursor-default'}`}
               >
                 <span
@@ -170,7 +170,7 @@ export default function VentasPage() {
                 {resumen && (
                   <span className="hidden text-[10px] text-slate-400 sm:block">
                     {resumen.cantidadVentas} venta(s)
-                    {resumen.totalPagos > 0 && <span className="text-sky-600"> · {resumen.cantidadPagos} pago(s) de cuentas</span>}
+                    {resumen.totalPagos > 0 && <span className="text-sky-700"> · {resumen.cantidadPagos} pago(s) de cuentas</span>}
                   </span>
                 )}
               </button>
@@ -246,15 +246,15 @@ function DiaDetalleModal({
   }, [fecha]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">{fechaLegible}</h2>
             <p className="text-sm text-slate-500">
               {compras} venta(s){compras !== ventas.length ? ` (${ventas.length} productos)` : ''} · Cobrado {formatearMoneda(totalCobrado + totalPagos)}
-              {totalPagos > 0 && <span className="text-sky-600"> (ventas {formatearMoneda(totalCobrado)} + pagos de cuentas {formatearMoneda(totalPagos)})</span>}
-              {totalFiado > 0 && <span className="text-amber-600"> · Fiado {formatearMoneda(totalFiado)}</span>}
+              {totalPagos > 0 && <span className="text-sky-700"> (ventas {formatearMoneda(totalCobrado)} + pagos de cuentas {formatearMoneda(totalPagos)})</span>}
+              {totalFiado > 0 && <span className="text-amber-700"> · Fiado {formatearMoneda(totalFiado)}</span>}
             </p>
           </div>
           <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -266,7 +266,7 @@ function DiaDetalleModal({
           {cargando ? (
             <p className="px-6 py-8 text-center text-slate-400">Cargando...</p>
           ) : errorCarga ? (
-            <p className="px-6 py-8 text-center text-red-600">{errorCarga}</p>
+            <p className="px-6 py-8 text-center text-red-700">{errorCarga}</p>
           ) : ventas.length === 0 && pagos.length === 0 ? (
             <p className="px-6 py-8 text-center text-slate-400">No hay ventas registradas este día.</p>
           ) : (
@@ -303,7 +303,7 @@ function DiaDetalleModal({
                       {format(new Date(v.fecha), 'HH:mm')} · x{formatearCantidad(v.cantidad)} ·{' '}
                       <span className="capitalize">{v.metodoPago}</span>
                       {v.metodoPago === 'fiado' && v.clienteNombre && (
-                        <span className="text-amber-600"> ({v.clienteNombre})</span>
+                        <span className="text-amber-700"> ({v.clienteNombre})</span>
                       )}
                       {v.usuarioNombre ? ` · ${v.usuarioNombre}` : ''}
                     </p>
@@ -312,7 +312,7 @@ function DiaDetalleModal({
                     <span className="font-semibold text-slate-800">{formatearMoneda(v.total)}</span>
                     <button
                       onClick={() => handleEliminar(v)}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-700"
                       title="Anular venta"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -343,7 +343,7 @@ function DiaDetalleModal({
                     <td className="px-4 py-2 capitalize text-slate-600">
                       {v.metodoPago}
                       {v.metodoPago === 'fiado' && v.clienteNombre && (
-                        <span className="ml-1 text-xs normal-case text-amber-600">({v.clienteNombre})</span>
+                        <span className="ml-1 text-xs normal-case text-amber-700">({v.clienteNombre})</span>
                       )}
                     </td>
                     <td className="px-4 py-2 font-medium text-slate-800">{formatearMoneda(v.total)}</td>
@@ -351,7 +351,7 @@ function DiaDetalleModal({
                     <td className="px-4 py-2 text-right">
                       <button
                         onClick={() => handleEliminar(v)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700"
                         title="Anular venta"
                       >
                         <Trash2 className="h-4 w-4" />

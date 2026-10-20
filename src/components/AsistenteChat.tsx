@@ -59,18 +59,18 @@ export default function AsistenteChat() {
   return (
     <>
       {abierto && (
-        <div className="fixed bottom-24 right-6 z-40 flex h-[30rem] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:right-6">
+        <div className="fixed bottom-24 right-6 z-40 flex h-[30rem] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-2xl border border-slate-200 bg-surface shadow-2xl sm:right-6">
           <div className="flex items-center justify-between border-b border-slate-200 bg-brand-600 px-4 py-3 text-white">
             <div className="flex items-center gap-2.5">
               <Mascota tamanio="sm" className="shrink-0" />
               <div>
                 <p className="text-sm font-semibold leading-tight">Asistente</p>
-                <p className="text-[11px] leading-tight text-brand-100">Responde con tus datos, sin IA externa</p>
+                <p className="text-[11px] leading-tight text-white/80">Responde con tus datos, sin IA externa</p>
               </div>
             </div>
             <button
               onClick={() => setAbierto(false)}
-              className="rounded-lg p-1 text-white/80 hover:bg-white/10 hover:text-white"
+              className="rounded-lg p-1 text-white/80 hover:bg-surface/10 hover:text-white"
               aria-label="Cerrar asistente"
             >
               <X className="h-4 w-4" />

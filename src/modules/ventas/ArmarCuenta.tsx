@@ -2,6 +2,7 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Banknote,
   Camera,
   Plus,
   ReceiptText,
@@ -17,6 +18,7 @@ import type { Articulo, Cliente, MetodoPago } from '@shared/types';
 import {
   formatearCantidad,
   formatearMoneda,
+  formatearMonedaConCentavos,
   limpiarDecimal,
   numeroDeDecimal,
   pareceCodigoDeBarras,
@@ -31,6 +33,7 @@ import ArticuloFormModal from '../articulos/ArticuloFormModal';
 import NuevoClienteRapido from './NuevoClienteRapido';
 import { CantidadConBotones, CantidadDeRenglon, limpiarCantidadEscrita } from './SelectorCantidad';
 import { esTactil } from '../../utils/dispositivo';
+import { aCentavos, billetesSugeridos, calcularPago, limpiarMontoEscrito, montoEscrito, textoDeMonto } from './vuelto';
 
 const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
   { valor: 'efectivo', etiqueta: 'Efectivo' },
@@ -40,6 +43,9 @@ const METODOS_PAGO: { valor: MetodoPago; etiqueta: string }[] = [
 ];
 
 const esMetodo = (m: unknown): m is MetodoPago => METODOS_PAGO.some((x) => x.valor === m);
+
+// Un monto sin centavos si es redondo ($ 2.500) y con centavos si no ($ 2.500,50): el vuelto tiene que ser exacto.
+const dinero = (n: number) => (Number.isInteger(n) ? formatearMoneda(n) : formatearMonedaConCentavos(n));
 
 // Un renglón de la cuenta: un producto, cuántos y CÓMO SE PAGA. Un mismo producto puede estar en
 // varios renglones (por ejemplo 3 gaseosas: 2 en efectivo y 1 por transferencia), y cada renglón
@@ -169,6 +175,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   const [divMetodo, setDivMetodo] = useState<MetodoPago>('transferencia');
   const [divError, setDivError] = useState<string | null>(null);
   const [registrando, setRegistrando] = useState(false);
+  // El botón se apaga recién en el próximo dibujo de la pantalla: un doble toque muy rápido podía cobrar dos veces.
+  const cobrandoYa = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [cartelExito, setCartelExito] = useState<string | null>(null);
   // Sólo para mostrar el avisito de "recuperamos tu cuenta" una vez, al
@@ -185,10 +193,16 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   const [vendidosSinStock, setVendidosSinStock] = useState<string[]>([]);
   // La cámara del celular como lectora de códigos (se va escaneando producto tras producto).
   const [camaraAbierta, setCamaraAbierta] = useState(false);
+  // Cobro en efectivo: con cuánta plata paga el cliente (lo que se escribe) y, ya cobrada la venta, el vuelto que
+  // hay que darle (queda a la vista hasta que se cierra o se arma la próxima cuenta).
+  const [pagaCon, setPagaCon] = useState('');
+  const [vueltoEntregar, setVueltoEntregar] = useState<{ vuelto: number; pagoCon: number; efectivo: number } | null>(null);
 
   const hayFiado = carrito.some((l) => l.metodo === 'fiado');
   const faltaCliente = carrito.some((l) => l.metodo === 'fiado' && !l.clienteId);
   const variasFormas = new Set(carrito.map((l) => l.metodo)).size > 1;
+  // Hay efectivo en la cuenta (o, con la cuenta vacía, es la forma de pago elegida): ahí tiene sentido el vuelto.
+  const hayEfectivo = carrito.length === 0 ? metodoPago === 'efectivo' : carrito.some((l) => l.metodo === 'efectivo');
 
   // La cuenta recuperada trae los productos como estaban cuando se guardó
   // (puede ser de ayer): se actualizan precio y stock con lo que hay ahora en
@@ -248,6 +262,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     setUltimoCliente(null);
     setMetodoPago('efectivo');
     setDividiendoId(null);
+    setPagaCon('');
   }
 
   useEffect(() => {
@@ -288,6 +303,11 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     );
     setUltimoCliente((u) => (u && !ids.has(u) ? null : u));
   }, [clientes]);
+
+  // Si la cuenta ya no se paga en efectivo, lo que se había escrito en "Paga con" no tiene sentido.
+  useEffect(() => {
+    if (!hayEfectivo) setPagaCon('');
+  }, [hayEfectivo]);
 
   // Con la cuenta vacía, la próxima compra arranca con un número nuevo.
   useEffect(() => {
@@ -333,6 +353,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   // Suma un producto a la cuenta — si ya estaba en la lista con la misma forma de pago (se
   // escaneó el mismo código dos veces), suma la cantidad en el mismo renglón en vez de duplicarlo.
   function sumarAlCarrito(prod: Articulo, cant: number) {
+    setVueltoEntregar(null);
     const cliente = metodoPago === 'fiado' ? ultimoCliente : null;
     setCarrito((actual) => {
       const yaEsta = actual.find((l) => l.producto.id === prod.id && l.metodo === metodoPago && l.clienteId === cliente);
@@ -553,6 +574,9 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   const totalDe = (m: MetodoPago) => carrito.filter((l) => l.metodo === m).reduce((acc, l) => acc + subtotalDe(l), 0);
   const totalFiado = totalDe('fiado');
   const totalCobrarAhora = totalCarrito - totalFiado;
+  // La parte que se cobra en efectivo: sobre esa se calcula el vuelto.
+  const efectivoACobrar = aCentavos(totalDe('efectivo'));
+  const resultadoPago = calcularPago(pagaCon, efectivoACobrar);
   // Cuántas unidades de cada producto hay en total en la cuenta (puede estar en varios renglones).
   const cantidadPorProducto = new Map<string, number>();
   for (const l of carrito) cantidadPorProducto.set(l.producto.id, (cantidadPorProducto.get(l.producto.id) ?? 0) + l.cantidad);
@@ -575,11 +599,12 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   }
 
   async function cobrar() {
-    if (carrito.length === 0) return;
+    if (carrito.length === 0 || cobrandoYa.current) return;
     if (faltaCliente) {
       setError('Elegí a qué cliente se le anota lo fiado');
       return;
     }
+    cobrandoYa.current = true;
     setRegistrando(true);
     setError(null);
     const pendientes = [...carrito];
@@ -590,6 +615,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     // precio lo pone la base al guardar), no de lo que mostraba la cuenta.
     let totalRegistrado = 0;
     let fiadoRegistrado = 0;
+    let efectivoRegistrado = 0;
+    const pagaConAlCobrar = pagaCon;
     try {
       for (const linea of pendientes) {
         const esFiado = linea.metodo === 'fiado';
@@ -602,15 +629,25 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         });
         totalRegistrado += venta.total;
         if (esFiado) fiadoRegistrado += venta.total;
+        if (linea.metodo === 'efectivo') efectivoRegistrado += venta.total;
         // Se saca de a uno a medida que se confirma — si algo falla a mitad
         // de camino, lo ya cobrado no se vuelve a intentar de nuevo.
         setCarrito((actual) => actual.filter((l) => l.id !== linea.id));
       }
       ticketActual.current = null; // se cobró todo: la próxima compra es otra
       const productos = new Set(pendientes.map((l) => l.producto.id)).size;
+      // El vuelto se calcula con lo que de verdad quedó registrado en efectivo (no con lo que mostraba la cuenta).
+      const pago = calcularPago(pagaConAlCobrar, efectivoRegistrado);
+      setVueltoEntregar(
+        pago.tipo === 'vuelto'
+          ? { vuelto: pago.vuelto, pagoCon: montoEscrito(pagaConAlCobrar) ?? 0, efectivo: aCentavos(efectivoRegistrado) }
+          : null
+      );
+      setPagaCon('');
       setCartelExito(
         `Venta registrada: ${formatearMoneda(totalRegistrado)} en ${productos} producto(s)` +
-          (fiadoRegistrado > 0 && fiadoRegistrado < totalRegistrado ? ` (${formatearMoneda(fiadoRegistrado)} quedaron fiados)` : '')
+          (fiadoRegistrado > 0 && fiadoRegistrado < totalRegistrado ? ` (${formatearMoneda(fiadoRegistrado)} quedaron fiados)` : '') +
+          (pago.tipo === 'vuelto' ? ` · Vuelto: ${dinero(pago.vuelto)}` : '')
       );
       // Se mira cómo quedó el stock de verdad (no lo que mostraba la cuenta, que
       // puede estar viejo): los que quedaron en negativo hay que contarlos.
@@ -629,6 +666,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           ' — lo que ya se cobró antes de este error queda registrado; el resto sigue en la cuenta.'
       );
     } finally {
+      cobrandoYa.current = false;
       setRegistrando(false);
     }
   }
@@ -656,7 +694,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   {formatearMoneda(producto.precioVenta)} · Stock: {formatearCantidad(producto.stock)}
                 </p>
                 {producto.stock <= 0 && (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-600">
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
                     Figura sin stock: se puede vender igual y queda para revisar.
                   </p>
@@ -673,7 +711,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   </p>
                 )}
                 {sinPrecio(producto) && (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-red-600">
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-red-700">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
                     No tiene precio cargado: cargalo en Artículos y stock antes de venderlo.
                   </p>
@@ -686,7 +724,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   setCantidad('1');
                   busquedaRef.current?.focus();
                 }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-600"
+                className="rounded-lg p-1 text-slate-400 hover:bg-surface hover:text-slate-600"
                 title="Cambiar producto"
               >
                 <X className="h-4 w-4" />
@@ -710,7 +748,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                   type="button"
                   data-tour="cuenta-camara"
                   onClick={() => setCamaraAbierta(true)}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-brand-600 hover:bg-brand-50"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-brand-700 hover:bg-brand-50"
                   title="Escanear con la cámara del celular"
                 >
                   <Camera className="h-5 w-5" />
@@ -719,7 +757,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
               {(resultados.length > 0 || buscando) && (
                 <div
                   data-desborda
-                  className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                  className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-surface py-1 shadow-lg"
                 >
                   {buscando && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
                   {!buscando &&
@@ -778,7 +816,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           {carrito.length > 0 && (
             <button
               onClick={vaciarCuenta}
-              className="text-xs font-medium text-slate-400 hover:text-red-600"
+              className="text-xs font-medium text-slate-400 hover:text-red-700"
               title="Sacar todo lo agregado y empezar de nuevo"
             >
               Vaciar
@@ -801,7 +839,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                         {formatearMoneda(linea.producto.precioVenta)}
                       </p>
                       {enLaCuenta > linea.producto.stock && (
-                        <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-600">
+                        <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-700">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                           {linea.producto.stock > 0 ? `Figuran ${formatearCantidad(linea.producto.stock)}` : 'Figura sin stock'}:
                           se vende igual y queda para revisar
@@ -811,7 +849,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                     <p className="shrink-0 font-medium text-slate-700">{formatearMoneda(subtotalDe(linea))}</p>
                     <button
                       onClick={() => quitarDelCarrito(linea.id)}
-                      className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600"
+                      className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-700"
                       title="Sacar de la cuenta"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -858,7 +896,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                         <select
                           aria-label={`Cliente de ${linea.producto.descripcion}`}
                           className={`input w-auto max-w-[14rem] py-1 text-sm ${
-                            linea.clienteId ? '' : 'border-amber-400 bg-white'
+                            linea.clienteId ? '' : 'border-amber-400 bg-surface'
                           }`}
                           value={linea.clienteId ?? ''}
                           onChange={(e) => elegirClienteDeLinea(linea.id, e.target.value || null)}
@@ -931,7 +969,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                           Cancelar
                         </button>
                       </div>
-                      {divError && <p className="mt-1.5 text-xs text-red-600">{divError}</p>}
+                      {divError && <p className="mt-1.5 text-xs text-red-700">{divError}</p>}
                     </div>
                   )}
                 </div>
@@ -990,6 +1028,27 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           </div>
         )}
 
+        {hayEfectivo && (
+          <div data-tour="cuenta-paga-con" className="w-40">
+            <label className="label" htmlFor="paga-con">
+              {variasFormas ? 'Efectivo recibido' : 'Paga con'}
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
+              <input
+                id="paga-con"
+                data-paga-con
+                className="input pl-7"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="Opcional"
+                value={pagaCon}
+                onChange={(e) => setPagaCon(limpiarMontoEscrito(e.target.value))}
+              />
+            </div>
+          </div>
+        )}
+
         <button
           data-tour="cuenta-cobrar"
           className="btn-primary"
@@ -1000,6 +1059,86 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           {registrando ? 'Cobrando...' : 'Cobrar'}
         </button>
       </div>
+
+      {hayEfectivo && efectivoACobrar > 0 && (
+        <div data-vuelto-zona className="mt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Paga con:</span>
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 bg-surface px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              onClick={() => setPagaCon(textoDeMonto(efectivoACobrar))}
+            >
+              Justo
+            </button>
+            {billetesSugeridos(efectivoACobrar).map((b) => (
+              <button
+                key={b}
+                type="button"
+                className="rounded-full border border-slate-300 bg-surface px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={() => setPagaCon(String(b))}
+              >
+                {formatearMoneda(b)}
+              </button>
+            ))}
+            {pagaCon && (
+              <button
+                type="button"
+                className="rounded-full px-2 py-1 text-xs text-slate-500 underline hover:text-slate-700"
+                onClick={() => setPagaCon('')}
+              >
+                Borrar
+              </button>
+            )}
+          </div>
+          {resultadoPago.tipo === 'vuelto' && (
+            <div data-vuelto="vuelto" className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <Banknote className="h-6 w-6 shrink-0 text-emerald-700" />
+              <div>
+                <p className="text-xs font-semibold text-emerald-700">Vuelto para darle al cliente</p>
+                <p className="text-2xl font-bold text-emerald-700">{dinero(resultadoPago.vuelto)}</p>
+              </div>
+            </div>
+          )}
+          {resultadoPago.tipo === 'justo' && (
+            <p data-vuelto="justo" className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
+              Justo: no hay vuelto.
+            </p>
+          )}
+          {resultadoPago.tipo === 'falta' && (
+            <p data-vuelto="falta" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+              Con eso no alcanza: faltan {dinero(resultadoPago.faltan)}.
+            </p>
+          )}
+          {resultadoPago.tipo === 'invalido' && (
+            <p data-vuelto="invalido" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              Escribí cuánto paga con números (por ejemplo 20000).
+            </p>
+          )}
+        </div>
+      )}
+      {vueltoEntregar && (
+        <div
+          data-vuelto-entregar
+          className="mt-3 flex items-start gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3"
+        >
+          <Banknote className="mt-0.5 h-7 w-7 shrink-0 text-emerald-700" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-emerald-700">Venta cobrada · dale de vuelto</p>
+            <p className="text-3xl font-bold text-emerald-700">{dinero(vueltoEntregar.vuelto)}</p>
+            <p className="mt-0.5 text-xs text-emerald-700">
+              Pagó con {dinero(vueltoEntregar.pagoCon)} y el efectivo de la cuenta fue {dinero(vueltoEntregar.efectivo)}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVueltoEntregar(null)}
+            className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+          >
+            Listo
+          </button>
+        </div>
+      )}
 
       {variasFormas && (
         <p data-detalle-pagos className="mt-3 text-sm text-slate-600">
@@ -1022,7 +1161,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           Lo vas a ver separado en el Panel, el calendario de Ventas y en Reportes.
         </p>
       )}
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {vendidosSinStock.length > 0 && (
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1033,7 +1172,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
           </p>
           <button
             onClick={() => setVendidosSinStock([])}
-            className="shrink-0 rounded-lg p-1 text-amber-600 hover:bg-amber-100"
+            className="shrink-0 rounded-lg p-1 text-amber-700 hover:bg-amber-100"
             title="Cerrar este aviso"
           >
             <X className="h-4 w-4" />

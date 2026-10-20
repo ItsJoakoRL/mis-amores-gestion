@@ -96,9 +96,9 @@ function textoDeDeuda(dias: number): string {
 
 // Cuanto más vieja la deuda, más llamativo el color.
 function claseDeDeuda(dias: number): string {
-  if (dias >= 90) return 'font-medium text-red-600';
-  if (dias >= 60) return 'font-medium text-orange-600';
-  if (dias >= 30) return 'text-amber-600';
+  if (dias >= 90) return 'font-medium text-red-700';
+  if (dias >= 60) return 'font-medium text-orange-700';
+  if (dias >= 30) return 'text-amber-700';
   return 'text-slate-400';
 }
 
@@ -338,7 +338,7 @@ export default function ClientesPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="card flex items-center gap-3 px-4 py-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
               <Wallet className="h-5 w-5" />
             </div>
             <div>
@@ -353,7 +353,7 @@ export default function ClientesPage() {
         </div>
       </div>
 
-      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div data-tour="cli-buscar" className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -368,7 +368,7 @@ export default function ClientesPage() {
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input
             type="checkbox"
-            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            className="h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-500"
             checked={soloConDeuda}
             onChange={(e) => setSoloConDeuda(e.target.checked)}
           />
@@ -432,7 +432,7 @@ export default function ClientesPage() {
                       onClick={() => abrirCuentaDe(v)}
                       title={e.cubierto ? 'Ya está pago' : 'Ver la cuenta y registrar el pago'}
                       className={`ml-3 flex shrink-0 flex-col items-end rounded-lg px-2 py-0.5 text-sm font-semibold transition-colors ${
-                        e.cubierto ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-700 hover:bg-amber-50'
+                        e.cubierto ? 'text-emerald-700 hover:bg-emerald-50' : 'text-amber-700 hover:bg-amber-50'
                       }`}
                     >
                       <span className="flex items-center gap-1.5">
@@ -538,7 +538,7 @@ export default function ClientesPage() {
                         e.stopPropagation();
                         setEstadoDe(c);
                       }}
-                      className="mr-1 rounded-lg bg-brand-50 p-2 text-brand-600 transition-colors hover:bg-brand-100 sm:p-1.5"
+                      className="mr-1 rounded-lg bg-brand-50 p-2 text-brand-700 transition-colors hover:bg-brand-100 sm:p-1.5"
                       title="Estado de cuenta: código QR para descargar y mandarle lo que debe"
                     >
                       <QrCode className="h-4 w-4" />
@@ -549,7 +549,7 @@ export default function ClientesPage() {
                           e.stopPropagation();
                           handleEliminar(c);
                         }}
-                        className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600 sm:p-1.5"
+                        className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-700 sm:p-1.5"
                         title="Sacar de la lista"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -673,9 +673,9 @@ function NuevoClienteModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
       <div
-        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl ${
           conProductos ? 'max-w-xl' : 'max-w-sm'
         }`}
       >
@@ -687,7 +687,7 @@ function NuevoClienteModal({
             <label className="label">Nombre y apellido</label>
             <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} required autoFocus />
             {nombreDuplicado && (
-              <p className="mt-1 text-xs text-amber-600">
+              <p className="mt-1 text-xs text-amber-700">
                 Ya tenés un cliente anotado con ese nombre. Si es otra persona, agregale algo para distinguirla (ej.
                 un apellido o apodo).
               </p>
@@ -718,7 +718,7 @@ function NuevoClienteModal({
                 value={deudaInicial}
                 onChange={(e) => setDeudaInicial(e.target.value.replace(/[^0-9.,]/g, ''))}
               />
-              <p className={`mt-1 text-xs ${deudaInvalida ? 'text-red-600' : 'text-slate-400'}`}>
+              <p className={`mt-1 text-xs ${deudaInvalida ? 'text-red-700' : 'text-slate-400'}`}>
                 {deudaInvalida
                   ? 'Ese monto no es un número válido.'
                   : deudaNum > 0
@@ -727,7 +727,7 @@ function NuevoClienteModal({
               </p>
               <button
                 type="button"
-                className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+                className="mt-1 text-xs font-medium text-brand-700 hover:underline"
                 onClick={() => setConProductos(true)}
               >
                 O anotá qué productos son
@@ -765,7 +765,7 @@ function NuevoClienteModal({
             <input className="input" value={nota} onChange={(e) => setNota(e.target.value)} />
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>
@@ -889,8 +889,8 @@ function ClienteDetalleModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[85dvh] w-full max-w-2xl animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -900,9 +900,9 @@ function ClienteDetalleModal({
                 <span
                   className={
                     saldoActual > 0
-                      ? 'font-semibold text-amber-600'
+                      ? 'font-semibold text-amber-700'
                       : saldoActual < 0
-                        ? 'font-semibold text-emerald-600'
+                        ? 'font-semibold text-emerald-700'
                         : 'font-semibold text-slate-500'
                   }
                 >
@@ -918,7 +918,7 @@ function ClienteDetalleModal({
               {cliente.telefono && (
                 <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
                   <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                  <a href={`tel:${cliente.telefono.replace(/[^0-9+]/g, '')}`} className="hover:text-brand-600">
+                  <a href={`tel:${cliente.telefono.replace(/[^0-9+]/g, '')}`} className="hover:text-brand-700">
                     {cliente.telefono}
                   </a>
                 </p>
@@ -988,7 +988,7 @@ function ClienteDetalleModal({
           {cargando ? (
             <p className="px-6 py-8 text-center text-slate-400">Cargando...</p>
           ) : errorHistorial && !cargado ? (
-            <p className="px-6 py-8 text-center text-red-600">
+            <p className="px-6 py-8 text-center text-red-700">
               {errorHistorial} Cerrá esta ventana y volvé a abrirla para intentar de nuevo.
             </p>
           ) : movimientos.length === 0 ? (
@@ -1017,7 +1017,7 @@ function ClienteDetalleModal({
                     </div>
                     <p
                       className={`shrink-0 font-semibold ${estaCubierto(m) ? 'line-through' : ''} ${
-                        m.tipo === 'pago' ? 'text-emerald-600' : 'text-slate-800'
+                        m.tipo === 'pago' ? 'text-emerald-700' : 'text-slate-800'
                       }`}
                     >
                       {m.tipo === 'pago' ? '−' : '+'}
@@ -1028,7 +1028,7 @@ function ClienteDetalleModal({
                     <EstadoDeLinea m={m} onCobrar={abrirCobro} onDesmarcar={desmarcarPagado} />
                     <button
                       onClick={() => eliminarMovimiento(m)}
-                      className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                      className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-700"
                       title={`Borrar ${ETIQUETA_TIPO[m.tipo]}`}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1067,7 +1067,7 @@ function ClienteDetalleModal({
                     <td className="px-4 py-2 text-slate-500">{m.usuarioNombre ?? '—'}</td>
                     <td
                       className={`px-4 py-2 text-right font-medium ${estaCubierto(m) ? 'line-through' : ''} ${
-                        m.tipo === 'pago' ? 'text-emerald-600' : 'text-slate-800'
+                        m.tipo === 'pago' ? 'text-emerald-700' : 'text-slate-800'
                       }`}
                     >
                       {m.tipo === 'pago' ? '−' : '+'}
@@ -1079,7 +1079,7 @@ function ClienteDetalleModal({
                     <td className="px-2 py-2 text-right">
                       <button
                         onClick={() => eliminarMovimiento(m)}
-                        className="rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-700"
                         title={`Borrar ${ETIQUETA_TIPO[m.tipo]}`}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1196,8 +1196,8 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
   const debe = estado ? estado.saldo > 0 : false;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[92dvh] w-full max-w-md animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[92dvh] w-full max-w-md animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div className="min-w-0">
             <h2 className="font-semibold text-slate-800">Estado de cuenta</h2>
@@ -1210,7 +1210,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
 
         <div className="space-y-4 overflow-y-auto px-5 py-4">
           {errorEstado ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{errorEstado}</p>
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{errorEstado}</p>
           ) : (
             <div
               className={`rounded-lg px-4 py-3 ${
@@ -1276,7 +1276,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
               </p>
             ) : qr ? (
               <>
-                <img src={qr} alt="Código QR del estado de cuenta" className="mx-auto rounded-lg border border-slate-200" />
+                <img src={qr} alt="Código QR del estado de cuenta" className="mx-auto rounded-xl border border-slate-200 bg-white p-3" />
                 <p className="mt-2 text-sm text-slate-600">
                   Escaneá este código con el celular para <strong>descargar el estado de cuenta</strong> (PDF) y mandárselo
                   a {cliente.nombre.trim().split(/\s+/)[0]}.
@@ -1297,7 +1297,7 @@ function EstadoCuentaModal({ cliente, onCerrar }: { cliente: Pick<Cliente, 'id' 
           {aviso && (
             <p
               className={`rounded-lg px-3 py-2 text-sm ${
-                aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
               }`}
             >
               {aviso.texto}
@@ -1377,9 +1377,9 @@ function AnotarDeudaModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/50 p-4">
       <div
-        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+        className={`flex max-h-[92dvh] w-full animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl ${
           conProductos ? 'max-w-xl' : 'max-w-sm'
         }`}
       >
@@ -1398,7 +1398,7 @@ function AnotarDeudaModal({
                 type="button"
                 onClick={() => setConProductos(o.valor)}
                 className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  conProductos === o.valor ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  conProductos === o.valor ? 'bg-surface text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {o.texto}
@@ -1432,7 +1432,7 @@ function AnotarDeudaModal({
             </p>
           )}
           {!conProductos && monto.trim() !== '' && !montoValido && (
-            <p className="-mt-2 text-xs text-red-600">Ese monto no es un número válido.</p>
+            <p className="-mt-2 text-xs text-red-700">Ese monto no es un número válido.</p>
           )}
 
           <div>
@@ -1460,7 +1460,7 @@ function AnotarDeudaModal({
             </p>
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>
@@ -1516,8 +1516,8 @@ function EditarClienteModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-surface shadow-xl">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Datos del cliente</h2>
         </div>
@@ -1542,7 +1542,7 @@ function EditarClienteModal({
             <input className="input" value={nota} onChange={(e) => setNota(e.target.value)} />
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>
@@ -1607,8 +1607,8 @@ function RegistrarPagoModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-surface shadow-xl">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-semibold text-slate-800">Registrar pago de {cliente.nombre}</h2>
           <p className="text-xs text-slate-400">{textoDeSaldo(saldo)}</p>
@@ -1620,7 +1620,7 @@ function RegistrarPagoModal({
               {saldo > 0 && (
                 <button
                   type="button"
-                  className="text-xs font-medium text-brand-600 hover:underline"
+                  className="text-xs font-medium text-brand-700 hover:underline"
                   onClick={() => setMonto(String(saldo).replace('.', ','))}
                 >
                   Paga todo ({formatearMoneda(saldo)})
@@ -1636,7 +1636,7 @@ function RegistrarPagoModal({
               required
             />
             {monto.trim() !== '' && (
-              <p className={`mt-1 text-xs ${montoValido ? 'text-slate-500' : 'text-red-600'}`}>
+              <p className={`mt-1 text-xs ${montoValido ? 'text-slate-500' : 'text-red-700'}`}>
                 {montoValido
                   ? `Se registra un pago de ${formatearMonedaConCentavos(montoNum)}${
                       saldo > 0 && montoNum > saldo ? ' — es más de lo que debe, le queda saldo a favor' : ''
@@ -1644,7 +1644,7 @@ function RegistrarPagoModal({
                   : 'Ese monto no es un número válido.'}
               </p>
             )}
-            {sugerido?.aviso && <p className="mt-1 text-xs text-amber-600">{sugerido.aviso}</p>}
+            {sugerido?.aviso && <p className="mt-1 text-xs text-amber-700">{sugerido.aviso}</p>}
             <p className="mt-1 text-xs text-slate-400">Lo que paga se descuenta de lo más viejo primero.</p>
           </div>
           <div data-tour="pago-metodo">
@@ -1677,7 +1677,7 @@ function RegistrarPagoModal({
             />
           </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onCerrar}>

@@ -24,7 +24,7 @@ export default function CartelExito({ mensaje, onCerrar }: Props) {
 
   return createPortal(
     <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="animate-scale-in pointer-events-none flex items-center gap-3 rounded-2xl bg-slate-900/95 px-6 py-4 text-white shadow-2xl">
+      <div className="animate-scale-in pointer-events-none flex items-center gap-3 rounded-2xl border border-white/10 bg-neutral-900/95 px-6 py-4 text-white shadow-2xl">
         <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-400" />
         <p className="font-medium">{mensaje}</p>
       </div>

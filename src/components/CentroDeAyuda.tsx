@@ -57,9 +57,9 @@ function TarjetaDeGuia({ guia, onElegir }: { guia: Guia; onElegir: () => void })
     <button
       onClick={onElegir}
       data-guia={guia.id}
-      className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/60"
+      className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-surface px-4 py-3.5 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/60"
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
         <Icono className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
@@ -106,14 +106,14 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[90] flex animate-fade-in items-end justify-center bg-slate-900/50 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[90] flex animate-fade-in items-end justify-center bg-black/50 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onCerrar();
       }}
       data-centro-ayuda
     >
       <div className="flex max-h-[94dvh] w-full max-w-2xl animate-slide-up flex-col overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl sm:rounded-3xl">
-        <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-surface px-4 py-4 sm:px-6">
           {guia ? (
             <button
               onClick={() => setAbierta(null)}
@@ -123,7 +123,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
               Volver
             </button>
           ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
               <LifeBuoy className="h-5 w-5" />
             </span>
           )}
@@ -155,7 +155,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
               <button
                 onClick={() => onIniciarGuia(guia.id)}
                 data-mostrame
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-4 text-lg font-semibold text-white shadow-sm hover:bg-violet-700"
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-4 text-lg font-semibold text-white shadow-sm hover:brightness-90"
               >
                 <PlayCircle className="h-6 w-6" />
                 Mostrame paso a paso
@@ -202,7 +202,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
                     ))}
                   </div>
                 ) : (
-                  <p className="rounded-2xl bg-white px-4 py-6 text-center text-base text-slate-500">
+                  <p className="rounded-2xl bg-surface px-4 py-6 text-center text-base text-slate-500">
                     No encontré nada con esa palabra. Probá con otra (por ejemplo: <em>cobrar</em>, <em>deuda</em>,{' '}
                     <em>stock</em>, <em>precio</em>) o mirá la lista de abajo.
                   </p>
@@ -224,7 +224,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
                           Te señalo para qué sirve cada parte de «{seccion}».
                         </span>
                       </span>
-                      <PlayCircle className="h-6 w-6 shrink-0 text-violet-600" />
+                      <PlayCircle className="h-6 w-6 shrink-0 text-violet-700" />
                     </button>
                   )}
 
@@ -257,7 +257,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
                   })}
 
                   <section className="space-y-2">
-                    <details className="group rounded-2xl border border-slate-200 bg-white">
+                    <details className="group rounded-2xl border border-slate-200 bg-surface">
                       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 text-base font-semibold text-slate-700">
                         <MapPin className="h-5 w-5 text-violet-500" />
                         <span className="flex-1">¿Qué hay en cada parte del menú?</span>
@@ -284,7 +284,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
                       </ul>
                     </details>
 
-                    <details className="group rounded-2xl border border-slate-200 bg-white">
+                    <details className="group rounded-2xl border border-slate-200 bg-surface">
                       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 text-base font-semibold text-slate-700">
                         <BookOpen className="h-5 w-5 text-violet-500" />
                         <span className="flex-1">¿Qué significa cada palabra?</span>
@@ -301,7 +301,7 @@ export default function CentroDeAyuda({ seccion, onCerrar, onIniciarGuia, onInic
                     </details>
                   </section>
 
-                  <p className="rounded-2xl bg-white px-4 py-3 text-sm leading-relaxed text-slate-500">
+                  <p className="rounded-2xl bg-surface px-4 py-3 text-sm leading-relaxed text-slate-500">
                     <strong className="text-slate-700">¿Querés saber algo de tu negocio?</strong> (cuánto vendiste, quién te
                     debe, qué tiene poco stock...) Preguntale al asistente: es el dibujito redondo que está abajo a la
                     derecha.

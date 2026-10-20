@@ -121,7 +121,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 640,
-    backgroundColor: '#f2f7fd',
+    backgroundColor: '#f4f6fd',
     // (Para las pruebas automáticas que manejan la pantalla sin mostrarla.)
     show: process.env.MIS_AMORES_VENTANA_OCULTA !== '1',
     autoHideMenuBar: true,

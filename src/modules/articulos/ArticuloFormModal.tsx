@@ -217,8 +217,8 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
   return (
     <>
     {createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-3xl animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[90dvh] w-full max-w-3xl animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-800">
             {articulo ? 'Editar artículo' : 'Nuevo artículo'}
@@ -287,7 +287,7 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
                   />
                 </div>
                 {avisoCodigoDuplicado && (
-                  <p className="mt-1 text-xs font-medium text-amber-600">{avisoCodigoDuplicado}</p>
+                  <p className="mt-1 text-xs font-medium text-amber-700">{avisoCodigoDuplicado}</p>
                 )}
               </div>
 
@@ -482,7 +482,7 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
             />
           </div>
 
-          {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         </form>
 
         <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
@@ -550,7 +550,7 @@ function CampoPrecio({
         required={required}
       />
       {parecidoAMiles && (
-        <p className="mt-1 text-xs text-amber-600">
+        <p className="mt-1 text-xs text-amber-700">
           Ojo: esto se lee como {formatearMoneda(numeroDeDecimal(texto))}. Si es {formatearMoneda(Number(texto.replace(/[.,]/g, '')))},
           escribilo sin punto ni coma.
         </p>

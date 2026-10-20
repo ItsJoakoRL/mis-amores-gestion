@@ -45,11 +45,11 @@ export default function AccesoCelularModal({ onCerrar }: { onCerrar: () => void 
   }, []);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[90dvh] w-full max-w-sm animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
           <h2 className="flex items-center gap-2 font-semibold text-slate-800">
-            <Smartphone className="h-5 w-5 text-brand-600" />
+            <Smartphone className="h-5 w-5 text-brand-700" />
             Usar desde el celular
           </h2>
           <button onClick={onCerrar} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -62,7 +62,8 @@ export default function AccesoCelularModal({ onCerrar }: { onCerrar: () => void 
             Escaneá el código o escribí la dirección en el navegador del celular. Anda <strong>desde cualquier
             lado</strong> (con el WiFi que sea, o con datos) y <strong>aunque las PCs estén apagadas</strong>:
           </p>
-          {qr && <img src={qr} alt="Código QR" className="mx-auto rounded-lg border border-slate-200" />}
+          {/* Fondo blanco fijo y con margen: para que la cámara lo lea también con el modo oscuro. */}
+          {qr && <img src={qr} alt="Código QR" className="mx-auto rounded-xl border border-slate-200 bg-white p-3" />}
           <div className="break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-sm text-slate-700">
             {URL_SERVIDOR_INTERNET}
           </div>

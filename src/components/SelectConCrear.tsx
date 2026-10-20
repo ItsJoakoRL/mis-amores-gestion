@@ -86,7 +86,7 @@ export default function SelectConCrear({ label, opciones, valor, onCambiar, onCr
             <X className="h-4 w-4" />
           </button>
         </div>
-        {error && <p className="mt-1 text-xs font-medium text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-xs font-medium text-red-700">{error}</p>}
       </div>
     );
   }

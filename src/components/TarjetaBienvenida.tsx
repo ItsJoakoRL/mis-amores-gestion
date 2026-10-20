@@ -33,7 +33,7 @@ export default function TarjetaBienvenida() {
   return (
     <div
       data-bienvenida
-      className="mt-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 sm:p-6"
+      className="mt-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-surface p-5 sm:p-6"
     >
       <div className="flex items-start gap-4">
         <Mascota tamanio="lg" className="hidden shrink-0 sm:block" />

@@ -30,6 +30,7 @@ import { useAuth } from '../modules/auth/AuthContext';
 import AsistenteChat from './AsistenteChat';
 import { BotonActualizacion, CartelActualizacion, useActualizacion } from './AvisoActualizacion';
 import IndicadorRed from './IndicadorRed';
+import SelectorTema from './SelectorTema';
 import { AyudaProvider, useAyuda } from './AyudaContext';
 import CambiarClaveModal from '../modules/usuarios/CambiarClaveModal';
 import { useResumenRecordatorios } from '../hooks/useResumenRecordatorios';
@@ -150,18 +151,18 @@ function LayoutInterno() {
   const recordatorios = useResumenRecordatorios();
 
   return (
-    <div className="relative flex h-screen h-dvh overflow-hidden bg-[#f5f8fd]">
+    <div className="relative flex h-screen h-dvh overflow-hidden bg-page">
       {/* Un par de manchas de color bien tenues y quietas de fondo — le dan
           vida a la pantalla sin competir con el contenido, que va encima con
           z-10. pointer-events-none para que nunca interfieran con los clicks. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="animate-float-slow absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-200/25 blur-3xl" />
+        <div className="animate-float-slow absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-400/15 blur-3xl" />
         <div
-          className="animate-float-slow absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-violet-200/25 blur-3xl"
+          className="animate-float-slow absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-violet-400/15 blur-3xl"
           style={{ animationDelay: '-4s' }}
         />
         <div
-          className="animate-float-slow absolute right-1/3 top-1/2 h-72 w-72 rounded-full bg-rose-200/15 blur-3xl"
+          className="animate-float-slow absolute right-1/3 top-1/2 h-72 w-72 rounded-full bg-pink-400/10 blur-3xl"
           style={{ animationDelay: '-7s' }}
         />
         {/* Productos del almacén bien tenues de fondo — para que se note que
@@ -177,7 +178,7 @@ function LayoutInterno() {
       </div>
 
       {/* Barra superior — sólo se ve en pantallas chicas */}
-      <div className="fixed inset-x-0 top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+      <div className="fixed inset-x-0 top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-surface px-4 py-3 lg:hidden">
         <button
           onClick={() => setMenuAbierto(true)}
           className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
@@ -185,7 +186,7 @@ function LayoutInterno() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 text-white">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 via-violet-500 to-pink-500 text-white">
           <Heart className="h-4 w-4" fill="currentColor" />
         </div>
         <p className="text-sm font-semibold text-slate-800">Mis Amores</p>
@@ -194,19 +195,19 @@ function LayoutInterno() {
       {/* Fondo oscuro detrás del menú cuando está abierto en el celular */}
       {menuAbierto && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setMenuAbierto(false)}
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 -translate-x-full flex-col border-r border-slate-200 bg-surface transition-transform duration-200 lg:static lg:translate-x-0 ${
           menuAbierto ? 'translate-x-0' : ''
         }`}
       >
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 text-white shadow-sm">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 via-violet-500 to-pink-500 text-white shadow-md shadow-brand-500/30">
               <Heart className="h-5 w-5 animate-pulse" fill="currentColor" style={{ animationDuration: '2.5s' }} />
             </div>
             <div>
@@ -248,7 +249,7 @@ function LayoutInterno() {
               {item.to === '/recordatorios' && recordatorios && recordatorios.pendientes > 0 && (
                 <span
                   className={`min-w-[1.4rem] rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold text-white ${
-                    recordatorios.urgentes > 0 || recordatorios.vencidos > 0 ? 'bg-red-500' : 'bg-orange-500'
+                    recordatorios.urgentes > 0 || recordatorios.vencidos > 0 ? 'bg-red-600' : 'bg-orange-700'
                   }`}
                   title={
                     recordatorios.urgentes > 0 || recordatorios.vencidos > 0
@@ -284,11 +285,14 @@ function LayoutInterno() {
           >
             <HelpCircle className="h-4 w-4 text-violet-500" />
             <span className="flex-1 text-left">Ayuda</span>
-            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-600">
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">
               ¿Cómo se hace?
             </span>
           </button>
           {window.escritorio && <IndicadorRed />}
+          <div className="mb-2">
+            <SelectorTema />
+          </div>
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
               {sesion?.nombre?.[0]?.toUpperCase() ?? '?'}
@@ -303,7 +307,7 @@ function LayoutInterno() {
                 setMenuAbierto(false);
                 setCambiandoClave(true);
               }}
-              className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+              className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-surface hover:text-slate-600"
               title="Cambiar mi clave"
               aria-label="Cambiar mi clave"
             >

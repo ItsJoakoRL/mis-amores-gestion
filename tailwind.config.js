@@ -1,22 +1,30 @@
+// Los colores no son valores fijos: apuntan a variables (src/temas.css) que cambian con el
+// modo claro / oscuro. Así las pantallas siguen usando bg-slate-50, text-brand-700, etc. y
+// el tema oscuro se aplica solo. Con `<alpha-value>` siguen andando cosas como bg-brand-200/25.
+const TONOS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+const familia = (nombre) =>
+  Object.fromEntries(TONOS.map((t) => [t, `rgb(var(--c-${nombre}-${t}) / <alpha-value>)`]));
+const FAMILIAS = ['slate', 'brand', 'red', 'amber', 'emerald', 'violet', 'sky', 'teal', 'cyan', 'pink', 'rose', 'orange'];
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans Variable"', '"Segoe UI"', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       colors: {
-        brand: {
-          50: '#f2f7fd',
-          100: '#e1ecfa',
-          200: '#c3d9f5',
-          300: '#95bced',
-          400: '#5f97e1',
-          500: '#3b76d1',
-          600: '#2a5cb3',
-          700: '#254a8f',
-          800: '#233f75',
-          900: '#213762',
-        },
+        ...Object.fromEntries(FAMILIAS.map((f) => [f, familia(f)])),
+        // Fondo de la página y de las tarjetas / cuadros (en el oscuro no es blanco).
+        page: 'rgb(var(--c-page) / <alpha-value>)',
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+      },
+      boxShadow: {
+        // Sombras suaves con un toque de color de la marca: las tarjetas "flotan" sin verse pesadas.
+        card: '0 1px 2px rgb(var(--c-sombra) / 0.05), 0 4px 14px -4px rgb(var(--c-brillo) / 0.10)',
+        'card-hover': '0 2px 4px rgb(var(--c-sombra) / 0.06), 0 10px 26px -6px rgb(var(--c-brillo) / 0.20)',
       },
       keyframes: {
         fadeIn: {

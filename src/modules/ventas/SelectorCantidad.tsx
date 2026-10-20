@@ -50,7 +50,7 @@ export function CantidadConBotones({
         title="Una menos"
         onClick={() => mover(-paso)}
         disabled={!(n > minimo)}
-        className="flex w-9 shrink-0 items-center justify-center rounded-l-lg border border-r-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white"
+        className="flex w-9 shrink-0 items-center justify-center rounded-l-lg border border-r-0 border-slate-300 bg-surface text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-surface"
       >
         <Minus className="h-4 w-4" />
       </button>
@@ -70,7 +70,7 @@ export function CantidadConBotones({
         aria-label="Una más"
         title="Una más"
         onClick={() => mover(paso)}
-        className="flex w-9 shrink-0 items-center justify-center rounded-r-lg border border-l-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+        className="flex w-9 shrink-0 items-center justify-center rounded-r-lg border border-l-0 border-slate-300 bg-surface text-slate-600 hover:bg-slate-50"
       >
         <Plus className="h-4 w-4" />
       </button>

@@ -242,7 +242,7 @@ export default function CambioMasivo() {
               <button
                 onClick={() => setSentido('subir')}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium ${
-                  sentido === 'subir' ? 'bg-emerald-50 text-emerald-700' : 'bg-white text-slate-500 hover:bg-slate-50'
+                  sentido === 'subir' ? 'bg-emerald-50 text-emerald-700' : 'bg-surface text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 <ArrowUp className="h-4 w-4" />
@@ -251,7 +251,7 @@ export default function CambioMasivo() {
               <button
                 onClick={() => setSentido('bajar')}
                 className={`flex items-center gap-1.5 border-l border-slate-300 px-3 py-2 text-sm font-medium ${
-                  sentido === 'bajar' ? 'bg-red-50 text-red-700' : 'bg-white text-slate-500 hover:bg-slate-50'
+                  sentido === 'bajar' ? 'bg-red-50 text-red-700' : 'bg-surface text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 <ArrowDown className="h-4 w-4" />
@@ -273,7 +273,7 @@ export default function CambioMasivo() {
                 onClick={() => setTipo('porcentaje')}
                 title="Un tanto por ciento"
                 className={`flex items-center gap-1 px-3 py-2 text-sm font-medium ${
-                  tipo === 'porcentaje' ? 'bg-brand-50 text-brand-700' : 'bg-white text-slate-500 hover:bg-slate-50'
+                  tipo === 'porcentaje' ? 'bg-brand-50 text-brand-700' : 'bg-surface text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 <Percent className="h-4 w-4" />
@@ -282,7 +282,7 @@ export default function CambioMasivo() {
                 onClick={() => setTipo('monto')}
                 title="Una cantidad de pesos"
                 className={`flex items-center gap-1 border-l border-slate-300 px-3 py-2 text-sm font-medium ${
-                  tipo === 'monto' ? 'bg-brand-50 text-brand-700' : 'bg-white text-slate-500 hover:bg-slate-50'
+                  tipo === 'monto' ? 'bg-brand-50 text-brand-700' : 'bg-surface text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 <DollarSign className="h-4 w-4" />
@@ -303,11 +303,11 @@ export default function CambioMasivo() {
               </select>
             </div>
           </div>
-          {errorDeCantidad && <p className="mt-2 text-xs text-red-600">{errorDeCantidad}</p>}
+          {errorDeCantidad && <p className="mt-2 text-xs text-red-700">{errorDeCantidad}</p>}
         </div>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       {resultado && (
         <div className="space-y-2">
@@ -383,7 +383,7 @@ export default function CambioMasivo() {
                       <p className="font-semibold text-slate-800">{formatearMonedaConCentavos(nuevo)}</p>
                     </div>
                     <span
-                      className={`w-14 shrink-0 text-right text-xs font-semibold ${cambio >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
+                      className={`w-14 shrink-0 text-right text-xs font-semibold ${cambio >= 0 ? 'text-emerald-700' : 'text-red-700'}`}
                     >
                       {cambio >= 0 ? '+' : '−'}
                       {Math.abs(cambio).toString().replace('.', ',')}%
@@ -440,7 +440,7 @@ export default function CambioMasivo() {
           (afuera de la página) porque la animación de entrada de la página hace que lo
           "fijo" de adentro se acomode a la página y no a la pantalla. */}
       {createPortal(
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-surface/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
               {operacion && aCambiar.length > 0 ? (

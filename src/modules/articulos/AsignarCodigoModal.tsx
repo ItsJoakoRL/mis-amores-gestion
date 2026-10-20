@@ -100,8 +100,8 @@ export default function AsignarCodigoModal({ codigo, onCerrar, onAsignado, onCre
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex max-h-[80vh] w-full max-w-lg animate-scale-in flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[80vh] w-full max-w-lg animate-scale-in flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="font-semibold text-slate-800">Código sin asignar</h2>
@@ -160,7 +160,7 @@ export default function AsignarCodigoModal({ codigo, onCerrar, onAsignado, onCre
             ))}
         </div>
 
-        {error && <p className="mx-5 mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mx-5 mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-4">
           <button type="button" className="btn-secondary" onClick={onCerrar}>

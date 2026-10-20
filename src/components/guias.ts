@@ -67,7 +67,7 @@ export const GUIAS: Guia[] = [
     grupo: 'Vender y cobrar',
     titulo: 'Cobrar una venta',
     resumen: 'Armar lo que se lleva el cliente y cobrarlo (efectivo, tarjeta o transferencia; cada cosa puede pagarse distinto).',
-    palabras: 'vender venta cobrar caja cuenta ticket mostrador efectivo tarjeta transferencia plata cliente se lleva',
+    palabras: 'vender venta cobrar caja cuenta ticket mostrador efectivo tarjeta transferencia plata cliente se lleva vuelto cambio paga con billete',
     secciones: ['Artículos y stock', 'Armar cuenta', 'Panel'],
     pasos: [
       ARMAR_CUENTA,
@@ -91,10 +91,16 @@ export const GUIAS: Guia[] = [
           'Si todo se paga igual, elegí acá la forma de pago de toda la cuenta de una vez. Si dice "Varias formas de pago" es porque en algún producto elegiste una distinta. (Si no paga ahora sino después, mirá la ayuda "Anotarle un fiado a un cliente".)',
       },
       {
+        selector: '[data-tour="cuenta-paga-con"]',
+        titulo: '¿Con cuánto paga? (el vuelto)',
+        texto:
+          'Si paga en efectivo, escribí acá con cuánta plata te paga (por ejemplo 20000) o tocá uno de los botones de abajo. El programa te dice el vuelto que tenés que darle. Es sólo una ayuda: no hace falta escribirlo para cobrar.',
+      },
+      {
         selector: '[data-tour="cuenta-cobrar"]',
         tocar: true,
         titulo: 'Cobrar',
-        texto: 'Mirá que el total esté bien y tocá "Cobrar". Listo: la venta queda anotada y se descuenta del stock. Después la podés ver en el Calendario.',
+        texto: 'Mirá que el total esté bien y tocá "Cobrar". Listo: la venta queda anotada y se descuenta del stock. Si pusiste con cuánto paga, el vuelto queda a la vista en un cartel verde. Después la venta la podés ver en el Calendario.',
       },
     ],
   },
@@ -583,6 +589,22 @@ export const GUIAS: Guia[] = [
 
   // ------------------------------------------------------------------ Otras cosas
   {
+    id: 'fondo-oscuro',
+    grupo: 'Otras cosas',
+    titulo: 'Cambiar el fondo: claro u oscuro',
+    resumen: 'Elegir cómo se ve el programa: fondo claro, fondo oscuro (descansa la vista de noche) o igual que el aparato.',
+    palabras: 'oscuro claro modo noche fondo negro tema color pantalla vista luz brillo descansar blanco',
+    secciones: [],
+    pasos: [
+      {
+        selector: '[data-tour="menu-tema"]',
+        titulo: 'Claro, Oscuro o Auto',
+        texto:
+          'Abajo en el menú de la izquierda hay tres botones: "Claro" (fondo blanco), "Oscuro" (fondo oscuro, más cómodo de noche) y "Auto" (igual que la configuración de la computadora o el celular). Tocá el que prefieras y se cambia al instante. Cada aparato se acuerda del suyo. (En el celular, primero abrí el menú con las tres rayitas de arriba.)',
+      },
+    ],
+  },
+  {
     id: 'cambiar-clave',
     grupo: 'Otras cosas',
     titulo: 'Cambiar mi clave',
@@ -673,6 +695,7 @@ export const PALABRAS_DEL_PROGRAMA: Array<{ palabra: string; significa: string }
   { palabra: 'Código de barras', significa: 'Las rayitas del paquete. Se escanean con la lectora, o con la cámara del celular, y suman el producto solo.' },
   { palabra: 'Costo y precio', significa: 'El costo es lo que pagás vos por el producto; el precio, lo que le cobrás al cliente.' },
   { palabra: 'Recordatorio', significa: 'Una nota para que no se olvide algo (comprar, cobrar, cambiar). La ven todas las que usan el programa.' },
+  { palabra: 'Vuelto', significa: 'La plata que le devolvés al cliente cuando paga con más de lo que debe. En "Armar cuenta" escribís con cuánto paga y el programa lo calcula.' },
 ];
 
 /** Qué hay en cada parte del menú, en una frase. */

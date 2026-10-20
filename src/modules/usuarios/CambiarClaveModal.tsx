@@ -42,8 +42,8 @@ export default function CambiarClaveModal({ onCerrar }: { onCerrar: () => void }
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-white shadow-xl" data-cambiar-clave>
+    <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm animate-scale-in rounded-xl bg-surface shadow-xl" data-cambiar-clave>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <h2 className="flex items-center gap-2 font-semibold text-slate-800">
             <KeyRound className="h-5 w-5 text-brand-500" />
@@ -102,7 +102,7 @@ export default function CambiarClaveModal({ onCerrar }: { onCerrar: () => void }
               />
             </div>
 
-            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="btn-secondary" onClick={onCerrar}>

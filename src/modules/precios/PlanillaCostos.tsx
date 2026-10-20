@@ -225,7 +225,7 @@ export default function PlanillaCostos() {
         </p>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       {resultado && (
         <div className="space-y-2">
@@ -293,7 +293,7 @@ export default function PlanillaCostos() {
                       />
                     </div>
                     <span
-                      className={`w-28 text-xs font-semibold ${perdida ? 'text-red-600' : ganancia !== null ? 'text-emerald-600' : 'text-slate-300'}`}
+                      className={`w-28 text-xs font-semibold ${perdida ? 'text-red-700' : ganancia !== null ? 'text-emerald-700' : 'text-slate-300'}`}
                       title={perdida ? 'El costo es más alto que el precio: se vende con pérdida' : 'Cuánto se gana'}
                     >
                       {ganancia === null || margen === null ? (
@@ -326,14 +326,14 @@ export default function PlanillaCostos() {
       </div>
 
       {createPortal(
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-surface/95 py-3 pl-4 pr-24 backdrop-blur lg:left-64">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
               {cambios.length > 0 ? (
                 <>
                   <strong>{cambios.length}</strong> costo(s) para guardar
-                  {bajoElCosto > 0 && <span className="text-red-600"> · {bajoElCosto} quedan más caros que el precio</span>}
-                  {invalidos > 0 && <span className="text-red-600"> · {invalidos} no son un número</span>}
+                  {bajoElCosto > 0 && <span className="text-red-700"> · {bajoElCosto} quedan más caros que el precio</span>}
+                  {invalidos > 0 && <span className="text-red-700"> · {invalidos} no son un número</span>}
                 </>
               ) : (
                 'Lo que escribas queda guardado en este aparato, pero no cuenta hasta que lo guardes.'

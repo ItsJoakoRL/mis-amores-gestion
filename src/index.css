@@ -9,39 +9,45 @@
     height: 100%;
   }
   body {
-    @apply text-slate-800 antialiased;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    @apply bg-page font-sans text-slate-800 antialiased;
     /* Fondo con un degradé suave en vez de gris plano — manchas de color
        tenues ancladas en las esquinas, que le dan vida al fondo sin distraer
-       del contenido. Dos tonos (azul y violeta/rosa) en vez de uno solo. */
-    background-color: #f5f8fd;
+       del contenido. Dos tonos (índigo y rosa) en vez de uno solo. */
     background-image:
-      radial-gradient(circle at 100% 0%, rgba(59, 118, 209, 0.09), transparent 45%),
-      radial-gradient(circle at 0% 100%, rgba(216, 70, 160, 0.06), transparent 40%);
+      radial-gradient(circle at 100% 0%, rgb(var(--c-brand-500) / 0.1), transparent 45%),
+      radial-gradient(circle at 0% 100%, rgb(var(--c-pink-500) / 0.07), transparent 40%);
     background-attachment: fixed;
+  }
+  /* Las tarjetas flotantes y las listas se ven prolijas con el color del tema también al seleccionar texto. */
+  ::selection {
+    background: rgb(var(--c-brand-500) / 0.28);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--c-slate-400));
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply btn bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-sm hover:from-brand-700 hover:to-brand-600 hover:shadow-md hover:shadow-brand-500/25;
+    @apply btn bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm shadow-brand-600/25 hover:shadow-md hover:shadow-brand-600/30 hover:brightness-110;
   }
   .btn-secondary {
-    @apply btn bg-white text-slate-700 border border-slate-300 hover:bg-slate-100;
+    @apply btn border border-slate-300 bg-surface text-slate-700 hover:bg-slate-100;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700 hover:shadow-md;
+    @apply btn bg-red-600 text-white shadow-sm hover:shadow-md hover:brightness-90;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition-shadow duration-150 focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+    @apply w-full rounded-lg border border-slate-300 bg-surface px-3 py-2 text-sm text-slate-800 outline-none transition-shadow duration-150 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25;
   }
   .label {
-    @apply mb-1 block text-xs font-medium text-slate-500;
+    @apply mb-1 block text-xs font-semibold text-slate-500;
   }
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-200;
+    @apply rounded-2xl border border-slate-200/80 bg-surface shadow-card transition-shadow duration-200;
   }
 }
