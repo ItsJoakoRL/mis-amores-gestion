@@ -5,7 +5,7 @@
 import { ObjectId } from 'mongodb';
 import { getDb } from '../db/database';
 import { getDashboardStats } from './dashboard';
-import { getReporteVentas } from './reportes';
+import { getReporteVentas, productoMasVendidoPorUnidades } from './reportes';
 import { resumenHoy } from './ventas';
 import { listClientes } from './clientes';
 import { listArticulos } from './articulos';
@@ -190,9 +190,15 @@ export async function responderPregunta(preguntaOriginal: string): Promise<Respu
       if (r.topProductos.length === 0) {
         return { texto: 'Todavía no hay ventas en los últimos 30 días para calcular esto.', reconocida: true };
       }
-      const top = r.topProductos[0];
+      // "Lo más vendido" son las unidades; el que más plata dejó puede ser otro (uno caro que se vendió poco).
+      const masUnidades = (await productoMasVendidoPorUnidades(desde, hasta)) ?? r.topProductos[0];
+      const masPlata = r.topProductos[0];
       return {
-        texto: `En los últimos 30 días, lo más vendido fue "${top.descripcion}": ${formatearCantidad(top.cantidad)} unidad(es) por ${formatearMoneda(top.total)}.`,
+        texto:
+          `En los últimos 30 días, lo más vendido fue "${masUnidades.descripcion}": ${formatearCantidad(masUnidades.cantidad)} unidad(es) por ${formatearMoneda(masUnidades.total)}.` +
+          (masPlata.articuloId !== masUnidades.articuloId
+            ? ` El que más plata dejó fue "${masPlata.descripcion}": ${formatearMoneda(masPlata.total)} (${formatearCantidad(masPlata.cantidad)} unidad(es)).`
+            : ''),
         reconocida: true,
       };
     }

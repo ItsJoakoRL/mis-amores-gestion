@@ -221,7 +221,9 @@ export default function ReportesPage() {
 
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="card p-5">
-              <h2 className="mb-4 text-sm font-semibold text-slate-700">Productos más vendidos</h2>
+              <h2 className="mb-4 text-sm font-semibold text-slate-700">
+                Productos más vendidos <span className="font-normal text-slate-400">(ordenados por plata; las unidades, al pasar el mouse o tocar la barra)</span>
+              </h2>
               {reporte.topProductos.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-400">Sin datos.</p>
               ) : (

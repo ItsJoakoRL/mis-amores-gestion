@@ -228,7 +228,7 @@ export default function ArticulosPage() {
   useRecargarAlVolver(recargarEnSilencio);
 
   useEffect(() => {
-    window.api.familias.list().then(setFamilias);
+    window.api.familias.list().then(setFamilias).catch(() => {});
   }, []);
 
   useEffect(() => {

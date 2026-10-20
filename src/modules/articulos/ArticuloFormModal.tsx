@@ -64,8 +64,8 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
   const enfocarCodigoPrimero = !articulo && !codigoInicial;
 
   useEffect(() => {
-    window.api.familias.list().then(setFamilias);
-    window.api.marcas.list().then(setMarcas);
+    window.api.familias.list().then(setFamilias).catch(() => {});
+    window.api.marcas.list().then(setMarcas).catch(() => {});
   }, []);
 
   // Sugerencia de rubro: compara la descripción contra los artículos ya
@@ -79,9 +79,12 @@ export default function ArticuloFormModal({ articulo, codigoInicial, onCerrar, o
     }
     let vigente = true;
     const debounce = setTimeout(() => {
-      window.api.articulos.sugerirRubro(descripcion).then((sugerencia) => {
-        if (vigente) setSugerenciaRubro(sugerencia);
-      });
+      window.api.articulos
+        .sugerirRubro(descripcion)
+        .then((sugerencia) => {
+          if (vigente) setSugerenciaRubro(sugerencia);
+        })
+        .catch(() => {});
     }, 400);
     return () => {
       vigente = false;

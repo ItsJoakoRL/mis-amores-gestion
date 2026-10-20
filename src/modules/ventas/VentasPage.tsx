@@ -49,10 +49,11 @@ export default function VentasPage() {
       .then((filas) => {
         if (vigente) setResumenPorDia(new Map(filas.map((f) => [f.fecha, f])));
       })
+      .catch(() => {})
       .finally(() => {
         if (vigente) setCargandoCalendario(false);
       });
-    window.api.ventas.resumenHoy().then(setVentasHoy);
+    window.api.ventas.resumenHoy().then(setVentasHoy).catch(() => {});
     return () => {
       vigente = false;
     };
@@ -221,6 +222,9 @@ function DiaDetalleModal({
   const totalCobrado = ventas.reduce((acc, v) => acc + (v.metodoPago !== 'fiado' ? v.total : 0), 0);
   const totalFiado = ventas.reduce((acc, v) => acc + (v.metodoPago === 'fiado' ? v.total : 0), 0);
   const totalPagos = pagos.reduce((acc, p) => acc + p.monto, 0);
+  // Cada producto de una cuenta es una línea; una compra es lo que se cobró junto (mismo número de ticket).
+  // Las de antes, que no lo tienen, se agrupan por quién las hizo, a quién y el minuto (igual que el Panel).
+  const compras = new Set(ventas.map((v) => v.ticketId ?? `${v.usuarioId}|${v.clienteId ?? ''}|${v.fecha.slice(0, 16)}`)).size;
 
   async function handleEliminar(v: Venta) {
     if (!confirm(`¿Anular la venta de "${v.articuloDescripcion}"? Se repone el stock.`)) return;
@@ -248,7 +252,7 @@ function DiaDetalleModal({
           <div>
             <h2 className="text-lg font-semibold text-slate-800">{fechaLegible}</h2>
             <p className="text-sm text-slate-500">
-              {ventas.length} venta(s) · Cobrado {formatearMoneda(totalCobrado + totalPagos)}
+              {compras} venta(s){compras !== ventas.length ? ` (${ventas.length} productos)` : ''} · Cobrado {formatearMoneda(totalCobrado + totalPagos)}
               {totalPagos > 0 && <span className="text-sky-600"> (ventas {formatearMoneda(totalCobrado)} + pagos de cuentas {formatearMoneda(totalPagos)})</span>}
               {totalFiado > 0 && <span className="text-amber-600"> · Fiado {formatearMoneda(totalFiado)}</span>}
             </p>

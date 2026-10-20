@@ -57,7 +57,7 @@ async function porDia(desde: string, hasta: string) {
   return [...filas.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 
-async function topProductos(desde: string, hasta: string, limite: number): Promise<TopProducto[]> {
+async function topProductos(desde: string, hasta: string, limite: number, orden: 'total' | 'cantidad' = 'total'): Promise<TopProducto[]> {
   const docs = await coleccionVentas()
     .aggregate<{ _id: unknown; descripcion: string; cantidad: number; total: number }>([
       { $match: { fecha: { $gte: desde, $lt: hasta } } },
@@ -72,7 +72,7 @@ async function topProductos(desde: string, hasta: string, limite: number): Promi
           total: { $sum: '$total' },
         },
       },
-      { $sort: { total: -1 } },
+      { $sort: orden === 'cantidad' ? { cantidad: -1, total: -1 } : { total: -1 } },
       { $limit: limite },
     ])
     .toArray();
@@ -82,6 +82,12 @@ async function topProductos(desde: string, hasta: string, limite: number): Promi
     cantidad: d.cantidad,
     total: d.total,
   }));
+}
+
+// El producto del que más unidades se vendieron (el gráfico de Reportes ordena por plata: un producto
+// caro puede ganar en plata y haberse vendido poco).
+export async function productoMasVendidoPorUnidades(desde: string, hasta: string): Promise<TopProducto | null> {
+  return (await topProductos(desde, hasta, 1, 'cantidad'))[0] ?? null;
 }
 
 async function porMetodoPago(desde: string, hasta: string): Promise<VentasPorMetodoPago[]> {

@@ -147,6 +147,9 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
   const guardado = useState(() => cargarGuardado(sesion?.id))[0];
 
   const busquedaRef = useRef<HTMLInputElement>(null);
+  // El número de compra se mantiene si el cobro falla a medias y se reintenta: lo que ya se cobró y lo
+  // que se cobra después son de la misma compra (si no, el Panel la contaría dos veces).
+  const ticketActual = useRef<string | null>(null);
   const [termino, setTermino] = useState('');
   const [resultados, setResultados] = useState<Articulo[]>([]);
   const [buscando, setBuscando] = useState(false);
@@ -255,6 +258,41 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     }
   }, [hayFiado, clientes.length]);
 
+  // La lectora de códigos "tipea" los números como un teclado. Si el foco quedó en un desplegable o en un
+  // botón (se tocó la forma de pago, por ejemplo), el escaneo se perdía hasta hacer clic en el buscador:
+  // con un número, el foco vuelve solo al buscador (y ese número ya cae ahí).
+  useEffect(() => {
+    if (esTactil()) return;
+    const alApretar = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || !/^[0-9]$/.test(e.key)) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable="true"]')) return;
+      // Con un cuadro abierto (cliente nuevo, asignar código, cargar producto...) o la ayuda en pantalla, no se toca nada.
+      if (document.querySelector('.fixed.inset-0[class*="z-50"], .fixed.inset-0[class*="z-[60]"], [data-recorrido-ayuda]')) return;
+      busquedaRef.current?.focus();
+    };
+    document.addEventListener('keydown', alApretar);
+    return () => document.removeEventListener('keydown', alApretar);
+  }, []);
+
+  // Una cuenta guardada puede traer un cliente que ya no está en la lista (se lo sacó): ese renglón
+  // vuelve a pedir cliente, en vez de dejar cobrar a nombre de alguien que no existe.
+  useEffect(() => {
+    if (clientes.length === 0) return;
+    const ids = new Set(clientes.map((c) => c.id));
+    setCarrito((actual) =>
+      actual.some((l) => l.clienteId && !ids.has(l.clienteId))
+        ? actual.map((l) => (l.clienteId && !ids.has(l.clienteId) ? { ...l, clienteId: null } : l))
+        : actual
+    );
+    setUltimoCliente((u) => (u && !ids.has(u) ? null : u));
+  }, [clientes]);
+
+  // Con la cuenta vacía, la próxima compra arranca con un número nuevo.
+  useEffect(() => {
+    if (carrito.length === 0) ticketActual.current = null;
+  }, [carrito.length]);
+
   useEffect(() => {
     if (producto || !termino.trim()) {
       setResultados([]);
@@ -270,6 +308,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         .then((lista) => {
           if (vigente) setResultados(lista.slice(0, 6));
         })
+        .catch(() => {})
         .finally(() => {
           if (vigente) setBuscando(false);
         });
@@ -540,7 +579,8 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
     setError(null);
     const pendientes = [...carrito];
     // Todos los productos de esta cuenta comparten un número: así se cuenta una compra, no varias.
-    const ticketId = nuevoIdTicket();
+    if (!ticketActual.current) ticketActual.current = nuevoIdTicket();
+    const ticketId = ticketActual.current;
     // El total del cartel sale de lo que de verdad quedó registrado (el
     // precio lo pone la base al guardar), no de lo que mostraba la cuenta.
     let totalRegistrado = 0;
@@ -561,6 +601,7 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
         // de camino, lo ya cobrado no se vuelve a intentar de nuevo.
         setCarrito((actual) => actual.filter((l) => l.id !== linea.id));
       }
+      ticketActual.current = null; // se cobró todo: la próxima compra es otra
       const productos = new Set(pendientes.map((l) => l.producto.id)).size;
       setCartelExito(
         `Venta registrada: ${formatearMoneda(totalRegistrado)} en ${productos} producto(s)` +
@@ -801,6 +842,11 @@ export default function ArmarCuenta({ onVentaRegistrada }: { onVentaRegistrada: 
                           onChange={(e) => elegirClienteDeLinea(linea.id, e.target.value || null)}
                         >
                           <option value="">¿A quién? Elegir cliente...</option>
+                          {/* El cliente ya está elegido (el de la última vez) pero la lista todavía no llegó:
+                              si no, el cuadro se vería vacío con "Cobrar" ya habilitado. */}
+                          {linea.clienteId && !clientes.some((c) => c.id === linea.clienteId) && (
+                            <option value={linea.clienteId}>Cargando cliente...</option>
+                          )}
                           {clientes.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.nombre}

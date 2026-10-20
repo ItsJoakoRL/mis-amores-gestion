@@ -194,6 +194,18 @@ Lo que salió de revisar toda la aplicación (con pruebas que arman una base apa
 
 Quedó sin cambiar a propósito, para decidirlo con calma: cualquier empleada puede anular una venta o borrar un pago; no hay forma de recuperar un cliente que se sacó de la lista; los rubros y las marcas no se pueden renombrar ni borrar.
 
+## Segunda revisión general (0.8.20)
+
+Revisión con pruebas nuevas: un "mono" que arma y cobra cuentas apretando cosas al azar (`recorrido-mono-cuenta`: después de cada cobro revisa que el total, el stock, los fiados y el número de compra cierren), una auditoría de pantallas en 6 tamaños (de 360 px a 1920 px) con administradora y empleada, y una prueba de escala con el catálogo real (3.087 productos: la lista entera tarda ~0,3 s y cualquier búsqueda menos de 0,1 s).
+
+- **Cobrar de nuevo después de un error no parte la compra en dos.** Si un cobro falla a mitad de camino (se cortó internet en el celular), lo ya cobrado queda registrado y lo que falta sigue en la cuenta; al volver a tocar "Cobrar" los productos que faltan llevan el **mismo número de compra** que los primeros (`ticketActual` en `ArmarCuenta.tsx`), así que el Panel y los Reportes la siguen contando como una sola compra.
+- **Un cliente que ya no existe no se cobra.** La cuenta guardada puede traer un cliente que se sacó de la lista: ese renglón vuelve a pedir cliente. Y si la lista de clientes todavía no llegó, el renglón dice "Cargando cliente..." (antes el cuadro se veía vacío con "Cobrar" ya habilitado).
+- **La lectora de códigos no se pierde.** Si el foco quedó en un botón o en un desplegable (se tocó la forma de pago), el primer número que "tipea" la lectora vuelve solo al buscador (`Armar cuenta`, sólo en la PC).
+- **El Calendario de Ventas cuenta compras**, igual que el Panel y los Reportes: "3 ventas (7 productos)" en vez de contar cada producto como una venta.
+- **"Lo más vendido" del asistente** ahora es el producto del que más unidades se vendieron (y aclara cuál fue el que más plata dejó, si es otro); antes contestaba el de más plata. El gráfico de Reportes dice que ordena por plata.
+- **La cuenta de un cliente no muestra "Debe $0" si no pudo cargar** el historial (internet lento en el celular): se ve el saldo de la lista y un aviso para volver a abrirla.
+- Los pedidos de datos que no manejaban el error (listas de rubros y marcas, el calendario, el buscador del mostrador, la sesión) ya no dejan errores sueltos ni pantallas a medias si la red falla.
+
 ## Próximos módulos
 
 Proveedores/Compras — pendiente de implementar sobre esta misma base de datos.

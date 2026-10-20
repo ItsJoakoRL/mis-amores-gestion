@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.api.auth
       .sesionActual()
       .then(setSesion)
+      .catch(() => setSesion(null))
       .finally(() => setCargando(false));
   }, []);
 

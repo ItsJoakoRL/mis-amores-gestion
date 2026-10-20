@@ -800,6 +800,10 @@ function ClienteDetalleModal({
   const navigate = useNavigate();
   const [movimientos, setMovimientos] = useState<MovimientoCuenta[]>([]);
   const [cargando, setCargando] = useState(true);
+  // Si el historial no llegó (red lenta en el celular) no se muestra "debe $0": se ve el saldo de la
+  // lista y el aviso de que no se pudo cargar.
+  const [cargado, setCargado] = useState(false);
+  const [errorHistorial, setErrorHistorial] = useState<string | null>(null);
   const [mostrarPago, setMostrarPago] = useState(abrirPago === true);
   const [sugerido, setSugerido] = useState<SugerenciaDePago | null>(null);
   const [mostrarDeuda, setMostrarDeuda] = useState(false);
@@ -809,7 +813,12 @@ function ClienteDetalleModal({
     setCargando(true);
     window.api.clientes
       .historial(cliente.id)
-      .then(setMovimientos)
+      .then((lista) => {
+        setMovimientos(lista);
+        setCargado(true);
+        setErrorHistorial(null);
+      })
+      .catch((err) => setErrorHistorial(err instanceof Error ? err.message : 'No se pudo cargar la cuenta'))
       .finally(() => setCargando(false));
   }
 
@@ -820,11 +829,13 @@ function ClienteDetalleModal({
   // recién registrado se refleje al toque acá arriba, sin tener que cerrar
   // y volver a abrir. Un fiado ya marcado como pagado no suma — mismo
   // criterio que usa el saldo de la lista de clientes.
-  const saldoActual = movimientos.reduce((acc, m) => {
-    if (m.tipo === 'pago') return acc - m.monto;
-    if (m.tipo === 'venta' && m.pagado) return acc;
-    return acc + m.monto;
-  }, 0);
+  const saldoActual = cargado
+    ? movimientos.reduce((acc, m) => {
+        if (m.tipo === 'pago') return acc - m.monto;
+        if (m.tipo === 'venta' && m.pagado) return acc;
+        return acc + m.monto;
+      }, 0)
+    : cliente.saldo;
 
   const ETIQUETA_TIPO: Record<MovimientoCuenta['tipo'], string> = {
     venta: 'este fiado',
@@ -976,6 +987,10 @@ function ClienteDetalleModal({
         <div className="flex-1 overflow-y-auto">
           {cargando ? (
             <p className="px-6 py-8 text-center text-slate-400">Cargando...</p>
+          ) : errorHistorial && !cargado ? (
+            <p className="px-6 py-8 text-center text-red-600">
+              {errorHistorial} Cerrá esta ventana y volvé a abrirla para intentar de nuevo.
+            </p>
           ) : movimientos.length === 0 ? (
             <p className="px-6 py-8 text-center text-slate-400">Todavía no hay movimientos.</p>
           ) : (
