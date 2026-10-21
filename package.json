@@ -1,7 +1,7 @@
 {
   "name": "mis-amores-gestion",
   "private": true,
-  "version": "0.8.23",
+  "version": "0.8.24",
   "description": "Sistema de gestion comercial - Mis Amores",
   "author": "Mis Amores",
   "main": "dist-electron/electron/main.js",
@@ -19,6 +19,7 @@
     "probar:fiados": "node scripts/probar-fiados.js",
     "probar:precios": "node scripts/probar-precios.js",
     "probar:union": "node scripts/probar-union.js",
+    "probar:referencias": "node scripts/probar-referencias.js",
     "probar:azar": "node scripts/probar-azar.js",
     "probar:servidor": "node scripts/probar-servidor.js",
     "servidor": "node dist-electron/electron/servidor.js",

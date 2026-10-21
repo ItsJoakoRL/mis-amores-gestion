@@ -7,6 +7,8 @@ exports.UNIFICABLES = exports.REFERENCIAS = exports.COLECCIONES_REPLICADAS = voi
 exports.esReplicada = esReplicada;
 exports.camposPropios = camposPropios;
 exports.referenciasA = referenciasA;
+exports.esObjectId = esObjectId;
+exports.referenciasUnificadas = referenciasUnificadas;
 exports.hex = hex;
 exports.claveDeMeta = claveDeMeta;
 exports.huellaDeValor = huellaDeValor;
@@ -81,6 +83,25 @@ function referenciasA(destino) {
         }
     }
     return lista;
+}
+function esObjectId(valor) {
+    return valor instanceof mongodb_1.ObjectId || (typeof valor === 'object' && valor !== null && valor._bsontype === 'ObjectId');
+}
+/** Los campos de `doc` que apuntan a algo que se unificó con otro, con el id al
+ * que tienen que apuntar ahora (ninguno si todo apunta a algo que sigue vivo). */
+function referenciasUnificadas(coleccion, doc, aliasDe) {
+    const arreglos = {};
+    for (const [campo, destino] of Object.entries(exports.REFERENCIAS[coleccion] ?? {})) {
+        let valor = doc[campo];
+        for (let vuelta = 0; vuelta < 5 && esObjectId(valor); vuelta++) {
+            const unificado = aliasDe(destino, valor);
+            if (!unificado)
+                break;
+            valor = unificado;
+            arreglos[campo] = unificado;
+        }
+    }
+    return arreglos;
 }
 function hex(id) {
     return id instanceof mongodb_1.ObjectId ? id.toHexString() : String(id);

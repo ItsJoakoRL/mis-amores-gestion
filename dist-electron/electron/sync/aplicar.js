@@ -82,9 +82,6 @@ function decidir(local, existeDoc, e) {
         return { accion: 'reemplazar', doc: e.doc ?? {}, meta: { inc: local.inc, del: null, clocks } };
     return { accion: 'combinar', set, unset, meta: { inc: local.inc, del: null, clocks } };
 }
-function esObjectId(valor) {
-    return valor instanceof mongodb_1.ObjectId || (typeof valor === 'object' && valor !== null && valor._bsontype === 'ObjectId');
-}
 class Aplicador {
     constructor(diario, opciones) {
         this.diario = diario;
@@ -230,7 +227,7 @@ class Aplicador {
     despues(coleccion, id, doc, recalcular) {
         if (coleccion === 'articulos')
             recalcular(id);
-        if (coleccion === 'movimientos_stock' && esObjectId(doc.articuloId))
+        if (coleccion === 'movimientos_stock' && (0, modelo_1.esObjectId)(doc.articuloId))
             recalcular(doc.articuloId);
         if (coleccion === 'usuarios')
             this.opciones.alCambiarUsuario?.((0, modelo_1.hex)(id));
@@ -240,20 +237,7 @@ class Aplicador {
     // unificó, y apunta la foto a la carpeta de esta PC.
     localizar(coleccion, doc, fotos) {
         const salida = { ...doc };
-        const refs = modelo_1.REFERENCIAS[coleccion];
-        if (refs) {
-            for (const [campo, destino] of Object.entries(refs)) {
-                let valor = salida[campo];
-                for (let vuelta = 0; vuelta < 5 && esObjectId(valor); vuelta++) {
-                    const unificado = this.diario.aliasDe(destino, valor);
-                    if (!unificado)
-                        break;
-                    valor = unificado;
-                }
-                if (valor !== undefined)
-                    salida[campo] = valor;
-            }
-        }
+        Object.assign(salida, (0, modelo_1.referenciasUnificadas)(coleccion, doc, (destino, id) => this.diario.aliasDe(destino, id)));
         if (coleccion === 'articulos' && typeof salida.imagenPath === 'string' && salida.imagenPath) {
             // La ruta que viene es del disco de la otra PC: sólo sirve el nombre.
             const nombre = path_1.default.win32.basename(salida.imagenPath);
@@ -385,7 +369,7 @@ async function recalcularTodoElStock(diario) {
     for await (const s of diario.db
         .collection('movimientos_stock')
         .aggregate([{ $group: { _id: '$articuloId', total: { $sum: '$cantidad' } } }])) {
-        if (esObjectId(s._id))
+        if ((0, modelo_1.esObjectId)(s._id))
             sumas.set((0, modelo_1.hex)(s._id), s.total);
     }
     const equivocados = [];
@@ -417,7 +401,7 @@ async function completarStockBase(diario) {
     for await (const s of diario.db
         .collection('movimientos_stock')
         .aggregate([{ $group: { _id: '$articuloId', total: { $sum: '$cantidad' } } }])) {
-        if (esObjectId(s._id))
+        if ((0, modelo_1.esObjectId)(s._id))
             sumas.set((0, modelo_1.hex)(s._id), s.total);
     }
     const operaciones = [];
