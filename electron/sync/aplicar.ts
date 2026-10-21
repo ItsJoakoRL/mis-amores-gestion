@@ -28,10 +28,11 @@ import {
   camposPropios,
   claveDeMeta,
   esErrorDuplicado,
+  esObjectId,
   esReplicada,
   hex,
-  REFERENCIAS,
   referenciasA,
+  referenciasUnificadas,
   UNIFICABLES,
 } from './modelo';
 
@@ -128,10 +129,6 @@ export interface ResultadoAplicar {
   errores: number;
   /** Nombres de las fotos que todavía no están en el disco de esta PC. */
   fotosFaltantes: string[];
-}
-
-function esObjectId(valor: unknown): valor is ObjectId {
-  return valor instanceof ObjectId || (typeof valor === 'object' && valor !== null && (valor as { _bsontype?: string })._bsontype === 'ObjectId');
 }
 
 export class Aplicador {
@@ -288,18 +285,7 @@ export class Aplicador {
   // unificó, y apunta la foto a la carpeta de esta PC.
   private localizar(coleccion: string, doc: Document, fotos: Set<string>): Document {
     const salida: Document = { ...doc };
-    const refs = REFERENCIAS[coleccion];
-    if (refs) {
-      for (const [campo, destino] of Object.entries(refs)) {
-        let valor = salida[campo];
-        for (let vuelta = 0; vuelta < 5 && esObjectId(valor); vuelta++) {
-          const unificado = this.diario.aliasDe(destino, valor);
-          if (!unificado) break;
-          valor = unificado;
-        }
-        if (valor !== undefined) salida[campo] = valor;
-      }
-    }
+    Object.assign(salida, referenciasUnificadas(coleccion, doc, (destino, id) => this.diario.aliasDe(destino, id)));
     if (coleccion === 'articulos' && typeof salida.imagenPath === 'string' && salida.imagenPath) {
       // La ruta que viene es del disco de la otra PC: sólo sirve el nombre.
       const nombre = path.win32.basename(salida.imagenPath);

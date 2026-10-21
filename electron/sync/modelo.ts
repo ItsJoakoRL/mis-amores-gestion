@@ -75,6 +75,30 @@ export function referenciasA(destino: string): Array<{ coleccion: string; campo:
   return lista;
 }
 
+export function esObjectId(valor: unknown): valor is ObjectId {
+  return valor instanceof ObjectId || (typeof valor === 'object' && valor !== null && (valor as { _bsontype?: string })._bsontype === 'ObjectId');
+}
+
+/** Los campos de `doc` que apuntan a algo que se unificó con otro, con el id al
+ * que tienen que apuntar ahora (ninguno si todo apunta a algo que sigue vivo). */
+export function referenciasUnificadas(
+  coleccion: string,
+  doc: Document,
+  aliasDe: (destino: string, id: unknown) => ObjectId | undefined
+): Record<string, ObjectId> {
+  const arreglos: Record<string, ObjectId> = {};
+  for (const [campo, destino] of Object.entries(REFERENCIAS[coleccion] ?? {})) {
+    let valor = doc[campo];
+    for (let vuelta = 0; vuelta < 5 && esObjectId(valor); vuelta++) {
+      const unificado = aliasDe(destino, valor);
+      if (!unificado) break;
+      valor = unificado;
+      arreglos[campo] = unificado;
+    }
+  }
+  return arreglos;
+}
+
 export function hex(id: unknown): string {
   return id instanceof ObjectId ? id.toHexString() : String(id);
 }

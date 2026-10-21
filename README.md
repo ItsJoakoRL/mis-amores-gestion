@@ -67,6 +67,7 @@ Levantan copias reales de la app contra bases de prueba (`test_*`, sin tocar `mi
 npm run build               # (una vez, o cuando cambia el código)
 npm run probar:sync         # escenarios: vivo, apagones, duplicados, migración desde 0.5.0, fotos...
 npm run probar:union        # "Sumar esta PC" manejando la pantalla real
+npm run probar:referencias  # nada queda apuntando a algo que se unificó con otro (rápida, sin abrir la app)
 npm run probar:azar -- 42   # cientos de operaciones al azar con apagones (semilla opcional)
 npm run probar:servidor     # servidor sin ventana (Oracle)
 npm run probar:nube         # servidor en internet que no puede llamar a las PCs (Render)

@@ -27,6 +27,7 @@ import {
   hex,
   huellaDeDoc,
   huellaDeValor,
+  referenciasUnificadas,
 } from './modelo';
 import { marcaBase, MARCA_COPIA, type Reloj } from './reloj';
 
@@ -408,9 +409,23 @@ export class Diario {
     this.avisarSeq();
   }
 
+  /** Lo que se escribe acá puede apuntar a algo que ya se unificó con otro (la
+   * persona lo había elegido un instante antes, o la escritura venía en dos
+   * pasos y en el medio llegó la unificación): se lo pasa a apuntar al que
+   * quedó, y el documento ya se anota corregido. Siempre con la llave tomada. */
+  private async corregirReferencias(coleccion: string, docs: Document[]): Promise<void> {
+    for (const doc of docs) {
+      const arreglos = referenciasUnificadas(coleccion, doc, (destino, id) => this.aliasDe(destino, id));
+      if (Object.keys(arreglos).length === 0) continue;
+      await this.db.collection(coleccion).updateOne({ _id: doc._id }, { $set: arreglos });
+      Object.assign(doc, arreglos);
+    }
+  }
+
   async registrarInsertados(coleccion: string, ids: ObjectId[]): Promise<void> {
     if (ids.length === 0) return;
     const docs = await this.db.collection(coleccion).find({ _id: { $in: ids } }).toArray();
+    await this.corregirReferencias(coleccion, docs);
     await this.estamparNuevos(coleccion, docs);
   }
 
@@ -418,7 +433,9 @@ export class Diario {
     if (antes.length === 0) return;
     const ids = antes.map((d) => d._id as ObjectId);
     const despues = new Map<string, Document>();
-    for (const d of await this.db.collection(coleccion).find({ _id: { $in: ids } }).toArray()) despues.set(hex(d._id), d);
+    const leidos = await this.db.collection(coleccion).find({ _id: { $in: ids } }).toArray();
+    await this.corregirReferencias(coleccion, leidos);
+    for (const d of leidos) despues.set(hex(d._id), d);
     const metas = await this.leerMetas(ids.map((id) => claveDeMeta(coleccion, id)));
 
     const nuevos: Document[] = [];
@@ -520,7 +537,9 @@ export class Diario {
           const k = hex(doc._id);
           vistos.add(k);
           const m = metas.get(k);
-          if (!m || m.del !== null || m.h !== huellaDeDoc(nombre, doc)) candidatos.push(doc._id as ObjectId);
+          if (!m || m.del !== null || m.h !== huellaDeDoc(nombre, doc) || apuntaAUnificado(nombre, doc, this.alias)) {
+            candidatos.push(doc._id as ObjectId);
+          }
         }
         for (const [k, m] of metas) {
           if (m.del === null && !vistos.has(k)) candidatos.push(m.d);
@@ -540,7 +559,10 @@ export class Diario {
   // armaba la lista) y anota lo que corresponda.
   private async repasar(coleccion: string, ids: ObjectId[], modo: MarcaParaNuevos): Promise<number> {
     const docs = new Map<string, Document>();
-    for (const d of await this.db.collection(coleccion).find({ _id: { $in: ids } }).toArray()) docs.set(hex(d._id), d);
+    const leidos = await this.db.collection(coleccion).find({ _id: { $in: ids } }).toArray();
+    // Si apuntaba a algo ya unificado, queda corregido y por eso figura como cambiado.
+    await this.corregirReferencias(coleccion, leidos);
+    for (const d of leidos) docs.set(hex(d._id), d);
     const metas = await this.leerMetas(ids.map((id) => claveDeMeta(coleccion, id)));
 
     const nuevos: Document[] = [];
@@ -696,6 +718,11 @@ export class Diario {
       await this.db.collection<{ _id: string; v: string }>(COL_ESTADO).insertOne({ _id: 'epoca', v: this.epoca });
     });
   }
+}
+
+// Si algún campo del documento apunta a algo que se unificó con otro.
+function apuntaAUnificado(coleccion: string, doc: Document, alias: Map<string, ObjectId>): boolean {
+  return Object.keys(referenciasUnificadas(coleccion, doc, (destino, id) => alias.get(claveDeMeta(destino, id)))).length > 0;
 }
 
 // Los campos replicados que valen distinto antes y después.

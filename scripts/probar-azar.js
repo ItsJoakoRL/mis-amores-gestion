@@ -361,6 +361,38 @@ async function principal() {
       log(`✗ ${pc.nombre}: códigos de barras repetidos: ${dup.map((d) => d._id).join(', ')}`);
     }
   }
+
+  // El resumen de arriba sólo compara el diario (las marcas de cada cambio): acá se comparan los documentos
+  // mismos, y se revisa que nada apunte a algo que ya no existe (por ejemplo, a un cliente que se unificó con otro).
+  const { COLECCIONES_REPLICADAS, REFERENCIAS, huellaDeDoc } = require(path.join(RAIZ, 'dist-electron/electron/sync/modelo.js'));
+  const huellas = [];
+  for (const pc of todas) {
+    const mapa = new Map();
+    for (const col of COLECCIONES_REPLICADAS) {
+      for (const d of await c.db(pc.db).collection(col).find({}).toArray()) mapa.set(`${col}:${d._id}`, huellaDeDoc(col, d));
+    }
+    huellas.push(mapa);
+  }
+  const distintos = [...new Set(huellas.flatMap((m) => [...m.keys()]))].filter((k) => new Set(huellas.map((m) => m.get(k))).size > 1);
+  if (distintos.length) {
+    problemas += 1;
+    log(`✗ ${distintos.length} documentos con contenido distinto entre las PCs: ${distintos.slice(0, 6).join(', ')}`);
+  }
+  for (const pc of todas) {
+    const db = c.db(pc.db);
+    for (const [col, campos] of Object.entries(REFERENCIAS)) {
+      for (const [campo, destino] of Object.entries(campos)) {
+        const usados = (await db.collection(col).distinct(campo)).filter((v) => v && v._bsontype === 'ObjectId');
+        if (usados.length === 0) continue;
+        const existen = new Set((await db.collection(destino).find({ _id: { $in: usados } }, { projection: { _id: 1 } }).toArray()).map((x) => String(x._id)));
+        const huerfanos = usados.filter((v) => !existen.has(String(v)));
+        if (huerfanos.length) {
+          problemas += 1;
+          log(`✗ ${pc.nombre}: ${col}.${campo} apunta a ${destino} que no existen: ${huerfanos.map(String).join(', ')}`);
+        }
+      }
+    }
+  }
   await c.close();
 
   log(`\nProductos: ${fa.articulos.length}, clientes: ${fa.clientes.length}, rubros: ${fa.familias.length}, ventas de hoy: ${fa.ventas.length}`);
